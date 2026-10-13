@@ -110,7 +110,5 @@ class Command(BaseCommand):
         layout = Layout.objects.get(id=risposta.data["id"])
         layout.predefinito = predefinito
         layout.save()
-        # Le slide dimostrative sono sfumature: riempire la zona rende meglio che lasciare bande nere.
-        for zona in layout.zone.filter(tipo="slide"):
-            zona.configurazione["adattamento"] = "riempi"
-            zona.save()
+        # Le slide restano «adatta» (immagine intera): questi layout si usano poi con i
+        # volantini veri, che con «riempi» verrebbero tagliati.
