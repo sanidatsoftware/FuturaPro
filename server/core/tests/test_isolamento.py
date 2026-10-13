@@ -92,7 +92,9 @@ class DatabaseTest(Base):
             )
             scoperte = {riga[0] for riga in cursor.fetchall()}
         # Le uniche eccezioni volute: vedi docs/SPECIFICA.md, «Fuori dalla RLS».
-        self.assertEqual(scoperte, {"dispositivi_credenzialedispositivo", "utenti_utente"})
+        self.assertEqual(
+            scoperte, {"dispositivi_credenzialedispositivo", "eliminacode_credenzialepulsante", "utenti_utente"}
+        )
 
     def test_senza_contesto_il_database_non_restituisce_nulla(self):
         self.assertEqual(self.conta("dispositivi_monitor"), 0)

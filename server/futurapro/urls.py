@@ -14,6 +14,7 @@ from contenuti.api import (
     PubblicazioniViewSet,
 )
 from dispositivi.api import GruppiViewSet, HeartbeatView, MonitorViewSet, RichiestaAbbinamentoView, StatoPlayerView
+from eliminacode.api import EmettiPlayerView, PulsanteView, RepartiViewSet
 from layout.api import CercaLocalitaView, DatiZonaPlayerView, DatiZonaView, LayoutViewSet
 from player import views as player
 from teleassistenza.api import SessioniViewSet
@@ -34,6 +35,7 @@ router.register("contenuti", ContenutiViewSet, basename="contenuti")
 router.register("playlist", PlaylistViewSet, basename="playlist")
 router.register("pubblicazioni", PubblicazioniViewSet, basename="pubblicazioni")
 router.register("layout", LayoutViewSet, basename="layout")
+router.register("reparti", RepartiViewSet, basename="reparti")
 router.register("teleassistenza/sessioni", SessioniViewSet, basename="teleassistenza")
 
 urlpatterns = [
@@ -49,6 +51,9 @@ urlpatterns = [
     path("api/zone/<uuid:zona_id>/dati/", DatiZonaView.as_view(), name="zona-dati"),
     path("api/meteo/localita/", CercaLocalitaView.as_view(), name="meteo-localita"),
     path("api/player/zone/<uuid:zona_id>/dati/", DatiZonaPlayerView.as_view(), name="player-zona-dati"),
+    path("api/player/zone/<uuid:zona_id>/emetti/", EmettiPlayerView.as_view(), name="player-emetti"),
+    path("api/eliminacode/pulsante/", PulsanteView.as_view(), name="pulsante-stato"),
+    path("api/eliminacode/pulsante/<str:operazione>/", PulsanteView.as_view(), name="pulsante"),
     path("api/player/heartbeat/", HeartbeatView.as_view(), name="player-heartbeat"),
     path("api/", include(router.urls)),
     path("api/sessione/", include("rest_framework.urls")),

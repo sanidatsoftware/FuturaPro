@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from rest_framework import exceptions, serializers, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -142,16 +143,22 @@ class LayoutViewSet(ViewSetCliente):
 
         zone = []
         for livello, (tipo, (x, y, larghezza, altezza), configurazione) in enumerate(modello["zone"]):
+            configurazione = dict(configurazione or {})
             if tipo == TipoZona.METEO:
-                configurazione = {k: richiesta.get(k) for k in ("localita", "latitudine", "longitudine")}
+                configurazione.update({k: richiesta.get(k) for k in ("localita", "latitudine", "longitudine")})
             elif tipo == TipoZona.NOTIZIE:
-                configurazione = {"feed": richiesta.get("feed", []), "messaggi": richiesta.get("messaggi", [])}
+                configurazione.update(feed=richiesta.get("feed", []), messaggi=richiesta.get("messaggi", []))
             zone.append(
                 {"tipo": tipo, "x": x, "y": y, "larghezza": larghezza, "altezza": altezza,
                  "livello": livello, "configurazione": configurazione}
             )
         serializer = self.get_serializer(
-            data={"nome": richiesta.get("nome") or modello["nome"], "orientamento": modello["orientamento"], "zone": zone}
+            data={
+                "nome": richiesta.get("nome") or modello["nome"],
+                "orientamento": modello["orientamento"],
+                "sfondo": modello.get("sfondo", "#000000"),
+                "zone": zone,
+            }
         )
         serializer.is_valid(raise_exception=True)
         layout = serializer.save()
@@ -165,9 +172,13 @@ class LayoutViewSet(ViewSetCliente):
         )
 
 
-def dati_zona(zona) -> dict:
-    """I dati dinamici di una zona meteo o notizie, già pronti per il motore."""
+def dati_zona(zona, monitor=None) -> dict:
+    """I dati dinamici di una zona (meteo, notizie, code), già pronti per il motore."""
     configurazione = zona.configurazione
+    if zona.tipo in (TipoZona.CODA, TipoZona.PRENDI_NUMERO):
+        from eliminacode.api import reparti_della_zona
+
+        return {"code": [r.stato() for r in reparti_della_zona(configurazione, monitor)]}
     if zona.tipo == TipoZona.METEO:
         return {"meteo": fonti.meteo(configurazione["latitudine"], configurazione["longitudine"])}
     if zona.tipo == TipoZona.NOTIZIE:
@@ -185,7 +196,14 @@ class DatiZonaView(VistaConContesto, APIView):
         zona = Zona.objects.filter(id=zona_id).first()
         if zona is None:
             raise exceptions.NotFound()
-        return Response(dati_zona(zona))
+        # L'anteprima di un monitor passa il monitor: le code sono quelle della sua sede.
+        monitor = None
+        if request.query_params.get("monitor"):
+            try:
+                monitor = Monitor.objects.filter(id=request.query_params["monitor"]).first()
+            except ValidationError:
+                monitor = None
+        return Response(dati_zona(zona, monitor))
 
 
 class CercaLocalitaView(VistaConContesto, APIView):
@@ -215,4 +233,4 @@ class DatiZonaPlayerView(VistaPlayer):
             zona = layout and layout.zone.filter(id=zona_id).first()
             if not zona:
                 raise exceptions.NotFound()
-            return Response(dati_zona(zona))
+            return Response(dati_zona(zona, monitor))

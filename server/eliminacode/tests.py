@@ -1,0 +1,184 @@
+import secrets
+from datetime import timedelta
+
+from django.utils import timezone
+
+from core.contesto import contesto_cliente
+from core.tests.test_isolamento import Base
+from dispositivi.models import CredenzialeDispositivo, impronta
+
+from . import servizi
+from .models import Reparto
+
+CATANIA = {"localita": "Catania", "latitudine": 37.5, "longitudine": 15.08}
+
+
+class ConReparti(Base):
+    def setUp(self):
+        super().setUp()
+        with contesto_cliente(self.a.id):
+            self.salumeria = Reparto.objects.create(sede=self.a_milano, nome="Salumeria", colore="#e8a3a3", ordine=1)
+            self.macelleria = Reparto.objects.create(sede=self.a_milano, nome="Macelleria", ordine=2)
+            self.roma = Reparto.objects.create(sede=self.a_roma, nome="Gastronomia")
+
+    def stato(self, reparto):
+        with contesto_cliente(reparto.cliente_id):
+            return Reparto.objects.get(id=reparto.id)
+
+
+class CodaTest(ConReparti):
+    def op(self, operazione, reparto, *argomenti):
+        with contesto_cliente(reparto.cliente_id):
+            return operazione(reparto.id, *argomenti)
+
+    def test_biglietti_e_chiamate(self):
+        numeri = [self.op(servizi.emetti, self.salumeria).ultimo_emesso for _ in range(3)]
+        self.assertEqual(numeri, [1, 2, 3])
+        reparto = self.op(servizi.avanti, self.salumeria)
+        self.assertEqual((reparto.numero, reparto.in_coda), (1, 2))
+        reparto = self.op(servizi.indietro, self.salumeria)
+        self.assertEqual((reparto.numero, reparto.in_coda), (0, 3))
+
+    def test_dopo_il_99_si_riparte_da_1_e_la_coda_resta_giusta(self):
+        with contesto_cliente(self.a.id):
+            Reparto.objects.filter(id=self.salumeria.id).update(
+                chiamati=98, emessi=98, giornata=timezone.localdate()
+            )
+        self.assertEqual(self.op(servizi.emetti, self.salumeria).ultimo_emesso, 99)
+        reparto = self.op(servizi.emetti, self.salumeria)
+        self.assertEqual((reparto.ultimo_emesso, reparto.in_coda), (1, 2))
+        self.op(servizi.avanti, self.salumeria)
+        reparto = self.op(servizi.avanti, self.salumeria)
+        self.assertEqual((reparto.numero, reparto.in_coda), (1, 0))
+
+    def test_avanti_senza_totem_e_primo_biglietto_dopo(self):
+        for _ in range(5):
+            self.op(servizi.avanti, self.salumeria)
+        self.assertEqual(self.stato(self.salumeria).in_coda, 0)
+        self.assertEqual(self.op(servizi.emetti, self.salumeria).ultimo_emesso, 6)
+
+    def test_nuovo_giorno_riparte_da_zero(self):
+        with contesto_cliente(self.a.id):
+            Reparto.objects.filter(id=self.salumeria.id).update(
+                chiamati=40, emessi=45, giornata=timezone.localdate() - timedelta(days=1)
+            )
+        reparto = self.op(servizi.emetti, self.salumeria)
+        self.assertEqual((reparto.ultimo_emesso, reparto.in_coda), (1, 1))
+
+    def test_imposta_mantiene_chi_e_in_coda(self):
+        for _ in range(4):
+            self.op(servizi.emetti, self.salumeria)
+        reparto = self.op(servizi.imposta, self.salumeria, 50)
+        self.assertEqual((reparto.numero, reparto.in_coda, reparto.ultimo_emesso), (50, 4, 54))
+
+    def test_ripeti_rinnova_la_chiamata(self):
+        prima = self.op(servizi.avanti, self.salumeria).chiamato_il
+        dopo = self.op(servizi.ripeti, self.salumeria)
+        self.assertEqual(dopo.numero, 1)
+        self.assertGreater(dopo.chiamato_il, prima)
+
+
+class BancoTest(ConReparti):
+    def test_lo_user_cliente_chiama_ma_non_configura(self):
+        self.come(self.user_a)
+        r = self.client.post(f"/api/reparti/{self.salumeria.id}/avanti/")
+        self.assertEqual((r.status_code, r.json()["numero"]), (200, 1))
+        self.assertEqual(self.client.post("/api/reparti/", {"nome": "Pescheria", "sede": str(self.a_milano.id)}).status_code, 403)
+        self.assertEqual(self.client.post(f"/api/reparti/{self.salumeria.id}/chiave/").status_code, 403)
+
+    def test_utente_limitato_solo_nelle_sue_sedi(self):
+        self.come(self.user_a_milano)
+        self.assertEqual(self.client.post(f"/api/reparti/{self.roma.id}/avanti/").status_code, 404)
+        self.assertEqual(len(self.ids(self.client.get("/api/reparti/"))), 2)
+
+    def test_altri_clienti(self):
+        self.come(self.admin_b)
+        self.assertEqual(self.client.post(f"/api/reparti/{self.salumeria.id}/avanti/").status_code, 404)
+        r = self.client.post("/api/reparti/", {"nome": "Furbo", "sede": str(self.a_milano.id)})
+        self.assertEqual(r.status_code, 400)
+
+    def test_imposta_valida_il_numero(self):
+        self.come(self.admin_a)
+        url = f"/api/reparti/{self.salumeria.id}/imposta/"
+        self.assertEqual(self.client.post(url, {"numero": 100}).status_code, 400)
+        self.assertEqual(self.client.post(url, {"numero": 27}).json()["numero"], 27)
+
+    def test_chiave_per_pulsantiere_e_bilance(self):
+        self.come(self.admin_a)
+        chiave = self.client.post(f"/api/reparti/{self.salumeria.id}/chiave/").json()["chiave"]
+        self.client.logout()
+        pulsante = {"HTTP_AUTHORIZATION": f"Pulsante {chiave}"}
+        r = self.client.post("/api/eliminacode/pulsante/avanti/", **pulsante)
+        self.assertEqual((r.status_code, r.json()["nome"], r.json()["numero"]), (200, "Salumeria", 1))
+        self.assertEqual(self.client.post("/api/eliminacode/pulsante/azzera/", **pulsante).status_code, 404)
+        self.assertEqual(self.stato(self.macelleria).numero, 0)
+
+        self.come(self.admin_a)
+        self.client.delete(f"/api/reparti/{self.salumeria.id}/chiave/")
+        self.client.logout()
+        r = self.client.post("/api/eliminacode/pulsante/avanti/", **pulsante)
+        self.assertEqual(r.status_code, 401)
+        self.assertEqual(r["WWW-Authenticate"], "Pulsante")
+
+
+class TotemTest(ConReparti):
+    def totem(self, monitor, **configurazione):
+        self.come(self.admin_a)
+        r = self.client.post(
+            "/api/layout/",
+            {"nome": "Totem", "zone": [{"tipo": "prendi_numero", "x": 0, "y": 0, "larghezza": 100, "altezza": 100,
+                                        "configurazione": configurazione}]},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.client.patch(f"/api/monitor/{monitor.id}/", {"layout": r.json()["id"]}, format="json")
+        token = secrets.token_urlsafe(32)
+        with contesto_cliente(monitor.cliente_id):
+            CredenzialeDispositivo.objects.create(impronta_token=impronta(token), monitor=monitor, cliente_id=monitor.cliente_id)
+        self.client.logout()
+        return r.json()["zone"][0]["id"], {"HTTP_AUTHORIZATION": f"Device {token}"}
+
+    def test_il_cliente_prende_il_numero(self):
+        zona, dispositivo = self.totem(self.mon_a_milano)
+        # Senza reparti scelti: quelli della sede del monitor, in ordine.
+        code = self.client.get(f"/api/player/zone/{zona}/dati/", **dispositivo).json()["code"]
+        self.assertEqual([c["nome"] for c in code], ["Salumeria", "Macelleria"])
+
+        url = f"/api/player/zone/{zona}/emetti/"
+        r = self.client.post(url, {"reparto": str(self.salumeria.id)}, **dispositivo)
+        self.assertEqual((r.status_code, r.json()["numero"], r.json()["davanti"]), (201, 1, 0))
+        r = self.client.post(url, {"reparto": str(self.salumeria.id)}, **dispositivo)
+        self.assertEqual((r.json()["numero"], r.json()["davanti"]), (2, 1))
+        # Un reparto di un'altra sede non si prende da questo totem.
+        self.assertEqual(self.client.post(url, {"reparto": str(self.roma.id)}, **dispositivo).status_code, 400)
+
+    def test_reparti_scelti_e_chiusi(self):
+        zona, dispositivo = self.totem(self.mon_a_milano, reparti=[str(self.macelleria.id)])
+        url = f"/api/player/zone/{zona}/emetti/"
+        self.assertEqual(self.client.post(url, {"reparto": str(self.salumeria.id)}, **dispositivo).status_code, 400)
+        with contesto_cliente(self.a.id):
+            Reparto.objects.filter(id=self.macelleria.id).update(attivo=False)
+        self.assertEqual(self.client.post(url, {"reparto": str(self.macelleria.id)}, **dispositivo).status_code, 400)
+
+    def test_reparti_di_altri_clienti_non_si_configurano(self):
+        with contesto_cliente(self.b.id):
+            altro = Reparto.objects.create(sede=self.b_sede, nome="Altrui")
+        self.come(self.admin_a)
+        r = self.client.post(
+            "/api/layout/",
+            {"nome": "X", "zone": [{"tipo": "coda", "x": 0, "y": 0, "larghezza": 100, "altezza": 100,
+                                    "configurazione": {"reparti": [str(altro.id)]}}]},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_stampa_epson_richiede_l_indirizzo(self):
+        self.come(self.admin_a)
+        zona = {"tipo": "prendi_numero", "x": 0, "y": 0, "larghezza": 100, "altezza": 100, "configurazione": {"stampa": "epson"}}
+        self.assertEqual(self.client.post("/api/layout/", {"nome": "X", "zone": [zona]}, format="json").status_code, 400)
+
+    def test_modelli_supermercato(self):
+        self.come(self.admin_a)
+        for modello in ("supermercato_ora_meteo_reparti", "supermercato_reparti", "totem_eliminacode"):
+            r = self.client.post("/api/layout/da-modello/", {"modello": modello, **CATANIA, "messaggi": ["Benvenuti"]}, format="json")
+            self.assertEqual(r.status_code, 201, (modello, r.content))

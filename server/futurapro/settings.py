@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "contenuti",
     "layout",
     "player",
+    "eliminacode",
 ]
 
 MIDDLEWARE = [

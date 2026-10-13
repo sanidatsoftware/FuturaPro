@@ -50,6 +50,8 @@ class TipoZona(models.TextChoices):
     NOTIZIE = "notizie", "Notizie (rullo)"
     TESTO = "testo", "Testo"
     IMMAGINE = "immagine", "Immagine fissa"
+    CODA = "coda", "Eliminacode: numeri dei reparti"
+    PRENDI_NUMERO = "prendi_numero", "Eliminacode: prendi il numero (totem touch)"
 
 
 class Zona(ModelloCliente):
@@ -59,7 +61,7 @@ class Zona(ModelloCliente):
     """
 
     layout = models.ForeignKey(Layout, on_delete=models.CASCADE, related_name="zone")
-    tipo = models.CharField(max_length=10, choices=TipoZona.choices)
+    tipo = models.CharField(max_length=20, choices=TipoZona.choices)
     nome = models.CharField(max_length=100, blank=True)
     x = models.FloatField()
     y = models.FloatField()

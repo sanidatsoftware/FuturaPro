@@ -36,10 +36,18 @@ class Slide(serializers.Serializer):
         return sorgente
 
 
+class Sfondo(serializers.RegexField):
+    """Colore di fondo facoltativo: vuoto = trasparente, si vede lo sfondo del layout."""
+
+    def __init__(self, predefinito="", **kwargs):
+        super().__init__(COLORE, required=False, allow_blank=True, default=predefinito, **kwargs)
+
+
 class Orologio(serializers.Serializer):
     secondi = serializers.BooleanField(required=False, default=False)
     mostra_data = serializers.BooleanField(required=False, default=True)
     colore = Colore("#ffffff")
+    sfondo = Sfondo()
     allineamento = serializers.ChoiceField(ALLINEAMENTI, required=False, default="centro")
 
 
@@ -48,6 +56,7 @@ class Meteo(serializers.Serializer):
     latitudine = serializers.FloatField(min_value=-90, max_value=90)
     longitudine = serializers.FloatField(min_value=-180, max_value=180)
     colore = Colore("#ffffff")
+    sfondo = Sfondo()
 
 
 class Notizie(serializers.Serializer):
@@ -80,7 +89,7 @@ class Testo(serializers.Serializer):
     # Altezza del carattere in percentuale dell'altezza della zona.
     dimensione = serializers.IntegerField(min_value=5, max_value=100, required=False, default=50)
     colore = Colore("#ffffff")
-    sfondo = serializers.RegexField(COLORE, required=False, allow_blank=True, default="")
+    sfondo = Sfondo()
     allineamento = serializers.ChoiceField(ALLINEAMENTI, required=False, default="centro")
 
 
@@ -94,6 +103,57 @@ class Immagine(serializers.Serializer):
         return str(contenuto)
 
 
+class Reparti(serializers.ListField):
+    """Reparti scelti; vuoto = tutti i reparti attivi della sede del monitor."""
+
+    def __init__(self, **kwargs):
+        super().__init__(child=serializers.UUIDField(), required=False, default=list, max_length=12, **kwargs)
+
+    def to_internal_value(self, dati):
+        from eliminacode.models import Reparto
+
+        scelti = [str(r) for r in super().to_internal_value(dati)]
+        if scelti and Reparto.objects.filter(id__in=scelti).count() != len(set(scelti)):
+            raise serializers.ValidationError("Reparto inesistente.")
+        return scelti
+
+
+ANNUNCI = ["nessuno", "suono", "voce"]
+
+
+class Coda(serializers.Serializer):
+    """I riquadri con il numero servito in ogni reparto (i display sopra i banchi)."""
+
+    reparti = Reparti()
+    mostra_in_coda = serializers.BooleanField(required=False, default=False)
+    # Solo un monitor per negozio dovrebbe annunciare, per non sentire l'eco.
+    annuncio = serializers.ChoiceField(ANNUNCI, required=False, default="suono")
+    colore = Colore("#ffffff")
+
+
+STAMPE = ["nessuna", "browser", "epson"]
+
+
+class PrendiNumero(serializers.Serializer):
+    """Il totem touch: il cliente tocca il reparto e riceve il biglietto."""
+
+    reparti = Reparti()
+    titolo = serializers.CharField(max_length=60, required=False, default="PRENDI QUI IL TUO NUMERO")
+    colore = Colore("#ffffff")
+    sfondo = Colore("#ec6a1f")
+    # browser: stampa di sistema (Chrome con --kiosk-printing stampa senza finestre);
+    # epson: stampante di rete Epson TM con ePOS-Print, all'indirizzo indicato.
+    stampa = serializers.ChoiceField(STAMPE, required=False, default="nessuna")
+    stampante = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    intestazione = serializers.CharField(max_length=60, required=False, allow_blank=True, default="")
+    messaggio = serializers.CharField(max_length=120, required=False, default="Attendi il tuo turno, grazie!")
+
+    def validate(self, dati):
+        if dati["stampa"] == "epson" and not dati["stampante"]:
+            raise serializers.ValidationError({"stampante": "Indica l'indirizzo della stampante Epson."})
+        return dati
+
+
 CONFIGURAZIONI = {
     TipoZona.SLIDE: Slide,
     TipoZona.OROLOGIO: Orologio,
@@ -101,6 +161,8 @@ CONFIGURAZIONI = {
     TipoZona.NOTIZIE: Notizie,
     TipoZona.TESTO: Testo,
     TipoZona.IMMAGINE: Immagine,
+    TipoZona.CODA: Coda,
+    TipoZona.PRENDI_NUMERO: PrendiNumero,
 }
 
 
@@ -146,6 +208,40 @@ MODELLI = {
             ("meteo", (50, 0, 50, 8), None),
             ("slide", (0, 8, 100, 84), {}),
             ("notizie", (0, 92, 100, 8), None),
+        ],
+    },
+    # I tre seguenti ricalcano gli schermi dei supermercati: offerte a sinistra,
+    # colonna con ora, meteo e reparti a destra, rullo notizie in basso.
+    "supermercato_ora_meteo_reparti": {
+        "nome": "Supermercato: offerte, ora, meteo e reparti",
+        "orientamento": "orizzontale",
+        "sfondo": "#ffffff",
+        "zone": [
+            ("slide", (0, 0, 78, 86), {}),
+            ("orologio", (78, 0, 22, 17), {"sfondo": "#1f4e79"}),
+            ("meteo", (78, 17, 22, 13), {"sfondo": "#1f4e79"}),
+            ("coda", (78, 30, 22, 56), {}),
+            ("notizie", (0, 86, 100, 14), {"sfondo": "#ec6a1f"}),
+        ],
+    },
+    "supermercato_reparti": {
+        "nome": "Supermercato: offerte e reparti",
+        "orientamento": "orizzontale",
+        "sfondo": "#ffffff",
+        "zone": [
+            ("slide", (0, 0, 78, 86), {}),
+            ("coda", (78, 0, 22, 86), {}),
+            ("notizie", (0, 86, 100, 14), {"sfondo": "#ec6a1f"}),
+        ],
+    },
+    "totem_eliminacode": {
+        "nome": "Totem eliminacode",
+        "orientamento": "verticale",
+        "sfondo": "#ffffff",
+        "zone": [
+            ("slide", (0, 0, 100, 60), {}),
+            ("notizie", (0, 60, 100, 7), {"sfondo": "#ec6a1f"}),
+            ("prendi_numero", (0, 67, 100, 33), {}),
         ],
     },
 }
