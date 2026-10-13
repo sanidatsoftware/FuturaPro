@@ -354,8 +354,8 @@ class FilePlayerView(VistaPlayer):
     def get(self, request, contenuto_id):
         credenziale = credenziale_dalla_richiesta(request)
         with contesto_cliente(credenziale.cliente_id):
-            monitor = Monitor.objects.get(id=credenziale.monitor_id)
-            playlist = palinsesto.pubblicazioni_del_monitor(monitor).values("playlist_id")
-            if not ElementoPlaylist.objects.filter(playlist_id__in=playlist, contenuto_id=contenuto_id).exists():
+            # Lo stesso calcolo del manifest: palinsesto, playlist fisse e immagini del layout.
+            ammessi = palinsesto.manifest(Monitor.objects.get(id=credenziale.monitor_id))["contenuti"]
+            if str(contenuto_id) not in ammessi:
                 raise exceptions.NotFound()
             return _servi(Contenuto.objects.get(id=contenuto_id))

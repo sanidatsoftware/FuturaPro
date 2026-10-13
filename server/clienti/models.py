@@ -51,6 +51,9 @@ class Abilitazioni(ModelloCliente):
     admin_gestisce_dispositivi = models.BooleanField(
         default=True, help_text="L'AdminCliente può abbinare, rinominare e rimuovere monitor."
     )
+    admin_gestisce_layout = models.BooleanField(
+        default=True, help_text="L'AdminCliente può creare e modificare i layout grafici."
+    )
 
     class Meta:
         verbose_name_plural = "abilitazioni"

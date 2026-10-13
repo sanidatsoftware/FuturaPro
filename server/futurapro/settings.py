@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "audit",
     "teleassistenza",
     "contenuti",
+    "layout",
 ]
 
 MIDDLEWARE = [

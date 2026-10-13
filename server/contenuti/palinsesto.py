@@ -20,7 +20,9 @@ from django.conf import settings
 from django.db.models import Q
 from django.urls import reverse
 
-from .models import DURATA_IMMAGINE, ElementoPlaylist, Pubblicazione, Tipo
+from layout.manifest import descrivi, layout_del_monitor, riferimenti
+
+from .models import DURATA_IMMAGINE, Contenuto, ElementoPlaylist, Pubblicazione, Tipo
 
 
 def _nell_orario(ora: time, inizio: time | None, fine: time | None) -> bool:
@@ -73,38 +75,46 @@ def durata_effettiva(elemento) -> int | None:
     return None if elemento.contenuto.tipo == Tipo.VIDEO else DURATA_IMMAGINE
 
 
+def _voce(contenuto) -> dict:
+    voce = {"tipo": contenuto.tipo, "nome": contenuto.nome}
+    if contenuto.tipo == Tipo.WEB:
+        voce["url"] = contenuto.url
+    else:
+        voce.update(
+            url=reverse("player-file", args=[contenuto.id]),
+            sha256=contenuto.sha256,
+            dimensione=contenuto.dimensione,
+            mime=contenuto.mime,
+        )
+    return voce
+
+
 def manifest(monitor) -> dict:
-    """Tutto ciò che serve al player per andare avanti da solo: file, playlist e regole."""
+    """Tutto ciò che serve al player per andare avanti da solo: layout, file, playlist e regole."""
     pubblicazioni = list(pubblicazioni_del_monitor(monitor))
-    playlist_ids = {p.playlist_id for p in pubblicazioni}
+    layout = descrivi(layout_del_monitor(monitor), monitor.orientamento)
+    playlist_fisse, immagini_layout = riferimenti(layout)
+    playlist_ids = {str(p.playlist_id) for p in pubblicazioni} | playlist_fisse
     elementi = (
         ElementoPlaylist.objects.filter(playlist_id__in=playlist_ids)
         .select_related("contenuto")
         .order_by("playlist_id", "ordine")
     )
 
-    playlist, file = {}, {}
+    playlist = {}
+    contenuti = {str(c.id): c for c in Contenuto.objects.filter(id__in=immagini_layout)}
     for elemento in elementi:
-        contenuto = elemento.contenuto
         playlist.setdefault(str(elemento.playlist_id), []).append(
-            {"contenuto": str(contenuto.id), "durata": durata_effettiva(elemento)}
+            {"contenuto": str(elemento.contenuto_id), "durata": durata_effettiva(elemento)}
         )
-        voce = {"tipo": contenuto.tipo, "nome": contenuto.nome}
-        if contenuto.tipo == Tipo.WEB:
-            voce["url"] = contenuto.url
-        else:
-            voce.update(
-                url=reverse("player-file", args=[contenuto.id]),
-                sha256=contenuto.sha256,
-                dimensione=contenuto.dimensione,
-                mime=contenuto.mime,
-            )
-        file[str(contenuto.id)] = voce
+        contenuti[str(elemento.contenuto_id)] = elemento.contenuto
 
     corpo = {
         "monitor": str(monitor.id),
+        "schermo": {"orientamento": monitor.orientamento, "rotazione": monitor.rotazione},
         # Date e orari delle regole sono in questo fuso, non in quello del dispositivo.
         "fuso_orario": settings.TIME_ZONE,
+        "layout": layout,
         "pubblicazioni": [
             {
                 "id": str(p.id),
@@ -120,7 +130,7 @@ def manifest(monitor) -> dict:
             for p in pubblicazioni
         ],
         "playlist": playlist,
-        "contenuti": file,
+        "contenuti": {chiave: _voce(contenuto) for chiave, contenuto in contenuti.items()},
     }
     # La versione dipende solo dal contenuto: se nulla cambia, il player non riscarica.
     corpo["versione"] = sha256(json.dumps(corpo, sort_keys=True).encode()).hexdigest()

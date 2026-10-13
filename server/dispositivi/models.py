@@ -43,6 +43,14 @@ class Monitor(ModelloCliente):
     info_dispositivo = models.JSONField(default=dict, blank=True)
     ultimo_contatto = models.DateTimeField(null=True, blank=True)
     abbinato_il = models.DateTimeField(auto_now_add=True)
+    orientamento = models.CharField(
+        max_length=12, choices=[("orizzontale", "Orizzontale"), ("verticale", "Verticale (totem)")], default="orizzontale"
+    )
+    # Quanto il player deve ruotare l'immagine: serve quando un televisore orizzontale
+    # è montato in verticale; un totem nativo verticale resta a 0.
+    rotazione = models.PositiveSmallIntegerField(choices=[(0, "0°"), (90, "90°"), (180, "180°"), (270, "270°")], default=0)
+    # Vuoto: il layout predefinito del cliente per il suo orientamento.
+    layout = models.ForeignKey("layout.Layout", on_delete=models.SET_NULL, null=True, blank=True, related_name="monitor")
 
     class Meta:
         ordering = ["nome"]

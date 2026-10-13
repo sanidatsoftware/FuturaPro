@@ -13,6 +13,7 @@ from contenuti.api import (
     PubblicazioniViewSet,
 )
 from dispositivi.api import GruppiViewSet, HeartbeatView, MonitorViewSet, RichiestaAbbinamentoView, StatoPlayerView
+from layout.api import CercaLocalitaView, DatiZonaPlayerView, DatiZonaView, LayoutViewSet
 from teleassistenza.api import SessioniViewSet
 from utenti.api import IoView, UtentiClienteViewSet, UtentiPiattaformaViewSet
 
@@ -30,6 +31,7 @@ router.register("audit", AuditClienteViewSet, basename="audit")
 router.register("contenuti", ContenutiViewSet, basename="contenuti")
 router.register("playlist", PlaylistViewSet, basename="playlist")
 router.register("pubblicazioni", PubblicazioniViewSet, basename="pubblicazioni")
+router.register("layout", LayoutViewSet, basename="layout")
 router.register("teleassistenza/sessioni", SessioniViewSet, basename="teleassistenza")
 
 urlpatterns = [
@@ -41,6 +43,9 @@ urlpatterns = [
     path("api/anteprima/<uuid:monitor_id>/", AnteprimaView.as_view(), name="anteprima"),
     path("api/player/palinsesto/", PalinsestoPlayerView.as_view(), name="player-palinsesto"),
     path("api/player/file/<uuid:contenuto_id>/", FilePlayerView.as_view(), name="player-file"),
+    path("api/zone/<uuid:zona_id>/dati/", DatiZonaView.as_view(), name="zona-dati"),
+    path("api/meteo/localita/", CercaLocalitaView.as_view(), name="meteo-localita"),
+    path("api/player/zone/<uuid:zona_id>/dati/", DatiZonaPlayerView.as_view(), name="player-zona-dati"),
     path("api/player/heartbeat/", HeartbeatView.as_view(), name="player-heartbeat"),
     path("api/", include(router.urls)),
     path("api/sessione/", include("rest_framework.urls")),
