@@ -61,6 +61,13 @@
   var chiave = memoria("futurapro.banco.chiave") || dalLink;
   var modo = chiave ? "chiave" : "sessione";
 
+  // In HTTP passano solo le chiamate con la chiave (bilance): con l'accesso del
+  // pannello serve HTTPS, quindi senza chiave si passa subito alla versione sicura.
+  if (location.protocol === "http:" && modo === "sessione" && !modoChiave) {
+    location.replace("https://" + location.host + location.pathname + location.search);
+    return;
+  }
+
   function intestazioni() {
     if (modo === "chiave") return { Authorization: "Pulsante " + chiave };
     var h = { "X-CSRFToken": cookie("csrftoken") };
