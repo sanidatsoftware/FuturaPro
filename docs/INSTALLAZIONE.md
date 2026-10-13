@@ -44,12 +44,12 @@ Poi, sulla VM:
 
 ```bash
 sudo apt update && sudo apt install -y git
-sudo git clone -b claude/jolly-meitner-6krvq3 https://github.com/sanidatsoftware/FuturaPro.git /opt/futurapro
+sudo git clone https://github.com/sanidatsoftware/FuturaPro.git /opt/futurapro
 ```
 
 Come *Username* scrivi il tuo utente GitHub, come *Password* incolla il token.
 
-> In alternativa, senza token sulla VM: da GitHub, nel ramo `claude/jolly-meitner-6krvq3`,
+> In alternativa, senza token sulla VM: dalla pagina del repository su GitHub (ramo `main`),
 > **Code → Download ZIP**; copia lo ZIP sulla VM (es. con WinSCP) ed estrailo in `/opt/futurapro`
 > (`sudo apt install -y unzip && sudo unzip FuturaPro-*.zip -d /opt && sudo mv /opt/FuturaPro-* /opt/futurapro`).
 
