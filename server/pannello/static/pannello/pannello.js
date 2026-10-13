@@ -252,7 +252,7 @@ async function schedaMonitor() {
 
   const tutti = sezione("Schermi");
   if (!monitor.length) crea("p", { classe: "vuoto", testo: "Nessuno schermo abbinato." }, tutti);
-  const corpo = tabella(["Nome", "Sede", "Stato", "Orientamento", "Rotazione", "Layout", ""], tutti);
+  const corpo = tabella(["Nome", "Sede", "Stato", "In onda", "Gruppi", "Orientamento", "Rotazione", "Layout", ""], tutti);
   for (const m of monitor) {
     const riga = crea("tr", {}, corpo);
     crea("td", { testo: m.nome }, riga);
@@ -267,6 +267,29 @@ async function schedaMonitor() {
       [["", "Predefinito"], ...layout.filter((l) => l.orientamento === m.orientamento).map((l) => [l.id, l.nome])],
       m.layout || "",
     );
+    // Cosa va in onda adesso: se è vuoto, al monitor non arriva nessuna pubblicazione.
+    const inOnda = crea("td", { testo: "…" }, riga);
+    api("GET", `/api/anteprima/${m.id}/`).then(({ sequenza }) => {
+      inOnda.textContent = sequenza.length ? `${sequenza.length} contenut${sequenza.length === 1 ? "o" : "i"}` : "Niente";
+      if (!sequenza.length) {
+        inOnda.className = "attenzione";
+        inOnda.title = "Nessuna pubblicazione valida adesso per questo schermo o per i suoi gruppi.";
+      }
+    }).catch(() => (inOnda.textContent = "?"));
+    const cellaGruppi = crea("td", {}, riga);
+    const gruppiScelti = new Set(m.gruppi);
+    for (const g of gruppi) {
+      const l = crea("label", { classe: "spunta" }, cellaGruppi);
+      crea("input", {
+        type: "checkbox", checked: gruppiScelti.has(g.id), disabled: !gestione,
+        onchange: (e) => {
+          e.target.checked ? gruppiScelti.add(g.id) : gruppiScelti.delete(g.id);
+          salva({ gruppi: [...gruppiScelti] });
+        },
+      }, l);
+      l.append(` ${g.nome}`);
+    }
+    if (!gruppi.length) cellaGruppi.textContent = "—";
     for (const [controllo, chiave] of [[orientamento, "orientamento"], [rotazione, "rotazione"], [sceltaLayout, "layout"]]) {
       controllo.disabled = !gestione;
       controllo.addEventListener("change", () => {

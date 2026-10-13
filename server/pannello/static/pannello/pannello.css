@@ -54,3 +54,4 @@ td.chiave { max-width: 360px; }
 .contenuto-scheda { border: 1px solid var(--linea); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .miniatura { aspect-ratio: 16 / 9; background: #222; color: #fff; display: flex; align-items: center; justify-content: center; border-radius: 6px; overflow: hidden; }
 .miniatura img { width: 100%; height: 100%; object-fit: contain; }
+td.attenzione { color: var(--errore); font-weight: 600; cursor: help; }
