@@ -15,6 +15,8 @@ class Tipo(models.TextChoices):
 
 def percorso_file(contenuto, nome_originale):
     # Un percorso per cliente, e un nome che non dipende da quello caricato.
+    if contenuto.cliente_id is None:
+        raise ValueError("Il contenuto non ha ancora un cliente: il file finirebbe fuori dalla sua cartella.")
     return f"clienti/{contenuto.cliente_id}/contenuti/{contenuto.id}{Path(nome_originale).suffix.lower()}"
 
 

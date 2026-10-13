@@ -88,7 +88,7 @@ class Command(BaseCommand):
             contenuti = []
             for nome, alto, basso in SLIDE:
                 dati = png_sfumato(960, 540, alto, basso)
-                contenuto = Contenuto(nome=nome, tipo="immagine", mime="image/png", dimensione=len(dati), durata=6,
+                contenuto = Contenuto(cliente=cliente, nome=nome, tipo="immagine", mime="image/png", dimensione=len(dati), durata=6,
                                       sha256=hashlib.sha256(dati).hexdigest(), caricato_da="demo")
                 contenuto.file.save(f"{nome}.png", ContentFile(dati), save=False)
                 contenuto.save()
