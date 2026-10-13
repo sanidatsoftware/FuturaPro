@@ -17,3 +17,4 @@ button.avanti { flex: 1 1 100%; font-size: 28px; font-weight: 700; padding: 18px
 button.pericolo { color: #d93025; border-color: #d93025; }
 #chiave, #accesso { max-width: 520px; margin: 32px auto; padding: 0 16px; }
 #chiave input { width: 100%; font-size: 18px; padding: 12px; margin: 8px 0 12px; }
+select { font: inherit; font-size: 18px; padding: 10px; margin-top: 12px; min-width: 260px; }

@@ -9,7 +9,8 @@
     var trovato = new RegExp("[?#&]" + nome + "=([^&]*)").exec(testo);
     return trovato ? decodeURIComponent(trovato[1]) : null;
   }
-  var cliente = parametro("cliente", location.search);
+  // Gli utenti di piattaforma scelgono il cliente: dall'indirizzo, o dalla scelta ricordata.
+  var cliente = parametro("cliente", location.search) || memoria("futurapro.banco.cliente");
   var modoChiave = parametro("modo", location.search) === "chiave";
   var contenitore = document.getElementById("reparti");
   var statoEl = document.getElementById("stato");
@@ -92,13 +93,61 @@
         segnala(false, "Non collegato");
         return;
       }
-      if (codice !== 200) {
+      if (codice === 400 && modo === "sessione") {
+        // Utente di piattaforma senza cliente scelto: si chiede quale.
+        scegliCliente();
+        return;
+      }
+      if (codice === 404 && cliente) {
+        memoria("futurapro.banco.cliente", null);
+        cliente = null;
+        scegliCliente();
+        return;
+      }
+      if (codice === 0) {
         segnala(false, "Server non raggiungibile");
+        return;
+      }
+      if (codice !== 200) {
+        segnala(false, "Errore " + codice);
         return;
       }
       segnala(true, "Collegato");
       var reparti = modo === "chiave" ? [corpo] : corpo.results.filter(function (r) { return r.attivo; });
       reparti.forEach(mostra);
+    });
+  }
+
+  var sceltaMostrata = false;
+  function scegliCliente() {
+    segnala(false, "Scegli il cliente");
+    if (sceltaMostrata) return;
+    sceltaMostrata = true;
+    richiesta("GET", "/api/piattaforma/clienti/", null, intestazioni(), function (codice, corpo) {
+      if (codice !== 200 || !corpo) return;
+      var box = document.createElement("section");
+      box.className = "scheda";
+      var titolo = document.createElement("h2");
+      titolo.textContent = "Di quale cliente?";
+      var scelta = document.createElement("select");
+      var vuota = document.createElement("option");
+      vuota.textContent = "— scegli —";
+      vuota.value = "";
+      scelta.appendChild(vuota);
+      corpo.results.forEach(function (c) {
+        var o = document.createElement("option");
+        o.value = c.id;
+        o.textContent = c.nome;
+        scelta.appendChild(o);
+      });
+      scelta.onchange = function () {
+        if (!scelta.value) return;
+        memoria("futurapro.banco.cliente", scelta.value);
+        location.reload();
+      };
+      box.appendChild(titolo);
+      box.appendChild(scelta);
+      contenitore.appendChild(box);
     });
   }
 
