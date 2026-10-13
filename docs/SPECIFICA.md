@@ -34,6 +34,12 @@ progetto: le scelte qui sotto valgono finché non le cambiamo esplicitamente.
 Dimensionamento: centinaia di schermi per installazione. Basta un server
 (PostgreSQL + Redis + coturn), senza Kubernetes.
 
+**Server centrale (riferimento).** Ubuntu Server 24.04 LTS; 4 vCPU, 8 GB RAM; un disco di
+sistema (~40 GB) e uno separato per i contenuti (200–500 GB, espandibile); IP pubblico statico e
+nome DNS per il certificato HTTPS. Porte: TCP 443 (pannello e player), TCP 80 (solo rinnovo del
+certificato), UDP/TCP 3478 e un intervallo UDP ristretto (es. 49160–49200) per il relay della
+teleassistenza.
+
 ## 3. Ruoli e permessi
 
 | Ruolo | Livello | Può |
@@ -82,8 +88,9 @@ ogni richiesta.
 
 **Regole di contorno.** Identificativi UUID. Una risorsa di un altro cliente risponde **404**,
 mai 403. I riferimenti nei dati in ingresso (sede di un monitor, monitor di una sessione…)
-si validano solo contro il cliente corrente. I file saranno salvati per cliente e serviti
-con link firmati a scadenza.
+si validano solo contro il cliente corrente. I file sono salvati per cliente
+(`clienti/<cliente>/contenuti/<uuid>.<ext>`) e non hanno indirizzi pubblici: li servono solo
+viste che controllano prima il cliente (in produzione nginx con `X-Accel-Redirect`).
 
 **Fuori dalla RLS, di proposito:** `utenti_utente` (il login la legge prima di sapere chi è
 l'utente; le viste la filtrano), `dispositivi_richiestaabbinamento` (un player non ancora
@@ -91,9 +98,51 @@ abbinato non ha cliente), `dispositivi_credenzialedispositivo` (dice a quale cli
 un player: va letta per prima). Contengono solo impronte, mai segreti.
 
 **Test.** `server/core/tests/test_isolamento.py` prova ogni barriera da sola: togliendo l'una o
-l'altra, falliscono test diversi. Un test che fallisce blocca il rilascio.
+l'altra, falliscono test diversi. Un altro test elenca le tabelle con `cliente_id` prive di
+Row-Level Security: una tabella nuova dimenticata lo fa fallire. Un test che fallisce blocca
+il rilascio.
 
-## 5. Player
+## 5. Contenuti e palinsesto
+
+**Libreria.** Ogni cliente ha la sua, condivisa fra i suoi utenti: immagini (JPEG, PNG, GIF,
+WebP), video (MP4, MOV, WebM) e pagine web. Il formato si riconosce dai primi byte del file,
+non dal nome. Al caricamento si calcolano dimensione e SHA-256 e si controlla lo spazio
+concesso al cliente. Durata: per le immagini 10 secondi se non indicata, i video vanno fino
+alla fine, le pagine web la richiedono.
+
+**Playlist.** Sequenza ordinata di contenuti, ognuno con una durata facoltativa che prevale
+su quella del contenuto. Il pannello manda sempre la sequenza intera (trascina e rilascia).
+
+**Pubblicazione.** Una playlist su monitor e/o gruppi, con regole facoltative: date di inizio
+e fine, giorni della settimana, fascia oraria, priorità.
+
+**«Pubblica».** Il percorso semplice (`POST /api/pubblica/`): contenuti scelti + monitor scelti
+→ il server crea la playlist e la pubblicazione in un passo. Calendario e priorità restano
+facoltativi.
+
+**Regole del palinsesto** (`server/contenuti/palinsesto.py`; il player le applica identiche):
+
+1. una pubblicazione vale se è attiva, la data è fra inizio e fine (comprese), il giorno è fra
+   quelli scelti (o non ne è scelto nessuno) e l'ora è in [inizio, fine); una fascia con fine
+   prima dell'inizio scavalca la mezzanotte;
+2. fra quelle valide vince la priorità più alta;
+3. a pari priorità le playlist si accodano in ordine di creazione: pubblicare altro sugli
+   stessi monitor lo aggiunge alla rotazione. Una pubblicazione «urgente» con priorità più
+   alta sostituisce temporaneamente tutto il resto.
+
+Date e orari sono nel fuso del server (`Europe/Rome`), indicato nel manifest.
+
+**Utenti limitati a certe sedi.** Pubblicano solo sui singoli monitor delle loro sedi, non sui
+gruppi (che possono comprendere altre sedi); vedono e modificano solo le pubblicazioni di
+quei monitor.
+
+**Manifest del player** (`GET /api/player/palinsesto/`). Contiene tutte le pubblicazioni del
+monitor con le loro regole, le playlist e l'elenco dei file con SHA-256 e dimensione. Il player
+valuta le regole da solo, quindi continua a seguire il palinsesto anche offline. La `versione`
+dipende solo dal contenuto: con `If-None-Match` il server risponde 304 se non è cambiato
+nulla. I file si scaricano da `/api/player/file/<id>/`, solo se pubblicati su quel monitor.
+
+## 6. Player
 
 **Abbinamento** (già implementato):
 
@@ -110,7 +159,7 @@ Il token non viaggia mai più, salvo come intestazione su TLS. Nella fase di tel
 l'autenticazione passa a **certificati client** emessi dalla CA della piattaforma (mTLS); la
 chiave privata nasce nel dispositivo e non lo lascia.
 
-**Funzionamento** (da fare): manifest della programmazione con hash dei file, download
+**Funzionamento** (da fare lato player; il manifest è già pronto, §5): download
 differenziale e verificato, cache locale, riproduzione offline, `heartbeat` periodico (già
 presente) con versione, spazio, temperatura e screenshot su richiesta, comandi in tempo reale via
 WebSocket, prova di trasmissione.
@@ -126,7 +175,7 @@ decodifica hardware.
 la riavvia se si blocca, gestisce aggiornamenti e teleassistenza; funziona anche senza utenti
 collegati.
 
-## 6. Teleassistenza
+## 7. Teleassistenza
 
 **Chi.** Solo Administrator Assoluto e Tecnici Teleassistenza, su tutti i clienti. Accesso al
 pannello con 2FA obbligatoria (WebAuthn, in alternativa TOTP). L'AdminCliente vede il registro,
@@ -163,7 +212,7 @@ certificato legato a monitor e cliente.
 impedirgli tecnicamente di alterare il proprio database. L'isolamento lì è comunque irrilevante
 (c'è un solo cliente); la licenza firmata e il contratto regolano l'accesso di Sanidat.
 
-## 7. Hardware Android — cosa verificare
+## 8. Hardware Android — cosa verificare
 
 - Android 11 o superiore (meglio 12–14).
 - Decodifica hardware 4K H.264/H.265; almeno 32 GB eMMC; Ethernet.
@@ -173,7 +222,7 @@ impedirgli tecnicamente di alterare il proprio database. L'isolamento lì è com
 - Piattaforme consigliate: Rockchip RK3566/RK3568/RK3588.
 - Attenzione: i monitor professionali Samsung (Tizen) e LG (webOS) **non sono Android**.
 
-## 8. API disponibili
+## 9. API disponibili
 
 Autenticazione del pannello: sessione Django (`/api/sessione/login/`). Gli utenti di
 piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
@@ -191,16 +240,23 @@ piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
 | `GET /api/audit/` | Assoluto, AdminCliente |
 | `GET /api/teleassistenza/sessioni/` | Assoluto, Tecnico, AdminCliente |
 | `POST /api/teleassistenza/sessioni/`, `POST …/{id}/chiudi/` | Assoluto, Tecnico |
+| `/api/contenuti/` (upload multipart), `GET /api/contenuti/{id}/file/` | lettura: tutti — scrittura: Assoluto, AdminCliente, UserCliente |
+| `/api/playlist/`, `/api/pubblicazioni/` | lettura: tutti — scrittura: Assoluto, AdminCliente, UserCliente |
+| `POST /api/pubblica/` | Assoluto, AdminCliente, UserCliente |
+| `GET /api/anteprima/{monitor}/?quando=` | tutti |
 | `POST /api/player/abbinamento/`, `GET /api/player/stato/`, `POST /api/player/heartbeat/` | player |
+| `GET /api/player/palinsesto/`, `GET /api/player/file/{id}/` | player |
 
-## 9. Roadmap
+## 10. Roadmap
 
 1. **MVP (3–4 mesi)**
    - [x] Clienti, abilitazioni, ruoli, isolamento a due barriere, audit immutabile
    - [x] Sedi, gruppi, monitor, abbinamento con codice, heartbeat
    - [x] Registro e permessi della teleassistenza
-   - [ ] Libreria contenuti (upload, anteprime, quote), playlist, programmazione a calendario
-   - [ ] Flusso *carica → scegli monitor → Pubblica*
+   - [x] Libreria contenuti (upload, formato verificato, quote), playlist, programmazione a calendario
+   - [x] Flusso *carica → scegli monitor → Pubblica*, anteprima, manifest e download per il player
+   - [ ] Miniature dei contenuti e durata dei video letta dal file
+   - [ ] Notifica immediata ai player via WebSocket (oggi il player interroga il manifest)
    - [ ] Pannello web React con selettore azienda
    - [ ] Player Android e Windows con cache offline
    - [ ] 2FA, Docker Compose, CI

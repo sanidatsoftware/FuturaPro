@@ -134,6 +134,28 @@ def token_dalla_richiesta(request) -> str | None:
     return None
 
 
+def credenziale_dalla_richiesta(request) -> CredenzialeDispositivo:
+    """La credenziale valida del player che fa la richiesta; altrimenti 401."""
+    token = token_dalla_richiesta(request)
+    credenziale = None
+    if token is not None:
+        credenziale = CredenzialeDispositivo.objects.filter(impronta_token=impronta(token), revocata=False).first()
+    if credenziale is None:
+        raise exceptions.AuthenticationFailed()
+    return credenziale
+
+
+class VistaPlayer(APIView):
+    """Base delle viste chiamate dai player: si autenticano da sé con il token del dispositivo."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get_authenticate_header(self, request):
+        # Senza schema DRF risponderebbe 403; il player deve capire che è un problema di credenziali.
+        return "Device"
+
+
 class ThrottleAbbinamento(AnonRateThrottle):
     scope = "abbinamento"
 
@@ -163,11 +185,8 @@ class RichiestaAbbinamentoView(APIView):
         return Response({"codice": richiesta.codice, "scade": richiesta.scade}, status=status.HTTP_201_CREATED)
 
 
-class StatoPlayerView(APIView):
+class StatoPlayerView(VistaPlayer):
     """Il player chiede a che punto è: in attesa di abbinamento, oppure abbinato e a chi."""
-
-    authentication_classes = []
-    permission_classes = [AllowAny]
 
     def get(self, request):
         token = token_dalla_richiesta(request)
@@ -185,19 +204,11 @@ class StatoPlayerView(APIView):
         raise exceptions.AuthenticationFailed()
 
 
-class HeartbeatView(APIView):
+class HeartbeatView(VistaPlayer):
     """Segnale periodico del player: aggiorna l'ultimo contatto e la versione."""
 
-    authentication_classes = []
-    permission_classes = [AllowAny]
-
     def post(self, request):
-        token = token_dalla_richiesta(request)
-        credenziale = None
-        if token is not None:
-            credenziale = CredenzialeDispositivo.objects.filter(impronta_token=impronta(token), revocata=False).first()
-        if credenziale is None:
-            raise exceptions.AuthenticationFailed()
+        credenziale = credenziale_dalla_richiesta(request)
         with contesto_cliente(credenziale.cliente_id):
             Monitor.objects.filter(id=credenziale.monitor_id).update(
                 ultimo_contatto=timezone.now(),

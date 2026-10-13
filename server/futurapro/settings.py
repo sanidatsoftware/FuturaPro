@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "dispositivi",
     "audit",
     "teleassistenza",
+    "contenuti",
 ]
 
 MIDDLEWARE = [
@@ -100,6 +101,12 @@ LANGUAGE_CODE = "it"
 TIME_ZONE = "Europe/Rome"
 USE_I18N = True
 USE_TZ = True
+
+# I file dei clienti non sono mai serviti direttamente: passano dalle viste che
+# controllano il cliente (contenuti.api), quindi niente MEDIA_URL pubblico.
+MEDIA_ROOT = Path(_env("MEDIA_ROOT", BASE_DIR / "media"))
+FUTURAPRO_MAX_UPLOAD_MB = int(_env("MAX_UPLOAD_MB", "2048"))
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"

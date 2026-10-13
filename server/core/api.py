@@ -25,6 +25,8 @@ TUTTI = frozenset(Ruolo)
 GESTIONE = frozenset({Ruolo.ADMIN_ASSOLUTO, Ruolo.ADMIN_CLIENTE})
 SOLO_ASSOLUTO = frozenset({Ruolo.ADMIN_ASSOLUTO})
 TELEASSISTENZA = frozenset({Ruolo.ADMIN_ASSOLUTO, Ruolo.TECNICO})
+# Chi lavora sui contenuti: tutti tranne il tecnico, che li può solo vedere.
+CONTENUTI = frozenset({Ruolo.ADMIN_ASSOLUTO, Ruolo.ADMIN_CLIENTE, Ruolo.USER_CLIENTE})
 
 
 def _cliente_scelto(request) -> UUID:

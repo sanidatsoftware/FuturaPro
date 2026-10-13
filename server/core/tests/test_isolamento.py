@@ -79,6 +79,21 @@ class DatabaseTest(Base):
 
         self.assertEqual(ruolo_database_soggetto_a_rls(None, databases=["default"]), [])
 
+    def test_ogni_tabella_con_cliente_e_protetta(self):
+        # Una tabella nuova dimenticata senza proteggi() fa fallire questo test.
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT c.relname FROM pg_class c
+                JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'cliente_id' AND NOT a.attisdropped
+                WHERE c.relkind = 'r' AND c.relnamespace = 'public'::regnamespace
+                  AND NOT (c.relrowsecurity AND c.relforcerowsecurity)
+                """
+            )
+            scoperte = {riga[0] for riga in cursor.fetchall()}
+        # Le uniche eccezioni volute: vedi docs/SPECIFICA.md, «Fuori dalla RLS».
+        self.assertEqual(scoperte, {"dispositivi_credenzialedispositivo", "utenti_utente"})
+
     def test_senza_contesto_il_database_non_restituisce_nulla(self):
         self.assertEqual(self.conta("dispositivi_monitor"), 0)
         self.assertEqual(self.conta("clienti_cliente"), 0)
@@ -279,7 +294,7 @@ class AbbinamentoTest(Base):
 
     def test_token_sconosciuto(self):
         r = self.client.post("/api/player/heartbeat/", HTTP_AUTHORIZATION=f"Device {secrets.token_urlsafe(32)}")
-        self.assertIn(r.status_code, (401, 403))
+        self.assertEqual(r.status_code, 401)
 
     def test_limite_monitor(self):
         with contesto_cliente(self.a.id):
