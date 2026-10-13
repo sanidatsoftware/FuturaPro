@@ -14,6 +14,7 @@ from contenuti.api import (
     PubblicazioniViewSet,
 )
 from dispositivi.api import GruppiViewSet, HeartbeatView, MonitorViewSet, RichiestaAbbinamentoView, StatoPlayerView
+from eliminacode import views as eliminacode
 from eliminacode.api import EmettiPlayerView, PulsanteView, RepartiViewSet
 from layout.api import CercaLocalitaView, DatiZonaPlayerView, DatiZonaView, LayoutViewSet
 from player import views as player
@@ -58,5 +59,6 @@ urlpatterns = [
     path("api/", include(router.urls)),
     path("api/sessione/", include("rest_framework.urls")),
     path("player/", player.schermo, name="player"),
+    path("banco/", eliminacode.banco, name="banco"),
     path("anteprima/<uuid:monitor_id>/", player.anteprima, name="anteprima-schermo"),
 ]

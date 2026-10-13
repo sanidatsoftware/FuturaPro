@@ -33,29 +33,32 @@ class CodaTest(ConReparti):
 
     def test_biglietti_e_chiamate(self):
         numeri = [self.op(servizi.emetti, self.salumeria).ultimo_emesso for _ in range(3)]
-        self.assertEqual(numeri, [1, 2, 3])
+        # I numeri partono da 0.
+        self.assertEqual(numeri, [0, 1, 2])
         reparto = self.op(servizi.avanti, self.salumeria)
-        self.assertEqual((reparto.numero, reparto.in_coda), (1, 2))
+        self.assertEqual((reparto.numero, reparto.in_coda), (0, 2))
         reparto = self.op(servizi.indietro, self.salumeria)
-        self.assertEqual((reparto.numero, reparto.in_coda), (0, 3))
+        self.assertEqual((reparto.numero, reparto.in_coda), (None, 3))
 
-    def test_dopo_il_99_si_riparte_da_1_e_la_coda_resta_giusta(self):
+    def test_dopo_il_99_si_riparte_da_0_e_la_coda_resta_giusta(self):
         with contesto_cliente(self.a.id):
             Reparto.objects.filter(id=self.salumeria.id).update(
-                chiamati=98, emessi=98, giornata=timezone.localdate()
+                chiamati=99, emessi=99, giornata=timezone.localdate()
             )
+        self.assertEqual(self.stato(self.salumeria).numero, 98)
         self.assertEqual(self.op(servizi.emetti, self.salumeria).ultimo_emesso, 99)
         reparto = self.op(servizi.emetti, self.salumeria)
-        self.assertEqual((reparto.ultimo_emesso, reparto.in_coda), (1, 2))
+        self.assertEqual((reparto.ultimo_emesso, reparto.in_coda), (0, 2))
         self.op(servizi.avanti, self.salumeria)
         reparto = self.op(servizi.avanti, self.salumeria)
-        self.assertEqual((reparto.numero, reparto.in_coda), (1, 0))
+        self.assertEqual((reparto.numero, reparto.in_coda), (0, 0))
 
     def test_avanti_senza_totem_e_primo_biglietto_dopo(self):
         for _ in range(5):
             self.op(servizi.avanti, self.salumeria)
         self.assertEqual(self.stato(self.salumeria).in_coda, 0)
-        self.assertEqual(self.op(servizi.emetti, self.salumeria).ultimo_emesso, 6)
+        self.assertEqual(self.stato(self.salumeria).numero, 4)
+        self.assertEqual(self.op(servizi.emetti, self.salumeria).ultimo_emesso, 5)
 
     def test_nuovo_giorno_riparte_da_zero(self):
         with contesto_cliente(self.a.id):
@@ -63,7 +66,7 @@ class CodaTest(ConReparti):
                 chiamati=40, emessi=45, giornata=timezone.localdate() - timedelta(days=1)
             )
         reparto = self.op(servizi.emetti, self.salumeria)
-        self.assertEqual((reparto.ultimo_emesso, reparto.in_coda), (1, 1))
+        self.assertEqual((reparto.ultimo_emesso, reparto.in_coda), (0, 1))
 
     def test_imposta_mantiene_chi_e_in_coda(self):
         for _ in range(4):
@@ -74,7 +77,7 @@ class CodaTest(ConReparti):
     def test_ripeti_rinnova_la_chiamata(self):
         prima = self.op(servizi.avanti, self.salumeria).chiamato_il
         dopo = self.op(servizi.ripeti, self.salumeria)
-        self.assertEqual(dopo.numero, 1)
+        self.assertEqual(dopo.numero, 0)
         self.assertGreater(dopo.chiamato_il, prima)
 
 
@@ -82,7 +85,7 @@ class BancoTest(ConReparti):
     def test_lo_user_cliente_chiama_ma_non_configura(self):
         self.come(self.user_a)
         r = self.client.post(f"/api/reparti/{self.salumeria.id}/avanti/")
-        self.assertEqual((r.status_code, r.json()["numero"]), (200, 1))
+        self.assertEqual((r.status_code, r.json()["numero"]), (200, 0))
         self.assertEqual(self.client.post("/api/reparti/", {"nome": "Pescheria", "sede": str(self.a_milano.id)}).status_code, 403)
         self.assertEqual(self.client.post(f"/api/reparti/{self.salumeria.id}/chiave/").status_code, 403)
 
@@ -102,6 +105,7 @@ class BancoTest(ConReparti):
         url = f"/api/reparti/{self.salumeria.id}/imposta/"
         self.assertEqual(self.client.post(url, {"numero": 100}).status_code, 400)
         self.assertEqual(self.client.post(url, {"numero": 27}).json()["numero"], 27)
+        self.assertEqual(self.client.post(url, {"numero": 0}).json()["numero"], 0)
 
     def test_chiave_per_pulsantiere_e_bilance(self):
         self.come(self.admin_a)
@@ -109,9 +113,9 @@ class BancoTest(ConReparti):
         self.client.logout()
         pulsante = {"HTTP_AUTHORIZATION": f"Pulsante {chiave}"}
         r = self.client.post("/api/eliminacode/pulsante/avanti/", **pulsante)
-        self.assertEqual((r.status_code, r.json()["nome"], r.json()["numero"]), (200, "Salumeria", 1))
+        self.assertEqual((r.status_code, r.json()["nome"], r.json()["numero"]), (200, "Salumeria", 0))
         self.assertEqual(self.client.post("/api/eliminacode/pulsante/azzera/", **pulsante).status_code, 404)
-        self.assertEqual(self.stato(self.macelleria).numero, 0)
+        self.assertIsNone(self.stato(self.macelleria).numero)
 
         self.come(self.admin_a)
         self.client.delete(f"/api/reparti/{self.salumeria.id}/chiave/")
@@ -146,9 +150,9 @@ class TotemTest(ConReparti):
 
         url = f"/api/player/zone/{zona}/emetti/"
         r = self.client.post(url, {"reparto": str(self.salumeria.id)}, **dispositivo)
-        self.assertEqual((r.status_code, r.json()["numero"], r.json()["davanti"]), (201, 1, 0))
+        self.assertEqual((r.status_code, r.json()["numero"], r.json()["davanti"]), (201, 0, 0))
         r = self.client.post(url, {"reparto": str(self.salumeria.id)}, **dispositivo)
-        self.assertEqual((r.json()["numero"], r.json()["davanti"]), (2, 1))
+        self.assertEqual((r.json()["numero"], r.json()["davanti"]), (1, 1))
         # Un reparto di un'altra sede non si prende da questo totem.
         self.assertEqual(self.client.post(url, {"reparto": str(self.roma.id)}, **dispositivo).status_code, 400)
 
@@ -182,3 +186,41 @@ class TotemTest(ConReparti):
         for modello in ("supermercato_ora_meteo_reparti", "supermercato_reparti", "totem_eliminacode"):
             r = self.client.post("/api/layout/da-modello/", {"modello": modello, **CATANIA, "messaggi": ["Benvenuti"]}, format="json")
             self.assertEqual(r.status_code, 201, (modello, r.content))
+
+
+class PersonalizzazioneTest(ConReparti):
+    def zona(self, tipo, **configurazione):
+        return {"tipo": tipo, "x": 0, "y": 0, "larghezza": 100, "altezza": 100, "configurazione": configurazione}
+
+    def test_aspetto_dei_reparti_per_zona(self):
+        self.come(self.admin_a)
+        personalizza = {str(self.salumeria.id): {"etichetta": "Salumi e formaggi", "colore": "#2e7d32", "colore_testo": "#000000"}}
+        r = self.client.post(
+            "/api/layout/",
+            {"nome": "Totem", "zone": [self.zona("prendi_numero", personalizza=personalizza, colonne=1,
+                                                  testo_coda="{n} in attesa", arrotondamento=0, titolo="")]},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        configurazione = r.json()["zone"][0]["configurazione"]
+        self.assertEqual(configurazione["personalizza"], personalizza)
+        self.assertEqual((configurazione["colonne"], configurazione["titolo"]), (1, ""))
+
+    def test_personalizzazioni_non_valide(self):
+        self.come(self.admin_a)
+        with contesto_cliente(self.b.id):
+            altro = Reparto.objects.create(sede=self.b_sede, nome="Altrui")
+        for configurazione in (
+            {"personalizza": {str(altro.id): {"colore": "#000000"}}},
+            {"personalizza": {str(self.salumeria.id): {"colore": "verde"}}},
+            {"disposizione": "a spirale"},
+            {"colonne": 9},
+        ):
+            tipo = "prendi_numero" if "colonne" in configurazione else "coda"
+            r = self.client.post("/api/layout/", {"nome": "X", "zone": [self.zona(tipo, **configurazione)]}, format="json")
+            self.assertEqual(r.status_code, 400, configurazione)
+
+    def test_colore_del_testo_del_reparto(self):
+        self.come(self.admin_a)
+        r = self.client.patch(f"/api/reparti/{self.salumeria.id}/", {"colore_testo": "#1d1d1d"})
+        self.assertEqual(r.json()["colore_testo"], "#1d1d1d")

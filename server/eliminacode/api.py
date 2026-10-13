@@ -22,6 +22,7 @@ AZIONI_BANCO = {"avanti", "indietro", "ripeti", "azzera", "imposta", "emetti"}
 class RepartoSerializer(serializers.ModelSerializer):
     sede = RiferimentoCliente(Sede)
     colore = serializers.RegexField(r"^#[0-9a-fA-F]{6}$", required=False)
+    colore_testo = serializers.RegexField(r"^#[0-9a-fA-F]{6}$", required=False)
     massimo = serializers.IntegerField(min_value=9, max_value=999, required=False)
     numero = serializers.IntegerField(read_only=True)
     in_coda = serializers.IntegerField(read_only=True)
@@ -31,7 +32,7 @@ class RepartoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Reparto
         fields = [
-            "id", "sede", "nome", "colore", "ordine", "massimo", "attivo", "azzeramento_automatico",
+            "id", "sede", "nome", "colore", "colore_testo", "ordine", "massimo", "attivo", "azzeramento_automatico",
             "numero", "in_coda", "ultimo_emesso", "chiamato_il", "ha_chiave",
         ]
         read_only_fields = ["chiamato_il"]
@@ -199,7 +200,8 @@ class EmettiPlayerView(VistaPlayer):
             except servizi.RepartoChiuso:
                 raise exceptions.ValidationError({"reparto": "Il reparto è chiuso."})
             return Response(
-                {"reparto": reparto.nome, "colore": reparto.colore, "numero": reparto.ultimo_emesso,
+                {"reparto_id": str(reparto.id), "reparto": reparto.nome, "colore": reparto.colore,
+                 "colore_testo": reparto.colore_testo, "numero": reparto.ultimo_emesso,
                  "davanti": reparto.in_coda - 1, "sede": monitor.sede.nome},
                 status=status.HTTP_201_CREATED,
             )

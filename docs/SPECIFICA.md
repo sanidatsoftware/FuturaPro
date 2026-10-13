@@ -180,7 +180,64 @@ Open-Meteo (senza chiave, aggiornato ogni 15 minuti); notizie dai feed indicati,
 possono puntare a indirizzi non pubblici, nemmeno attraverso un redirect: un AdminCliente non può
 usarli per sondare la rete del server.
 
-## 7. Player
+## 7. Eliminacode
+
+FuturaPro gestisce le code dei banchi (salumeria, macelleria, gastronomia…) e le mostra sugli
+stessi schermi delle offerte. Sostituisce il sistema attuale (server WebSocket PHP, file di
+testo, script Python per i pulsanti, pagine per le bilance DIGI, totem con stampante Epson).
+
+**Reparti.** Per sede: nome, colore di fondo e del testo, ordine, ultimo numero (99). Ogni
+reparto conta, nella giornata, i biglietti emessi e le chiamate. I numeri vanno **da 0 a 99** e
+poi ripartono da 0; siccome i contatori non girano, «clienti in coda» (emessi − chiamati) resta
+giusto anche dopo il 99. Al primo uso di un nuovo giorno la coda riparte (disattivabile).
+Ogni operazione blocca la riga del reparto: due banchi o due totem che premono insieme non
+ottengono mai lo stesso numero (verificato con 40 emissioni in parallelo).
+
+**Banco** (`/banco/`, su tablet, PC o browser della bilancia): avanti, indietro, ripeti,
+imposta numero, azzera. Le chiamate le fa anche lo UserCliente; configurare i reparti è della
+gestione. Il banco funziona con l'accesso al pannello oppure con la **chiave del reparto**.
+
+**Pulsantiere, bilance, script.** Una chiave per reparto, generata nel pannello (se ne conserva
+l'impronta, si revoca in ogni momento), vale solo per avanti / indietro / ripeti di quel reparto:
+
+    curl -X POST -H "Authorization: Pulsante <chiave>" https://server/api/eliminacode/pulsante/avanti/
+
+**Zone del layout.**
+
+| Tipo | Configurazione |
+|---|---|
+| `coda` | `reparti` (vuoto = quelli della sede del monitor), `personalizza`, `disposizione` (automatica, colonna, riga, griglia), `testo_coda` (`{n}` = clienti in coda; vuoto = nascosto), `bordo`, `annuncio` (nessuno, suono, voce) |
+| `prendi_numero` | `reparti`, `personalizza`, `titolo` (vuoto = senza barra), `colore`, `sfondo`, `sfondo_pulsanti`, `colonne` (0 = automatico), `arrotondamento`, `testo_coda`, `stampa` (nessuna, browser, epson), `stampante`, `intestazione`, `messaggio` |
+
+`personalizza` cambia, solo in quella zona, etichetta e colori di singoli reparti: la stessa
+salumeria può essere «Salumi e formaggi» in verde sul totem e un riquadro rosa sul display.
+Con `reparti` vuoto un solo layout serve tutti i negozi: ognuno mostra i suoi banchi.
+
+**Chiamata sui display.** Il riquadro lampeggia e, se la zona lo prevede, suona il «din-don»
+(sintetizzato, nessun file) e la voce di sistema dice «Salumeria, numero 27». La voce italiana
+c'è su Windows e Android; i file audio registrati del sistema attuale si potranno caricare come
+alternativa. Conviene far annunciare un solo monitor per negozio.
+
+**Totem.** Il cliente tocca il reparto, il server assegna il numero, lo schermo lo mostra con
+le persone che lo precedono e il player stampa:
+
+- `browser`: stampa di sistema; con Chrome avviato con `--kiosk --kiosk-printing` esce senza
+  finestre sulla stampante predefinita (biglietto da 80 mm);
+- `epson`: stampante di rete Epson TM con ePOS-Print (la stessa interfaccia del sistema
+  attuale), all'indirizzo indicato. Se la pagina è in HTTPS anche la stampante va usata in HTTPS
+  (il suo certificato si accetta una volta sul totem). Se la stampante non risponde il totem lo
+  dice e mostra comunque il numero.
+
+Le app native stamperanno direttamente sulla stampante (USB o rete).
+
+**Modelli pronti** che ricalcano gli schermi dei supermercati: offerte con ora, meteo e reparti;
+offerte e reparti; totem eliminacode.
+
+**Dal sistema attuale.** Due problemi da non riportare: il server WebSocket accetta comandi da
+chiunque sia in rete (avanti, azzera, imposta), e `php/salvadati.php` scrive un file il cui nome
+arriva dalla richiesta, quindi chi è in rete può scrivere file arbitrari sul server.
+
+## 8. Player
 
 **Motore di rendering** (`server/player/static/player/`, JavaScript senza dipendenze né
 compilazione). Disegna il layout del manifest e fa girare le zone: slide con transizioni e loro
@@ -229,7 +286,7 @@ decodifica hardware.
 la riavvia se si blocca, gestisce aggiornamenti e teleassistenza; funziona anche senza utenti
 collegati.
 
-## 8. Teleassistenza
+## 9. Teleassistenza
 
 **Chi.** Solo Administrator Assoluto e Tecnici Teleassistenza, su tutti i clienti. Accesso al
 pannello con 2FA obbligatoria (WebAuthn, in alternativa TOTP). L'AdminCliente vede il registro,
@@ -266,7 +323,7 @@ certificato legato a monitor e cliente.
 impedirgli tecnicamente di alterare il proprio database. L'isolamento lì è comunque irrilevante
 (c'è un solo cliente); la licenza firmata e il contratto regolano l'accesso di Sanidat.
 
-## 9. Hardware Android — cosa verificare
+## 10. Hardware Android — cosa verificare
 
 - Android 11 o superiore (meglio 12–14).
 - Decodifica hardware 4K H.264/H.265; almeno 32 GB eMMC; Ethernet.
@@ -276,7 +333,7 @@ impedirgli tecnicamente di alterare il proprio database. L'isolamento lì è com
 - Piattaforme consigliate: Rockchip RK3566/RK3568/RK3588.
 - Attenzione: i monitor professionali Samsung (Tizen) e LG (webOS) **non sono Android**.
 
-## 10. API disponibili
+## 11. API disponibili
 
 Autenticazione del pannello: sessione Django (`/api/sessione/login/`). Gli utenti di
 piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
@@ -302,10 +359,14 @@ piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
 | `GET /api/zone/{id}/dati/`, `GET /api/anteprima/{monitor}/manifest/` | tutti (anteprima) |
 | `GET /api/meteo/localita/?nome=` | Assoluto, AdminCliente |
 | `POST /api/player/abbinamento/`, `GET /api/player/stato/`, `POST /api/player/heartbeat/` | player |
-| `GET /api/player/zone/{id}/dati/` | player |
+| `GET /api/player/zone/{id}/dati/`, `POST /api/player/zone/{id}/emetti/` | player |
+| `/api/reparti/` | lettura: tutti — scrittura: Assoluto, AdminCliente |
+| `POST /api/reparti/{id}/avanti/` (anche `indietro`, `ripeti`, `imposta`, `azzera`, `emetti`) | Assoluto, AdminCliente, UserCliente |
+| `POST/DELETE /api/reparti/{id}/chiave/` | Assoluto, AdminCliente |
+| `GET /api/eliminacode/pulsante/`, `POST /api/eliminacode/pulsante/{avanti,indietro,ripeti}/` | chiave del reparto |
 | `GET /api/player/palinsesto/`, `GET /api/player/file/{id}/` | player |
 
-## 11. Roadmap
+## 12. Roadmap
 
 1. **MVP (3–4 mesi)**
    - [x] Clienti, abilitazioni, ruoli, isolamento a due barriere, audit immutabile
@@ -317,6 +378,8 @@ piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
    - [ ] Notifica immediata ai player via WebSocket (oggi il player interroga il manifest)
    - [x] Layout grafici per cliente: zone, orientamento e rotazione, meteo, notizie, modelli pronti
    - [x] Motore di rendering e player nel browser (kiosk), anteprima grafica
+   - [x] Eliminacode: reparti, banco, chiavi per pulsantiere e bilance, display, totem con stampa
+   - [ ] Eliminacode: file audio propri, statistiche di attesa, coda seguita dal telefono (QR)
    - [ ] Pannello web React con selettore azienda e editor visuale dei layout
    - [ ] Player Android e Windows con cache offline
    - [ ] 2FA, Docker Compose, CI

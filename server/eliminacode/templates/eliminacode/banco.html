@@ -1,0 +1,24 @@
+{% load static %}<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Banco · FuturaPro</title>
+  <link rel="stylesheet" href="{% static 'eliminacode/banco.css' %}">
+</head>
+<body>
+  <header>
+    <h1>Banco</h1>
+    <span id="stato" class="stato">…</span>
+  </header>
+  <main id="reparti"></main>
+  <section id="chiave" hidden>
+    <h2>Collega questo banco con una chiave</h2>
+    <p>La chiave si genera nel pannello, nel reparto: «Chiave per pulsantiere e bilance». Resta salvata su questo dispositivo.</p>
+    <input id="chiave-testo" type="password" autocomplete="off" placeholder="Incolla la chiave">
+    <button id="chiave-salva" class="primario">Collega</button>
+  </section>
+  <p id="accesso" hidden>Per usare il banco <a href="/api/sessione/login/?next=/banco/">accedi</a>, oppure <a href="?modo=chiave">collegalo con una chiave</a>.</p>
+  <script src="{% static 'eliminacode/banco.js' %}"></script>
+</body>
+</html>

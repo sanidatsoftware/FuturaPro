@@ -2,9 +2,10 @@
 
     python manage.py dati_dimostrativi --password "…"
 
-Crea il cliente «Demo», l'AdminCliente «demo_admin», la sede «Sede principale»,
-il gruppo «Tutti», i layout orizzontale e totem (predefiniti), alcune slide e
-la loro pubblicazione sul gruppo. Basta abbinare uno schermo inserendolo nel
+Crea il cliente «Demo», l'AdminCliente «demo_admin», la sede «Sede principale»
+con tre reparti, il gruppo «Tutti», i layout da supermercato (predefiniti:
+orizzontale con ora, meteo e reparti; totem eliminacode), alcune slide e la
+loro pubblicazione sul gruppo. Basta abbinare uno schermo inserendolo nel
 gruppo «Tutti» per vederlo funzionare.
 """
 
@@ -22,6 +23,7 @@ from contenuti.api import salva_elementi
 from contenuti.models import Contenuto, Playlist, Pubblicazione
 from core.contesto import contesto_cliente, contesto_piattaforma
 from dispositivi.models import GruppoMonitor
+from eliminacode.models import Reparto
 from layout.api import LayoutViewSet
 from layout.models import Layout
 from utenti.models import Ruolo, Utente
@@ -29,6 +31,7 @@ from utenti.models import Ruolo, Utente
 CATANIA = {"localita": "Catania", "latitudine": 37.50, "longitudine": 15.09}
 FEED = ["https://www.ansa.it/sito/notizie/topnews/topnews_rss.xml"]
 MESSAGGI = ["Benvenuti!", "Orari di apertura: 9:00 – 19:30"]
+REPARTI = [("Salumeria", "#e8a3a3"), ("Macelleria", "#e31b23"), ("Gastronomia", "#9b3b4a")]
 SLIDE = [
     ("Slide blu", (13, 71, 161), (66, 165, 245)),
     ("Slide verde", (27, 94, 32), (129, 199, 132)),
@@ -71,11 +74,16 @@ class Command(BaseCommand):
         with contesto_cliente(cliente.id):
             Sede.objects.create(nome="Sede principale")
             tutti = GruppoMonitor.objects.create(nome="Tutti")
-            for richiesta in (
-                {"modello": "orizzontale_informativo", "nome": "Orizzontale informativo"},
-                {"modello": "totem_verticale", "nome": "Totem"},
+            sede = Sede.objects.get()
+            for ordine, (nome, colore) in enumerate(REPARTI):
+                Reparto.objects.create(sede=sede, nome=nome, colore=colore, ordine=ordine)
+            for richiesta, predefinito in (
+                ({"modello": "supermercato_ora_meteo_reparti"}, True),
+                ({"modello": "supermercato_reparti"}, False),
+                ({"modello": "totem_eliminacode"}, True),
+                ({"modello": "orizzontale_informativo"}, False),
             ):
-                self._layout(admin, {**richiesta, **CATANIA, "feed": FEED, "messaggi": MESSAGGI})
+                self._layout(admin, {**richiesta, **CATANIA, "feed": FEED, "messaggi": MESSAGGI}, predefinito)
 
             contenuti = []
             for nome, alto, basso in SLIDE:
@@ -92,7 +100,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(f"Cliente «Demo» creato. Accesso: demo_admin / {password}"))
 
-    def _layout(self, admin, richiesta):
+    def _layout(self, admin, richiesta, predefinito):
         # Si passa dall'API, così i layout dimostrativi seguono le stesse validazioni.
         richiesta_http = APIRequestFactory().post("/api/layout/da-modello/", richiesta, format="json")
         force_authenticate(richiesta_http, user=admin)
@@ -100,7 +108,7 @@ class Command(BaseCommand):
         if risposta.status_code != 201:
             raise CommandError(f"Layout non creato: {risposta.data}")
         layout = Layout.objects.get(id=risposta.data["id"])
-        layout.predefinito = True
+        layout.predefinito = predefinito
         layout.save()
         # Le slide dimostrative sono sfumature: riempire la zona rende meglio che lasciare bande nere.
         for zona in layout.zone.filter(tipo="slide"):

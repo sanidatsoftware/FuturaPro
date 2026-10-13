@@ -59,12 +59,13 @@ def azzera(reparto_id) -> Reparto:
 
 @transaction.atomic
 def imposta(reparto_id, numero: int) -> Reparto:
-    """Il banco riparte dal numero indicato, che viene chiamato; chi era in coda resta in coda."""
+    """Il banco riparte dal numero indicato (da 0 a ``massimo``), che viene chiamato; chi era in coda resta in coda."""
     reparto = _bloccato(reparto_id)
     in_coda = reparto.in_coda
-    reparto.chiamati = numero
-    reparto.emessi = numero + in_coda
-    return _salva(reparto, chiamata=numero > 0)
+    # Il totale che fa comparire proprio quel numero: lo 0 è la prima chiamata.
+    reparto.chiamati = numero + 1
+    reparto.emessi = reparto.chiamati + in_coda
+    return _salva(reparto, chiamata=True)
 
 
 @transaction.atomic

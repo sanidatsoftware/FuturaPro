@@ -118,17 +118,45 @@ class Reparti(serializers.ListField):
         return scelti
 
 
+class Aspetto(serializers.Serializer):
+    """Come appare un reparto in questa zona, se diverso dall'anagrafica del reparto."""
+
+    etichetta = serializers.CharField(max_length=40, required=False)
+    colore = serializers.RegexField(COLORE, required=False)
+    colore_testo = serializers.RegexField(COLORE, required=False)
+
+
+class Personalizza(serializers.DictField):
+    """{id del reparto: aspetto}: la stessa salumeria può essere un pulsante verde sul
+    totem e un riquadro rosa sul display."""
+
+    def __init__(self, **kwargs):
+        super().__init__(child=Aspetto(), required=False, default=dict, **kwargs)
+
+    def to_internal_value(self, dati):
+        from eliminacode.models import Reparto
+
+        valori = super().to_internal_value(dati)
+        if valori and Reparto.objects.filter(id__in=list(valori)).count() != len(valori):
+            raise serializers.ValidationError("Reparto inesistente.")
+        return {chiave: {k: v for k, v in aspetto.items()} for chiave, aspetto in valori.items()}
+
+
 ANNUNCI = ["nessuno", "suono", "voce"]
+DISPOSIZIONI = ["automatica", "colonna", "riga", "griglia"]
 
 
 class Coda(serializers.Serializer):
     """I riquadri con il numero servito in ogni reparto (i display sopra i banchi)."""
 
     reparti = Reparti()
-    mostra_in_coda = serializers.BooleanField(required=False, default=False)
+    personalizza = Personalizza()
+    disposizione = serializers.ChoiceField(DISPOSIZIONI, required=False, default="automatica")
+    # {n} diventa il numero di clienti in coda; vuoto = non mostrarlo.
+    testo_coda = serializers.CharField(max_length=60, required=False, allow_blank=True, default="")
+    bordo = serializers.BooleanField(required=False, default=True)
     # Solo un monitor per negozio dovrebbe annunciare, per non sentire l'eco.
     annuncio = serializers.ChoiceField(ANNUNCI, required=False, default="suono")
-    colore = Colore("#ffffff")
 
 
 STAMPE = ["nessuna", "browser", "epson"]
@@ -138,9 +166,15 @@ class PrendiNumero(serializers.Serializer):
     """Il totem touch: il cliente tocca il reparto e riceve il biglietto."""
 
     reparti = Reparti()
-    titolo = serializers.CharField(max_length=60, required=False, default="PRENDI QUI IL TUO NUMERO")
+    personalizza = Personalizza()
+    titolo = serializers.CharField(max_length=60, required=False, allow_blank=True, default="PRENDI QUI IL TUO NUMERO")
     colore = Colore("#ffffff")
     sfondo = Colore("#ec6a1f")
+    # Area dei pulsanti.
+    sfondo_pulsanti = Colore("#ffffff")
+    colonne = serializers.IntegerField(min_value=0, max_value=4, required=False, default=0)  # 0 = automatico
+    arrotondamento = serializers.IntegerField(min_value=0, max_value=60, required=False, default=14)
+    testo_coda = serializers.CharField(max_length=60, required=False, allow_blank=True, default="Clienti in coda: {n}")
     # browser: stampa di sistema (Chrome con --kiosk-printing stampa senza finestre);
     # epson: stampante di rete Epson TM con ePOS-Print, all'indirizzo indicato.
     stampa = serializers.ChoiceField(STAMPE, required=False, default="nessuna")

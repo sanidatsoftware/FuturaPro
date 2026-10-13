@@ -231,6 +231,7 @@ class ZonaOrologio {
   constructor(el, zona, px, motore) {
     Object.assign(this, { el, motore, config: zona.configurazione });
     el.style.color = this.config.colore;
+    el.style.background = this.config.sfondo || "transparent";
     el.style.textAlign = { sinistra: "left", centro: "center", destra: "right" }[this.config.allineamento];
     const misura = Math.min(px.altezza * (this.config.mostra_data ? 0.5 : 0.75), px.larghezza / (this.config.secondi ? 4.6 : 3));
     this.ora = crea("div", "ora", el);
@@ -283,6 +284,7 @@ class ZonaMeteo {
   constructor(el, zona, px, motore) {
     Object.assign(this, { el, zona, motore, config: zona.configurazione });
     el.style.color = this.config.colore;
+    el.style.background = this.config.sfondo || "transparent";
     const orizzontale = px.larghezza > px.altezza * 1.6;
     el.classList.add(orizzontale ? "in-riga" : "in-colonna");
     const base = orizzontale ? Math.min(px.altezza, px.larghezza / 4) : Math.min(px.larghezza / 2.4, px.altezza / 3.2);
@@ -405,6 +407,310 @@ class ZonaImmagine {
   ferma() {}
 }
 
+// --- Eliminacode -----------------------------------------------------------------
+
+const OGNI_CODA = 2000;
+
+// Il «din-don» degli eliminacode, sintetizzato: nessun file audio da distribuire.
+let audio = null;
+function dinDon() {
+  try {
+    audio = audio || new AudioContext();
+    const adesso = audio.currentTime;
+    [[784, 0], [622, 0.45]].forEach(([frequenza, ritardo]) => {
+      const oscillatore = audio.createOscillator();
+      const volume = audio.createGain();
+      oscillatore.frequency.value = frequenza;
+      volume.gain.setValueAtTime(0.0001, adesso + ritardo);
+      volume.gain.exponentialRampToValueAtTime(0.5, adesso + ritardo + 0.02);
+      volume.gain.exponentialRampToValueAtTime(0.0001, adesso + ritardo + 1.2);
+      oscillatore.connect(volume).connect(audio.destination);
+      oscillatore.start(adesso + ritardo);
+      oscillatore.stop(adesso + ritardo + 1.3);
+    });
+  } catch {
+    // Nessun audio disponibile: resta il lampeggio.
+  }
+}
+
+// «Salumeria, numero 27» con la voce italiana del sistema, se c'è (Windows e Android ne hanno una).
+function annuncia(tipo, nome, numero) {
+  if (tipo === "nessuno") return;
+  dinDon();
+  if (tipo !== "voce" || !("speechSynthesis" in window)) return;
+  const voce = speechSynthesis.getVoices().find((v) => v.lang?.toLowerCase().startsWith("it"));
+  if (!voce) return;
+  const frase = new SpeechSynthesisUtterance(`${nome}, numero ${numero}`);
+  Object.assign(frase, { voice: voce, lang: voce.lang, rate: 0.95 });
+  setTimeout(() => speechSynthesis.speak(frase), 1300);
+}
+
+// Il reparto come appare in questa zona: anagrafica più le personalizzazioni della zona.
+function aspetto(coda, config) {
+  const proprio = config.personalizza?.[coda.id] || {};
+  return {
+    ...coda,
+    nome: proprio.etichetta || coda.nome,
+    colore: proprio.colore || coda.colore,
+    colore_testo: proprio.colore_testo || coda.colore_testo || "#ffffff",
+  };
+}
+
+const mostraNumero = (numero) => (numero === null || numero === undefined ? "–" : String(numero));
+const testoCoda = (modello, n) => (modello ? modello.replace("{n}", n) : "");
+
+class ZonaCoda {
+  constructor(el, zona, px, motore) {
+    Object.assign(this, { el, zona, px, motore, config: zona.configurazione });
+    this.chiamate = new Map(); // reparto -> chiamato_il già visto
+    this.riquadri = new Map();
+  }
+
+  avvia() {
+    const aggiorna = async () => {
+      try {
+        const { code } = await this.motore.fonte.dati(this.zona.id);
+        this.mostra((code || []).map((c) => aspetto(c, this.config)));
+      } catch {
+        // Si tiene l'ultimo stato.
+      }
+    };
+    aggiorna();
+    this.timer = setInterval(aggiorna, OGNI_CODA);
+  }
+
+  mostra(code) {
+    const firma = code.map((c) => `${c.id}:${c.nome}:${c.colore}:${c.colore_testo}`).join("|");
+    if (firma !== this.firma) this.costruisci(code, firma);
+    for (const coda of code) {
+      const riquadro = this.riquadri.get(coda.id);
+      riquadro.numero.textContent = mostraNumero(coda.numero);
+      if (riquadro.coda) riquadro.coda.textContent = testoCoda(this.config.testo_coda, coda.in_coda);
+      const vista = this.chiamate.get(coda.id);
+      if (vista !== undefined && coda.chiamato_il && coda.chiamato_il !== vista) {
+        riquadro.el.classList.remove("chiamata");
+        riquadro.el.getBoundingClientRect();
+        riquadro.el.classList.add("chiamata");
+        annuncia(this.config.annuncio, coda.nome, coda.numero);
+      }
+      this.chiamate.set(coda.id, coda.chiamato_il);
+    }
+  }
+
+  // Righe e colonne: in colonna, in riga, a griglia, oppure secondo la forma della zona.
+  griglia(n) {
+    const { larghezza, altezza } = this.px;
+    switch (this.config.disposizione) {
+      case "colonna": return [1, n];
+      case "riga": return [n, 1];
+      case "griglia": {
+        const colonne = Math.ceil(Math.sqrt(n * (larghezza / altezza)));
+        return [Math.min(colonne, n), Math.ceil(n / Math.min(colonne, n))];
+      }
+      default: return altezza >= larghezza ? [1, n] : [n, 1];
+    }
+  }
+
+  costruisci(code, firma) {
+    this.firma = firma;
+    this.el.replaceChildren();
+    this.riquadri.clear();
+    const [colonne, righe] = this.griglia(Math.max(code.length, 1));
+    Object.assign(this.el.style, {
+      display: "grid",
+      gridTemplateColumns: `repeat(${colonne}, 1fr)`,
+      gridTemplateRows: `repeat(${righe}, 1fr)`,
+    });
+    const w = this.px.larghezza / colonne;
+    const h = this.px.altezza / righe;
+    for (const coda of code) {
+      const el = crea("div", "reparto", this.el);
+      Object.assign(el.style, { background: coda.colore, color: coda.colore_testo });
+      if (!this.config.bordo) el.style.border = "0";
+      const nome = crea("div", "nome", el);
+      nome.textContent = coda.nome;
+      nome.style.fontSize = `${Math.min(h * 0.17, (w / Math.max(coda.nome.length, 6)) * 1.35)}px`;
+      const numero = crea("div", "numero", el);
+      numero.style.fontSize = `${Math.min(h * 0.5, w * 0.42)}px`;
+      let codaEl = null;
+      if (this.config.testo_coda) {
+        codaEl = crea("div", "in-coda", el);
+        codaEl.style.fontSize = `${Math.min(h * 0.09, w / 14)}px`;
+      }
+      this.riquadri.set(coda.id, { el, numero, coda: codaEl });
+    }
+  }
+
+  ferma() {
+    clearInterval(this.timer);
+  }
+}
+
+// Il biglietto per la stampante Epson (ePOS-Print XML, la stessa interfaccia dell'SDK Epson).
+function xml(testo) {
+  return String(testo).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+async function stampaEpson(indirizzo, biglietto) {
+  const corpo =
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>' +
+    '<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">' +
+    '<text align="center"/>' +
+    (biglietto.intestazione ? `<text width="1" height="1" em="true">${xml(biglietto.intestazione)}&#10;</text>` : "") +
+    `<text width="2" height="2" em="true">${xml(biglietto.reparto)}&#10;</text>` +
+    `<text width="6" height="6" em="true">${xml(biglietto.numero)}&#10;</text>` +
+    `<text width="1" height="1" em="false">${xml(biglietto.davanti)}&#10;${xml(biglietto.messaggio)}&#10;${xml(biglietto.quando)}&#10;</text>` +
+    '<cut type="feed"/></epos-print></s:Body></s:Envelope>';
+  // Stesso protocollo della pagina: su HTTPS la stampante va usata in HTTPS
+  // (il suo certificato va accettato una volta sul totem).
+  const url = `${location.protocol}//${indirizzo}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
+  const controllo = new AbortController();
+  const limite = setTimeout(() => controllo.abort(), 12000);
+  try {
+    const risposta = await fetch(url, {
+      method: "POST", headers: { "Content-Type": "text/xml; charset=utf-8" }, body: corpo, signal: controllo.signal,
+    });
+    const testo = await risposta.text();
+    const esito = new DOMParser().parseFromString(testo, "text/xml").querySelector("response");
+    if (esito?.getAttribute("success") !== "true") throw new Error(esito?.getAttribute("code") || `HTTP ${risposta.status}`);
+  } finally {
+    clearTimeout(limite);
+  }
+}
+
+function stampaBrowser(biglietto) {
+  // Con Chrome avviato con --kiosk --kiosk-printing esce senza finestre sulla stampante predefinita.
+  let foglio = document.getElementById("biglietto");
+  if (!foglio) {
+    foglio = document.createElement("div");
+    foglio.id = "biglietto";
+    document.body.appendChild(foglio);
+  }
+  foglio.replaceChildren();
+  for (const [classe, testo] of [
+    ["intestazione", biglietto.intestazione], ["reparto", biglietto.reparto], ["numero", biglietto.numero],
+    ["riga", biglietto.davanti], ["riga", biglietto.messaggio], ["riga", biglietto.quando],
+  ]) {
+    if (testo !== "" && testo !== null && testo !== undefined) crea("div", classe, foglio).textContent = testo;
+  }
+  window.print();
+}
+
+class ZonaPrendiNumero {
+  constructor(el, zona, px, motore) {
+    Object.assign(this, { el, zona, px, motore, config: zona.configurazione });
+    el.style.background = this.config.sfondo_pulsanti;
+    if (this.config.titolo) {
+      const titolo = crea("div", "titolo", el);
+      titolo.textContent = this.config.titolo;
+      Object.assign(titolo.style, {
+        background: this.config.sfondo, color: this.config.colore, fontSize: `${Math.min(px.altezza * 0.07, px.larghezza / 18)}px`,
+      });
+    }
+    this.pulsanti = crea("div", "pulsanti", el);
+    this.esito = crea("div", "esito", el);
+    this.esito.hidden = true;
+    this.occupato = false;
+  }
+
+  avvia() {
+    const aggiorna = async () => {
+      try {
+        const { code } = await this.motore.fonte.dati(this.zona.id);
+        this.mostra((code || []).map((c) => aspetto(c, this.config)));
+      } catch {
+        // Si tiene l'ultimo stato.
+      }
+    };
+    aggiorna();
+    this.timer = setInterval(aggiorna, OGNI_CODA);
+  }
+
+  mostra(code) {
+    const firma = code.map((c) => `${c.id}:${c.nome}:${c.colore}:${c.colore_testo}`).join("|");
+    if (firma !== this.firma) {
+      this.firma = firma;
+      this.pulsanti.replaceChildren();
+      this.contatori = new Map();
+      const colonne = this.config.colonne || (code.length > 1 ? 2 : 1);
+      const righe = Math.ceil(code.length / colonne) || 1;
+      const altezza = (this.px.altezza * (this.config.titolo ? 0.8 : 0.95)) / righe;
+      for (const coda of code) {
+        const pulsante = crea("button", "pulsante", this.pulsanti);
+        Object.assign(pulsante.style, {
+          background: coda.colore, color: coda.colore_testo, borderRadius: `${this.config.arrotondamento}px`,
+          width: `${90 / colonne}%`, height: `${altezza * 0.8}px`,
+        });
+        const nome = crea("div", "nome", pulsante);
+        nome.textContent = coda.nome;
+        nome.style.fontSize = `${Math.min(altezza * 0.24, this.px.larghezza / colonne / 9)}px`;
+        if (this.config.testo_coda) {
+          const inCoda = crea("div", "in-coda", pulsante);
+          inCoda.style.fontSize = `${Math.min(altezza * 0.13, this.px.larghezza / colonne / 16)}px`;
+          this.contatori.set(coda.id, inCoda);
+        }
+        pulsante.addEventListener("click", () => this.prendi(coda));
+      }
+    }
+    for (const coda of code) {
+      const contatore = this.contatori.get(coda.id);
+      if (contatore) contatore.textContent = testoCoda(this.config.testo_coda, coda.in_coda);
+    }
+  }
+
+  async prendi(coda) {
+    if (this.occupato) return; // un tocco alla volta: niente biglietti doppi
+    this.occupato = true;
+    try {
+      // Il biglietto prende nome e colori come appaiono sul pulsante.
+      const biglietto = aspetto(await this.motore.fonte.emetti(this.zona.id, coda.id), this.config);
+      biglietto.reparto = coda.nome;
+      biglietto.colore = coda.colore;
+      biglietto.colore_testo = coda.colore_testo;
+      const quando = new Date().toLocaleString("it-IT", { timeZone: this.motore.fuso, dateStyle: "short", timeStyle: "short" });
+      const davanti = biglietto.davanti > 0 ? `Persone prima di te: ${biglietto.davanti}` : "Sei il prossimo!";
+      const dati = { ...biglietto, davanti, quando, intestazione: this.config.intestazione, messaggio: this.config.messaggio };
+      let errore = null;
+      try {
+        if (this.config.stampa === "epson") await stampaEpson(this.config.stampante, dati);
+        else if (this.config.stampa === "browser") stampaBrowser(dati);
+      } catch (e) {
+        errore = `Stampante non raggiungibile o spenta (${e.name === "AbortError" ? "tempo scaduto" : e.message}). Ricorda il tuo numero.`;
+      }
+      this.mostraEsito(dati, errore);
+    } catch {
+      this.mostraEsito(null, "Servizio non disponibile, riprova tra poco.");
+    }
+  }
+
+  mostraEsito(biglietto, errore) {
+    this.esito.replaceChildren();
+    this.esito.hidden = false;
+    const scala = Math.min(this.px.altezza, this.px.larghezza);
+    if (biglietto) {
+      Object.assign(this.esito.style, { background: biglietto.colore, color: biglietto.colore_testo });
+      crea("div", "reparto", this.esito).textContent = biglietto.reparto;
+      const numero = crea("div", "numero", this.esito);
+      numero.textContent = mostraNumero(biglietto.numero);
+      numero.style.fontSize = `${scala * 0.38}px`;
+      crea("div", "riga", this.esito).textContent = biglietto.davanti;
+    } else {
+      Object.assign(this.esito.style, { background: "#5a5a5a", color: "#ffffff" });
+    }
+    if (errore) crea("div", "errore", this.esito).textContent = errore;
+    this.esito.style.fontSize = `${scala * 0.07}px`;
+    setTimeout(() => {
+      this.esito.hidden = true;
+      this.occupato = false;
+    }, errore ? 7000 : 4000);
+  }
+
+  ferma() {
+    clearInterval(this.timer);
+  }
+}
+
 const TIPI = {
   slide: ZonaSlide,
   orologio: ZonaOrologio,
@@ -412,4 +718,6 @@ const TIPI = {
   notizie: ZonaNotizie,
   testo: ZonaTesto,
   immagine: ZonaImmagine,
+  coda: ZonaCoda,
+  prendi_numero: ZonaPrendiNumero,
 };

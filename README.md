@@ -11,6 +11,7 @@ La specifica tecnica (architettura, ruoli, isolamento tra clienti, teleassistenz
 - `server/` — API Django: clienti, utenti e ruoli, sedi, monitor e abbinamento dei player,
   contenuti, playlist e palinsesto, layout grafici, audit, teleassistenza.
 - `server/player/` — motore di rendering e player nel browser (`/player/`).
+- `server/eliminacode/` — code dei reparti, pagina del banco (`/banco/`), pulsantiere e totem.
 - `docs/` — specifica.
 
 ## Avvio in sviluppo

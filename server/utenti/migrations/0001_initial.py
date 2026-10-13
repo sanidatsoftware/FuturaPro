@@ -157,7 +157,7 @@ class Migration(migrations.Migration):
                         condition=models.Q(
                             models.Q(
                                 ("cliente__isnull", True),
-                                ("ruolo__in", ["tecnico", "admin_assoluto"]),
+                                ("ruolo__in", ["admin_assoluto", "tecnico"]),
                             ),
                             models.Q(
                                 ("cliente__isnull", False),

@@ -64,3 +64,71 @@ html, body {
 #avviso h1 { font-size: 4vmin; font-weight: 500; margin: 0; }
 #avviso p { font-size: 2.6vmin; opacity: .8; margin: 0; max-width: 60ch; }
 #avviso .codice { font-size: 16vmin; font-weight: 700; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+
+/* Eliminacode */
+.zona-coda .reparto {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fff;
+  box-sizing: border-box;
+  line-height: 1;
+  overflow: hidden;
+}
+.zona-coda .nome { font-weight: 700; text-transform: uppercase; letter-spacing: .02em; }
+.zona-coda .numero { font-weight: 700; font-variant-numeric: tabular-nums; margin-top: .08em; }
+.zona-coda .in-coda { opacity: .9; margin-top: .3em; }
+.zona-coda .reparto.chiamata { animation: chiamata .5s ease-in-out 6 alternate; }
+@keyframes chiamata { to { filter: brightness(1.5); transform: scale(.96); } }
+
+.zona-prendi_numero { display: flex; flex-direction: column; }
+.zona-prendi_numero .titolo { text-align: center; font-weight: 700; padding: .25em 0; }
+.zona-prendi_numero .pulsanti {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: space-evenly;
+  justify-content: space-evenly;
+}
+.zona-prendi_numero .pulsante {
+  border: 0;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .3em;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, .2);
+}
+.zona-prendi_numero .pulsante:active { transform: scale(.97); }
+.zona-prendi_numero .pulsante .nome { font-weight: 700; text-transform: uppercase; }
+.zona-prendi_numero .esito {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.1;
+}
+.zona-prendi_numero .esito[hidden] { display: none; }
+.zona-prendi_numero .esito .reparto { font-weight: 700; text-transform: uppercase; }
+.zona-prendi_numero .esito .numero { font-weight: 800; font-variant-numeric: tabular-nums; }
+.zona-prendi_numero .esito .errore {
+  margin-top: .6em; background: #e00000; padding: .4em .8em; border-radius: 10px; font-size: .7em; max-width: 90%;
+}
+
+/* Biglietto stampato dal browser (stampanti termiche da 80 mm). */
+#biglietto { display: none; }
+@media print {
+  @page { size: 80mm auto; margin: 4mm; }
+  body > *:not(#biglietto) { display: none !important; }
+  #biglietto { display: block; color: #000; text-align: center; font-family: sans-serif; }
+  #biglietto .intestazione { font-size: 11pt; font-weight: 700; }
+  #biglietto .reparto { font-size: 18pt; font-weight: 700; text-transform: uppercase; margin-top: 3mm; }
+  #biglietto .numero { font-size: 60pt; font-weight: 800; line-height: 1; }
+  #biglietto .riga { font-size: 10pt; margin-top: 1mm; }
+}

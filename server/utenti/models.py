@@ -37,8 +37,8 @@ class Utente(AbstractUser):
             models.CheckConstraint(
                 name="cliente_coerente_col_ruolo",
                 condition=(
-                    Q(ruolo__in=[r.value for r in RUOLI_PIATTAFORMA], cliente__isnull=True)
-                    | Q(ruolo__in=[r.value for r in RUOLI_CLIENTE], cliente__isnull=False)
+                    Q(ruolo__in=sorted(r.value for r in RUOLI_PIATTAFORMA), cliente__isnull=True)
+                    | Q(ruolo__in=sorted(r.value for r in RUOLI_CLIENTE), cliente__isnull=False)
                 ),
             )
         ]

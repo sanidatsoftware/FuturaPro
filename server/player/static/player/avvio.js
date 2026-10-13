@@ -142,6 +142,15 @@ async function avviaPlayer() {
   const motore = new Motore(radice, {
     file: (id, voce) => (voce ? fileConCache(id, voce, () => fetch(voce.url, { headers: intestazioni })) : Promise.resolve(null)),
     dati: async (zonaId) => (await fetch(`/api/player/zone/${zonaId}/dati/`, { headers: intestazioni })).json(),
+    emetti: async (zonaId, reparto) => {
+      const risposta = await fetch(`/api/player/zone/${zonaId}/emetti/`, {
+        method: "POST",
+        headers: { ...intestazioni, "Content-Type": "application/json" },
+        body: JSON.stringify({ reparto }),
+      });
+      if (!risposta.ok) throw new Error(risposta.status);
+      return risposta.json();
+    },
   });
 
   // All'avvio, l'ultimo manifest ricevuto: lo schermo riparte anche senza rete.
@@ -201,7 +210,9 @@ async function avviaAnteprima() {
   };
   const motore = new Motore(radice, {
     file: (id, voce) => (voce ? fileConCache(id, voce, () => leggi(`/api/contenuti/${id}/file/`)) : Promise.resolve(null)),
-    dati: async (zonaId) => (await leggi(`/api/zone/${zonaId}/dati/`)).json(),
+    dati: async (zonaId) => (await leggi(`/api/zone/${zonaId}/dati/?monitor=${monitor}`)).json(),
+    // In anteprima non si emettono biglietti veri.
+    emetti: async () => ({ reparto: "Anteprima", colore: "#5a5a5a", numero: 0, davanti: 0 }),
   });
   const aggiorna = async () => {
     try {

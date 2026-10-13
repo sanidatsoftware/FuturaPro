@@ -3,15 +3,19 @@ from django.db import models
 from core.models import ModelloCliente
 
 
-def numero_mostrato(totale: int, massimo: int) -> int:
-    """Il numero sul biglietto e sui display: gira da 1 a ``massimo``; 0 = nessuno."""
-    return (totale - 1) % massimo + 1 if totale > 0 else 0
+def numero_mostrato(totale: int, massimo: int) -> int | None:
+    """Il numero sul biglietto e sui display: da 0 a ``massimo`` e poi di nuovo 0.
+
+    ``totale`` conta i biglietti (o le chiamate) della giornata: il primo è lo 0.
+    None quando non ce n'è ancora nessuno.
+    """
+    return (totale - 1) % (massimo + 1) if totale > 0 else None
 
 
 class Reparto(ModelloCliente):
     """Un banco con la sua coda: salumeria, macelleria, gastronomia…
 
-    I contatori sono totali della giornata e non girano mai; il numero a 1–99
+    I contatori sono totali della giornata e non girano mai; il numero da 0 a 99
     si ricava da lì. Così «clienti in coda» è una sottrazione, anche dopo il 99.
     Al primo uso di un nuovo giorno la coda riparte da zero.
     """
@@ -19,7 +23,9 @@ class Reparto(ModelloCliente):
     sede = models.ForeignKey("clienti.Sede", on_delete=models.CASCADE, related_name="reparti")
     nome = models.CharField(max_length=60)
     colore = models.CharField(max_length=7, default="#e31b23")
+    colore_testo = models.CharField(max_length=7, default="#ffffff")
     ordine = models.PositiveIntegerField(default=0)
+    # L'ultimo numero prima di ripartire da 0.
     massimo = models.PositiveIntegerField(default=99)
     attivo = models.BooleanField(default=True)
     azzeramento_automatico = models.BooleanField(default=True)
@@ -39,11 +45,11 @@ class Reparto(ModelloCliente):
         return self.nome
 
     @property
-    def numero(self) -> int:
+    def numero(self) -> int | None:
         return numero_mostrato(self.chiamati, self.massimo)
 
     @property
-    def ultimo_emesso(self) -> int:
+    def ultimo_emesso(self) -> int | None:
         return numero_mostrato(self.emessi, self.massimo)
 
     @property
@@ -55,6 +61,7 @@ class Reparto(ModelloCliente):
             "id": str(self.id),
             "nome": self.nome,
             "colore": self.colore,
+            "colore_testo": self.colore_testo,
             "numero": self.numero,
             "in_coda": self.in_coda,
             "ultimo_emesso": self.ultimo_emesso,
