@@ -5,9 +5,12 @@
   "use strict";
 
   var OGNI = 2000;
-  var parametri = new URLSearchParams ? new URLSearchParams(location.search) : null;
-  var cliente = parametri && parametri.get("cliente");
-  var modoChiave = parametri && parametri.get("modo") === "chiave";
+  function parametro(nome, testo) {
+    var trovato = new RegExp("[?#&]" + nome + "=([^&]*)").exec(testo);
+    return trovato ? decodeURIComponent(trovato[1]) : null;
+  }
+  var cliente = parametro("cliente", location.search);
+  var modoChiave = parametro("modo", location.search) === "chiave";
   var contenitore = document.getElementById("reparti");
   var statoEl = document.getElementById("stato");
   var schede = {};
@@ -48,7 +51,14 @@
 
   // --- Le due modalità: sessione del pannello o chiave del reparto ------------
 
-  var chiave = memoria("futurapro.banco.chiave");
+  // Il pannello dà un link /banco/#chiave=…: la chiave si salva sul dispositivo e sparisce
+  // dall'indirizzo (la parte dopo # non arriva mai al server, quindi nemmeno nei suoi log).
+  var dalLink = parametro("chiave", location.hash);
+  if (dalLink) {
+    memoria("futurapro.banco.chiave", dalLink);
+    if (history.replaceState) history.replaceState(null, "", location.pathname + location.search);
+  }
+  var chiave = memoria("futurapro.banco.chiave") || dalLink;
   var modo = chiave ? "chiave" : "sessione";
 
   function intestazioni() {
@@ -120,7 +130,7 @@
       comandi.appendChild(pulsante("AVANTI", "primario avanti", function () { esegui(reparto, "avanti"); }));
       comandi.appendChild(pulsante("Indietro", "", function () { esegui(reparto, "indietro"); }));
       comandi.appendChild(pulsante("Ripeti", "", function () { esegui(reparto, "ripeti"); }));
-      if (modo === "sessione") {
+      {
         comandi.appendChild(pulsante("Imposta…", "", function () {
           var n = prompt("Da quale numero ripartire? (da 0 a " + (reparto.massimo || 99) + ")");
           if (n !== null && /^\d+$/.test(n)) esegui(reparto, "imposta", { numero: parseInt(n, 10) });

@@ -1,0 +1,22 @@
+{% load static %}<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pannello · FuturaPro</title>
+  <link rel="stylesheet" href="{% static 'pannello/pannello.css' %}">
+</head>
+<body>
+  <header class="barra">
+    <strong class="marchio">FuturaPro</strong>
+    <label id="scelta-cliente" hidden>Cliente <select id="cliente"></select></label>
+    <span class="spazio"></span>
+    <span id="utente" class="utente"></span>
+    <form method="post" action="/api/sessione/logout/?next=/pannello/">{% csrf_token %}<button class="esci">Esci</button></form>
+  </header>
+  <nav id="schede" class="schede"></nav>
+  <div id="messaggio" class="messaggio" hidden></div>
+  <main id="contenuto" class="contenuto"></main>
+  <script type="module" src="{% static 'pannello/pannello.js' %}"></script>
+</body>
+</html>

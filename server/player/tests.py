@@ -15,3 +15,9 @@ class PagineTest(TestCase):
         r = self.client.get("/editor/00000000-0000-0000-0000-000000000001/")
         self.assertContains(r, 'data-layout="00000000-0000-0000-0000-000000000001"')
         self.assertContains(self.client.get("/banco/"), "eliminacode/banco.js")
+
+    def test_pannello_chiede_l_accesso(self):
+        r = self.client.get("/pannello/")
+        self.assertEqual(r.status_code, 302)
+        self.assertTrue(r["Location"].startswith("/api/sessione/login/"))
+        self.assertEqual(self.client.get("/")["Location"], "/pannello/")

@@ -1,0 +1,56 @@
+[hidden] { display: none !important; }
+:root { --fondo: #eef1f5; --carta: #fff; --testo: #1d2330; --tenue: #5d6675; --linea: #d3d8e0; --primario: #1f4e79; --errore: #c62828; --ok: #1e8e3e; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif; background: var(--fondo); color: var(--testo); font-size: 15px; }
+button, input, select, textarea { font: inherit; }
+button { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--linea); background: var(--carta); cursor: pointer; margin: 2px; }
+button.primario { background: var(--primario); border-color: var(--primario); color: #fff; }
+button.pericolo { color: var(--errore); border-color: var(--errore); }
+button.piccolo { padding: 2px 8px; font-size: 12px; }
+input, select { padding: 6px 8px; border: 1px solid var(--linea); border-radius: 6px; background: #fff; }
+input[type="color"] { width: 40px; height: 32px; padding: 2px; }
+input.corto { width: 70px; }
+input.link { width: 100%; font-size: 12px; margin: 2px 0; }
+
+.barra { display: flex; align-items: center; gap: 14px; padding: 10px 16px; background: var(--primario); color: #fff; flex-wrap: wrap; }
+.barra .marchio { font-size: 18px; }
+.barra .spazio { flex: 1; }
+.barra .utente { font-size: 13px; opacity: .9; }
+.barra form { margin: 0; }
+.barra .esci { background: transparent; color: #fff; border-color: rgba(255, 255, 255, .5); }
+
+.schede { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 16px 0; background: var(--carta); border-bottom: 1px solid var(--linea); }
+.schede .scheda { border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: none; padding: 10px 12px; color: var(--testo); text-decoration: none; margin: 0; }
+.schede .scheda.attiva { border-bottom-color: var(--primario); font-weight: 600; }
+
+.messaggio { margin: 12px 16px 0; padding: 10px 12px; border-radius: 8px; }
+.messaggio.errore { background: #fdecea; color: var(--errore); }
+.messaggio.ok { background: #e6f4ea; color: var(--ok); }
+
+.contenuto { padding: 16px; display: flex; flex-direction: column; gap: 16px; max-width: 1400px; }
+.riquadro { background: var(--carta); border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0, 0, 0, .08); overflow-x: auto; }
+.riquadro h2 { margin: 0 0 10px; font-size: 17px; }
+.riquadro h3 { font-size: 15px; margin: 14px 0 6px; }
+.riquadro-interno { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--linea); border-radius: 8px; }
+.campo { display: inline-flex; flex-direction: column; gap: 3px; margin: 0 10px 10px 0; font-size: 13px; color: var(--tenue); }
+.campo input, .campo select { color: var(--testo); }
+.riga { display: flex; flex-wrap: wrap; align-items: flex-end; }
+.etichetta { display: block; font-size: 13px; color: var(--tenue); margin: 6px 0 4px; }
+.spunte { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 10px; }
+.spunta { display: flex; align-items: center; gap: 6px; }
+.nota, .vuoto { font-size: 13px; color: var(--tenue); }
+details { margin: 8px 0; }
+summary { cursor: pointer; color: var(--primario); }
+
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--linea); vertical-align: middle; }
+th { font-size: 12px; color: var(--tenue); font-weight: 600; text-transform: uppercase; }
+td.chiave { max-width: 360px; }
+.pallino { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.pallino.acceso { background: var(--ok); }
+.pallino.spento { background: #9aa1ac; }
+
+.griglia { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.contenuto-scheda { border: 1px solid var(--linea); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.miniatura { aspect-ratio: 16 / 9; background: #222; color: #fff; display: flex; align-items: center; justify-content: center; border-radius: 6px; overflow: hidden; }
+.miniatura img { width: 100%; height: 100%; object-fit: contain; }

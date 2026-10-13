@@ -1,0 +1,4 @@
+# Creati da installa.sh sulla macchina: contengono password o dati.
+.env
+Caddyfile
+backup/

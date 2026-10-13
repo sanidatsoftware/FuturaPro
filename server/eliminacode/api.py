@@ -132,9 +132,16 @@ class RepartiViewSet(ViewSetCliente):
 #
 # Sostituiscono gli script py/*.py del sistema attuale:
 #   curl -X POST -H "Authorization: Pulsante <chiave>" https://server/api/eliminacode/pulsante/avanti/
-# La chiave vale per un solo reparto e solo per queste operazioni.
+# La chiave vale per un solo reparto e solo per le operazioni del banco (come le
+# pagine per le bilance del sistema attuale: avanti, indietro, azzera, imposta).
 
-OPERAZIONI_PULSANTE = {"avanti": servizi.avanti, "indietro": servizi.indietro, "ripeti": servizi.ripeti}
+OPERAZIONI_PULSANTE = {
+    "avanti": servizi.avanti,
+    "indietro": servizi.indietro,
+    "ripeti": servizi.ripeti,
+    "azzera": servizi.azzera,
+    "imposta": servizi.imposta,
+}
 
 
 class PulsanteView(VistaPlayer):
@@ -159,7 +166,15 @@ class PulsanteView(VistaPlayer):
         if operazione not in OPERAZIONI_PULSANTE:
             raise exceptions.NotFound()
         with contesto_cliente(credenziale.cliente_id):
-            return Response(OPERAZIONI_PULSANTE[operazione](credenziale.reparto_id).stato())
+            argomenti = []
+            if operazione == "imposta":
+                massimo = Reparto.objects.get(id=credenziale.reparto_id).massimo
+                campo = serializers.IntegerField(min_value=0, max_value=massimo)
+                try:
+                    argomenti = [campo.run_validation(request.data.get("numero"))]
+                except serializers.ValidationError as errore:
+                    raise exceptions.ValidationError({"numero": errore.detail})
+            return Response(OPERAZIONI_PULSANTE[operazione](credenziale.reparto_id, *argomenti).stato())
 
 
 # --- Zone dei player ------------------------------------------------------------

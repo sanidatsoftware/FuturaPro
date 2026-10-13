@@ -114,7 +114,10 @@ class BancoTest(ConReparti):
         pulsante = {"HTTP_AUTHORIZATION": f"Pulsante {chiave}"}
         r = self.client.post("/api/eliminacode/pulsante/avanti/", **pulsante)
         self.assertEqual((r.status_code, r.json()["nome"], r.json()["numero"]), (200, "Salumeria", 0))
-        self.assertEqual(self.client.post("/api/eliminacode/pulsante/azzera/", **pulsante).status_code, 404)
+        self.assertEqual(self.client.post("/api/eliminacode/pulsante/emetti/", **pulsante).status_code, 404)
+        r = self.client.post("/api/eliminacode/pulsante/imposta/", {"numero": 42}, **pulsante)
+        self.assertEqual(r.json()["numero"], 42)
+        self.assertEqual(self.client.post("/api/eliminacode/pulsante/imposta/", {"numero": 100}, **pulsante).status_code, 400)
         self.assertIsNone(self.stato(self.macelleria).numero)
 
         self.come(self.admin_a)

@@ -1,0 +1,59 @@
+# FuturaPro: database, server e Caddy (HTTPS). La configurazione sta in .env e
+# Caddyfile, che crea installa.sh: non modificarli a mano senza motivo.
+name: futurapro
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${FP_DB_SUPERPASSWORD:?manca .env}
+      FP_DB_PASSWORD: ${FP_DB_PASSWORD:?manca .env}
+    volumes:
+      - db:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      retries: 20
+
+  app:
+    build: ../server
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      FUTURAPRO_SECRET_KEY: ${FP_SECRET_KEY}
+      FUTURAPRO_DB_HOST: db
+      FUTURAPRO_DB_NAME: futurapro
+      FUTURAPRO_DB_USER: futurapro
+      FUTURAPRO_DB_PASSWORD: ${FP_DB_PASSWORD}
+      # localhost: solo per il controllo di prontezza dall'interno del container.
+      FUTURAPRO_ALLOWED_HOSTS: ${FP_INDIRIZZO},localhost
+      FUTURAPRO_ORIGINI: https://${FP_INDIRIZZO}
+      FUTURAPRO_MAX_UPLOAD_MB: ${FP_MAX_UPLOAD_MB:-2048}
+    volumes:
+      - media:/dati/media
+      - static:/dati/static
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [app]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./installa:/srv/installa:ro
+      - static:/srv/static:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  db:
+  media:
+  static:
+  caddy_data:
+  caddy_config:

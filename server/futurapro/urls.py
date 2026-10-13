@@ -1,4 +1,5 @@
 from django.urls import include, path
+from django.views.generic import RedirectView
 from rest_framework.routers import DefaultRouter
 
 from audit.api import AuditClienteViewSet, AuditPiattaformaViewSet
@@ -18,6 +19,7 @@ from eliminacode import views as eliminacode
 from eliminacode.api import EmettiPlayerView, PulsanteView, RepartiViewSet
 from layout import views as layout
 from layout.api import CercaLocalitaView, DatiZonaPlayerView, DatiZonaView, LayoutViewSet
+from pannello.views import pannello
 from player import views as player
 from teleassistenza.api import SessioniViewSet
 from utenti.api import IoView, UtentiClienteViewSet, UtentiPiattaformaViewSet
@@ -59,6 +61,8 @@ urlpatterns = [
     path("api/player/heartbeat/", HeartbeatView.as_view(), name="player-heartbeat"),
     path("api/", include(router.urls)),
     path("api/sessione/", include("rest_framework.urls")),
+    path("", RedirectView.as_view(url="/pannello/", permanent=False)),
+    path("pannello/", pannello, name="pannello"),
     path("player/", player.schermo, name="player"),
     path("banco/", eliminacode.banco, name="banco"),
     path("editor/", layout.editor, name="editor"),

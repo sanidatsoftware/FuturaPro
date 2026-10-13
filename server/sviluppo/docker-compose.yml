@@ -1,4 +1,4 @@
-# Ambiente di sviluppo: solo il database. Il pacchetto di produzione arriverà più avanti.
+# Ambiente di sviluppo: solo il database. Per installare FuturaPro vedi docs/INSTALLAZIONE.md.
 services:
   db:
     image: postgres:16
@@ -8,7 +8,7 @@ services:
       - "5432:5432"
     volumes:
       - dati:/var/lib/postgresql/data
-      - ./server/sviluppo/crea-ruolo.sql:/docker-entrypoint-initdb.d/crea-ruolo.sql:ro
+      - ./crea-ruolo.sql:/docker-entrypoint-initdb.d/crea-ruolo.sql:ro
 
 volumes:
   dati:

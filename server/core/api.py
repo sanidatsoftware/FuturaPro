@@ -30,7 +30,8 @@ CONTENUTI = frozenset({Ruolo.ADMIN_ASSOLUTO, Ruolo.ADMIN_CLIENTE, Ruolo.USER_CLI
 
 
 def _cliente_scelto(request) -> UUID:
-    valore = request.META.get(INTESTAZIONE_CLIENTE)
+    # Dall'intestazione (pannello) o dall'indirizzo (API navigabile nel browser).
+    valore = request.META.get(INTESTAZIONE_CLIENTE) or request.GET.get("cliente")
     if not valore:
         raise ValidationError({"cliente": "Seleziona un cliente (intestazione X-Cliente)."})
     try:

@@ -15,6 +15,10 @@ SECRET_KEY = _env("SECRET_KEY") or ("solo-sviluppo-non-usare-in-produzione" if D
 if not SECRET_KEY:
     raise RuntimeError("Impostare FUTURAPRO_SECRET_KEY.")
 ALLOWED_HOSTS = [h for h in (_env("ALLOWED_HOSTS", "localhost,127.0.0.1")).split(",") if h]
+# Indirizzi da cui arrivano i moduli del pannello, es. https://signage.miodominio.it
+CSRF_TRUSTED_ORIGINS = [o for o in (_env("ORIGINI", "")).split(",") if o]
+# Davanti c'è Caddy, che termina HTTPS e lo dice con X-Forwarded-Proto.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 INSTALLED_APPS = [
     "django.contrib.auth",
@@ -33,6 +37,7 @@ INSTALLED_APPS = [
     "layout",
     "player",
     "eliminacode",
+    "pannello",
 ]
 
 MIDDLEWARE = [
@@ -81,6 +86,8 @@ DATABASES = {
 }
 
 AUTH_USER_MODEL = "utenti.Utente"
+LOGIN_URL = "/api/sessione/login/"
+LOGIN_REDIRECT_URL = "/pannello/"
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 10}},
@@ -112,5 +119,12 @@ FUTURAPRO_MAX_UPLOAD_MB = int(_env("MAX_UPLOAD_MB", "2048"))
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 
 STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
+STATIC_ROOT = Path(_env("STATIC_ROOT", BASE_DIR / "staticfiles"))
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "root": {"handlers": ["console"], "level": _env("LOG_LEVEL", "WARNING")},
+}
