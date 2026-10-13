@@ -33,3 +33,13 @@ jobs:
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py check --database default
       - run: python manage.py test
+
+  player:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Regole del palinsesto (stesse del server)
+        run: node --test server/player/static/player/regole.test.mjs

@@ -25,7 +25,7 @@ progetto: le scelte qui sotto valgono finché non le cambiamo esplicitamente.
 | Server / API | Django 5.2 + Django REST Framework, PostgreSQL 16 | **in sviluppo** (`server/`) |
 | Comandi in tempo reale | Django Channels + Redis (WebSocket) | da fare |
 | Pannello web | React + TypeScript, in italiano | da fare |
-| Motore di rendering | Libreria TypeScript condivisa tra anteprima del pannello e player | da fare |
+| Motore di rendering | JavaScript senza dipendenze, condiviso da player nel browser, app native e anteprima | **in sviluppo** (`server/player/`) |
 | Player Android | Kotlin, WebView per i layout + Media3/ExoPlayer per i video, device owner | da fare |
 | Player Windows | Servizio .NET 8 (watchdog, aggiornamenti, teleassistenza) + app WebView2 | da fare |
 | Teleassistenza | Segnalazione WSS con mTLS, WebRTC, relay coturn nostro | da fare |
@@ -142,7 +142,61 @@ valuta le regole da solo, quindi continua a seguire il palinsesto anche offline.
 dipende solo dal contenuto: con `If-None-Match` il server risponde 304 se non è cambiato
 nulla. I file si scaricano da `/api/player/file/<id>/`, solo se pubblicati su quel monitor.
 
-## 6. Player
+## 6. Layout grafici
+
+Ogni cliente ha i propri layout; l'AdminCliente li gestisce se l'Administrator Assoluto glielo
+concede (abilitazione `admin_gestisce_layout`).
+
+**Schermo.** Il layout ha un orientamento: orizzontale (palco 1920×1080) o verticale per i totem
+(1080×1920). Le zone sono rettangoli in **percentuale** del palco, quindi valgono a qualunque
+risoluzione; il player scala il palco sullo schermo reale. Ogni monitor ha un orientamento e una
+**rotazione** (0/90/180/270): un totem nativo verticale resta a 0, un televisore orizzontale
+montato in verticale usa 90 o 270 e il player ruota l'immagine. Il layout assegnato a un monitor
+deve avere il suo stesso orientamento. Senza layout assegnato vale il predefinito del cliente per
+quell'orientamento; se manca anche quello, le slide a tutto schermo.
+
+**Zone** (`server/layout/zone.py`; il motore legge esattamente questi campi):
+
+| Tipo | Configurazione |
+|---|---|
+| `slide` | `sorgente` (`palinsesto` o una playlist fissa), `transizione` (nessuna, dissolvenza, scorri_sinistra, scorri_alto, zoom), `durata_transizione` in ms, `adattamento` (adatta / riempi) |
+| `orologio` | `secondi`, `mostra_data`, `colore`, `allineamento` |
+| `meteo` | `localita`, `latitudine`, `longitudine`, `colore` |
+| `notizie` | `feed` (fino a 5 RSS/Atom), `messaggi` propri, `velocita` in px/s, `aggiornamento_minuti`, `colore`, `sfondo` |
+| `testo` | `testo`, `dimensione` (% dell'altezza della zona), `colore`, `sfondo`, `allineamento` |
+| `immagine` | `contenuto` (un'immagine della libreria), `adattamento` |
+
+Una sola zona `slide` per layout mostra il palinsesto; le altre possono girare playlist fisse.
+Il layout ha anche colore e immagine di sfondo e il carattere.
+
+**Modelli pronti** (`POST /api/layout/da-modello/`): schermo intero; orizzontale con slide, ora,
+meteo e rullo notizie; totem verticale con ora e meteo in alto, slide al centro e rullo in basso.
+Per la località del meteo il pannello cerca la città per nome (`/api/meteo/localita/?nome=`).
+
+**Meteo e notizie.** Li scarica il server, non i player: una richiesta per località o feed,
+qualunque sia il numero di monitor, e i player non devono raggiungere internet. Meteo da
+Open-Meteo (senza chiave, aggiornato ogni 15 minuti); notizie dai feed indicati, letti con
+`defusedxml`. Se una fonte non risponde resta l'ultimo dato buono (fino a 48 ore). I feed non
+possono puntare a indirizzi non pubblici, nemmeno attraverso un redirect: un AdminCliente non può
+usarli per sondare la rete del server.
+
+## 7. Player
+
+**Motore di rendering** (`server/player/static/player/`, JavaScript senza dipendenze né
+compilazione). Disegna il layout del manifest e fa girare le zone: slide con transizioni e loro
+durata, orologio nel fuso del manifest, meteo, rullo continuo (i titoli nuovi entrano al giro
+successivo, senza salti), testi, immagini. Ogni testo esterno passa da `textContent`. Lo stesso
+codice serve:
+
+- il **player nel browser** (`/player/`): un PC Windows con il browser in modalità kiosk funziona
+  già da player, con abbinamento, cache dei file (Cache API, su HTTPS) e ultimo manifest salvato,
+  così riparte anche senza rete;
+- le **app native**, che lo caricheranno in WebView (Android) e WebView2 (Windows);
+- l'**anteprima** nel pannello (`/anteprima/<monitor>/`), con la sessione dell'utente.
+
+`regole.js` replica le regole del palinsesto del server; `regole.test.mjs` verifica che diano gli
+stessi risultati dei test Python.
+
 
 **Abbinamento** (già implementato):
 
@@ -175,7 +229,7 @@ decodifica hardware.
 la riavvia se si blocca, gestisce aggiornamenti e teleassistenza; funziona anche senza utenti
 collegati.
 
-## 7. Teleassistenza
+## 8. Teleassistenza
 
 **Chi.** Solo Administrator Assoluto e Tecnici Teleassistenza, su tutti i clienti. Accesso al
 pannello con 2FA obbligatoria (WebAuthn, in alternativa TOTP). L'AdminCliente vede il registro,
@@ -212,7 +266,7 @@ certificato legato a monitor e cliente.
 impedirgli tecnicamente di alterare il proprio database. L'isolamento lì è comunque irrilevante
 (c'è un solo cliente); la licenza firmata e il contratto regolano l'accesso di Sanidat.
 
-## 8. Hardware Android — cosa verificare
+## 9. Hardware Android — cosa verificare
 
 - Android 11 o superiore (meglio 12–14).
 - Decodifica hardware 4K H.264/H.265; almeno 32 GB eMMC; Ethernet.
@@ -222,7 +276,7 @@ impedirgli tecnicamente di alterare il proprio database. L'isolamento lì è com
 - Piattaforme consigliate: Rockchip RK3566/RK3568/RK3588.
 - Attenzione: i monitor professionali Samsung (Tizen) e LG (webOS) **non sono Android**.
 
-## 9. API disponibili
+## 10. API disponibili
 
 Autenticazione del pannello: sessione Django (`/api/sessione/login/`). Gli utenti di
 piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
@@ -244,10 +298,14 @@ piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
 | `/api/playlist/`, `/api/pubblicazioni/` | lettura: tutti — scrittura: Assoluto, AdminCliente, UserCliente |
 | `POST /api/pubblica/` | Assoluto, AdminCliente, UserCliente |
 | `GET /api/anteprima/{monitor}/?quando=` | tutti |
+| `/api/layout/`, `POST /api/layout/da-modello/`, `GET /api/layout/modelli/` | lettura: tutti — scrittura: Assoluto, AdminCliente (se abilitato) |
+| `GET /api/zone/{id}/dati/`, `GET /api/anteprima/{monitor}/manifest/` | tutti (anteprima) |
+| `GET /api/meteo/localita/?nome=` | Assoluto, AdminCliente |
 | `POST /api/player/abbinamento/`, `GET /api/player/stato/`, `POST /api/player/heartbeat/` | player |
+| `GET /api/player/zone/{id}/dati/` | player |
 | `GET /api/player/palinsesto/`, `GET /api/player/file/{id}/` | player |
 
-## 10. Roadmap
+## 11. Roadmap
 
 1. **MVP (3–4 mesi)**
    - [x] Clienti, abilitazioni, ruoli, isolamento a due barriere, audit immutabile
@@ -257,7 +315,9 @@ piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
    - [x] Flusso *carica → scegli monitor → Pubblica*, anteprima, manifest e download per il player
    - [ ] Miniature dei contenuti e durata dei video letta dal file
    - [ ] Notifica immediata ai player via WebSocket (oggi il player interroga il manifest)
-   - [ ] Pannello web React con selettore azienda
+   - [x] Layout grafici per cliente: zone, orientamento e rotazione, meteo, notizie, modelli pronti
+   - [x] Motore di rendering e player nel browser (kiosk), anteprima grafica
+   - [ ] Pannello web React con selettore azienda e editor visuale dei layout
    - [ ] Player Android e Windows con cache offline
    - [ ] 2FA, Docker Compose, CI
 2. **Teleassistenza (circa 2 mesi):** CA, mTLS, segnalazione WebSocket, WebRTC, coturn, agent

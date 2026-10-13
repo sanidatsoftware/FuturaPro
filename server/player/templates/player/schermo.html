@@ -1,0 +1,14 @@
+{% load static %}<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FuturaPro</title>
+  <link rel="stylesheet" href="{% static 'player/schermo.css' %}">
+</head>
+<body data-modo="{{ modo }}" data-monitor="{{ monitor|default:'' }}">
+  <div id="schermo"></div>
+  <div id="avviso"><h1>FuturaPro</h1><p>Avvio…</p></div>
+  <script type="module" src="{% static 'player/avvio.js' %}"></script>
+</body>
+</html>

@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from audit.api import AuditClienteViewSet, AuditPiattaformaViewSet
 from clienti.api import AbilitazioniView, ClientiViewSet, SediViewSet
 from contenuti.api import (
+    AnteprimaManifestView,
     AnteprimaView,
     ContenutiViewSet,
     FilePlayerView,
@@ -14,6 +15,7 @@ from contenuti.api import (
 )
 from dispositivi.api import GruppiViewSet, HeartbeatView, MonitorViewSet, RichiestaAbbinamentoView, StatoPlayerView
 from layout.api import CercaLocalitaView, DatiZonaPlayerView, DatiZonaView, LayoutViewSet
+from player import views as player
 from teleassistenza.api import SessioniViewSet
 from utenti.api import IoView, UtentiClienteViewSet, UtentiPiattaformaViewSet
 
@@ -41,6 +43,7 @@ urlpatterns = [
     path("api/player/stato/", StatoPlayerView.as_view(), name="player-stato"),
     path("api/pubblica/", PubblicaView.as_view(), name="pubblica"),
     path("api/anteprima/<uuid:monitor_id>/", AnteprimaView.as_view(), name="anteprima"),
+    path("api/anteprima/<uuid:monitor_id>/manifest/", AnteprimaManifestView.as_view(), name="anteprima-manifest"),
     path("api/player/palinsesto/", PalinsestoPlayerView.as_view(), name="player-palinsesto"),
     path("api/player/file/<uuid:contenuto_id>/", FilePlayerView.as_view(), name="player-file"),
     path("api/zone/<uuid:zona_id>/dati/", DatiZonaView.as_view(), name="zona-dati"),
@@ -49,4 +52,6 @@ urlpatterns = [
     path("api/player/heartbeat/", HeartbeatView.as_view(), name="player-heartbeat"),
     path("api/", include(router.urls)),
     path("api/sessione/", include("rest_framework.urls")),
+    path("player/", player.schermo, name="player"),
+    path("anteprima/<uuid:monitor_id>/", player.anteprima, name="anteprima-schermo"),
 ]

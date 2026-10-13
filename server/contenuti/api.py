@@ -332,6 +332,22 @@ class AnteprimaView(VistaConContesto, APIView):
         return Response({"monitor": monitor.id, "quando": istante, "sequenza": sequenza})
 
 
+class AnteprimaManifestView(VistaConContesto, APIView):
+    """Il manifest di un monitor come lo riceve il player, per l'anteprima grafica nel pannello."""
+
+    ruoli_lettura = TUTTI
+
+    def get(self, request, monitor_id):
+        monitor = Monitor.objects.filter(id=monitor_id)
+        limitate = sedi_visibili(request.user)
+        if limitate is not None:
+            monitor = monitor.filter(sede_id__in=limitate)
+        monitor = monitor.first()
+        if monitor is None:
+            raise exceptions.NotFound()
+        return Response(palinsesto.manifest(monitor))
+
+
 # --- Player -------------------------------------------------------------------
 
 

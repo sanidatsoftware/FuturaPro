@@ -1,0 +1,66 @@
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: #fff;
+  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+  cursor: none;
+}
+
+#schermo { position: fixed; inset: 0; }
+
+.palco {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  overflow: hidden;
+  background-position: center;
+  transform-origin: center;
+}
+
+.zona { position: absolute; overflow: hidden; box-sizing: border-box; }
+
+/* Slide: gli strati si sovrappongono durante la transizione. */
+.strato { position: absolute; inset: 0; }
+.media { width: 100%; height: 100%; border: 0; display: block; background: transparent; }
+
+.zona-orologio, .zona-testo {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 2%;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.zona-orologio .ora { font-weight: 600; }
+.zona-orologio .data { opacity: .85; }
+.zona-orologio .data::first-letter { text-transform: uppercase; }
+.zona-testo { flex-direction: row; align-items: center; }
+
+.zona-meteo { display: flex; align-items: center; justify-content: center; gap: 4%; padding: 2%; line-height: 1.15; }
+.zona-meteo.in-colonna { flex-direction: column; text-align: center; }
+.zona-meteo .icona svg { width: 100%; height: 100%; }
+.zona-meteo .temperatura { font-weight: 600; }
+.zona-meteo .dettagli, .zona-meteo .localita { opacity: .85; }
+
+.zona-notizie { display: flex; align-items: center; }
+.zona-notizie .rullo { white-space: nowrap; font-weight: 500; will-change: transform; }
+
+#avviso {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2vh;
+  background: #0d1b2a;
+  text-align: center;
+  padding: 5vw;
+  z-index: 10;
+}
+#avviso[hidden] { display: none; }
+#avviso h1 { font-size: 4vmin; font-weight: 500; margin: 0; }
+#avviso p { font-size: 2.6vmin; opacity: .8; margin: 0; max-width: 60ch; }
+#avviso .codice { font-size: 16vmin; font-weight: 700; letter-spacing: .08em; font-variant-numeric: tabular-nums; }

@@ -9,7 +9,8 @@ La specifica tecnica (architettura, ruoli, isolamento tra clienti, teleassistenz
 ## Struttura
 
 - `server/` — API Django: clienti, utenti e ruoli, sedi, monitor e abbinamento dei player,
-  audit, teleassistenza.
+  contenuti, playlist e palinsesto, layout grafici, audit, teleassistenza.
+- `server/player/` — motore di rendering e player nel browser (`/player/`).
 - `docs/` — specifica.
 
 ## Avvio in sviluppo
@@ -27,6 +28,10 @@ python manage.py crea_admin_assoluto admin
 python manage.py runserver
 ```
 
+Per vedere subito qualcosa: `python manage.py dati_dimostrativi --password "…"` crea il cliente
+«Demo» (utente `demo_admin`) con layout, slide e notizie. Apri <http://localhost:8000/player/>:
+mostra un codice; abbinalo con `POST /api/monitor/abbina/` (codice, nome, sede e gruppo «Tutti»).
+
 L'API è navigabile su <http://localhost:8000/api/> dopo il login su `/api/sessione/login/`.
 Gli utenti di piattaforma scelgono il cliente con l'intestazione `X-Cliente: <uuid>`.
 
@@ -34,6 +39,7 @@ Gli utenti di piattaforma scelgono il cliente con l'intestazione `X-Cliente: <uu
 
 ```bash
 cd server && FUTURAPRO_DEBUG=1 python manage.py test
+node --test server/player/static/player/regole.test.mjs   # dalla radice del repository
 ```
 
 L'utente del database non deve essere superuser né avere `BYPASSRLS`:
