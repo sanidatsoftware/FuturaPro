@@ -169,6 +169,14 @@ quell'orientamento; se manca anche quello, le slide a tutto schermo.
 Una sola zona `slide` per layout mostra il palinsesto; le altre possono girare playlist fisse.
 Il layout ha anche colore e immagine di sfondo e il carattere.
 
+**Editor visuale** (`/editor/`): elenco dei layout con anteprima in miniatura, creazione vuota o da
+modello, e per ogni layout un palco a dimensione reale (1920×1080 o 1080×1920) dove si aggiungono
+le zone, si spostano e si ridimensionano trascinandole (aggancio allo 0,5%, frecce per gli
+spostamenti fini), si portano avanti o indietro, si duplicano e si configurano in un pannello
+laterale con i campi del loro tipo: playlist, immagini, reparti e località si scelgono da elenchi.
+Al salvataggio il server valida tutto e gli errori tornano sulla zona che li ha, evidenziata in
+rosso. Gli utenti di piattaforma lo aprono con `?cliente=<id>`.
+
 **Modelli pronti** (`POST /api/layout/da-modello/`): schermo intero; orizzontale con slide, ora,
 meteo e rullo notizie; totem verticale con ora e meteo in alto, slide al centro e rullo in basso.
 Per la località del meteo il pannello cerca la città per nome (`/api/meteo/localita/?nome=`).
@@ -380,7 +388,8 @@ piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
    - [x] Motore di rendering e player nel browser (kiosk), anteprima grafica
    - [x] Eliminacode: reparti, banco, chiavi per pulsantiere e bilance, display, totem con stampa
    - [ ] Eliminacode: file audio propri, statistiche di attesa, coda seguita dal telefono (QR)
-   - [ ] Pannello web React con selettore azienda e editor visuale dei layout
+   - [x] Editor visuale dei layout (zone da trascinare e configurare, orizzontale e verticale)
+   - [ ] Pannello web completo con selettore azienda (contenuti, monitor, utenti, reparti)
    - [ ] Player Android e Windows con cache offline
    - [ ] 2FA, Docker Compose, CI
 2. **Teleassistenza (circa 2 mesi):** CA, mTLS, segnalazione WebSocket, WebRTC, coturn, agent

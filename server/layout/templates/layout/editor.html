@@ -1,0 +1,37 @@
+{% load static %}<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Layout · FuturaPro</title>
+  <link rel="stylesheet" href="{% static 'layout/editor.css' %}">
+</head>
+<body data-layout="{{ layout_id|default:'' }}">
+  <header class="barra">
+    <a class="indietro" href="/editor/" id="torna">← Layout</a>
+    <input id="nome" class="nome" aria-label="Nome del layout" placeholder="Nome del layout">
+    <span class="spazio"></span>
+    <label class="campo-barra">Sfondo <input id="sfondo" type="color"></label>
+    <label class="campo-barra"><input id="predefinito" type="checkbox"> Predefinito</label>
+    <span id="orientamento" class="etichetta"></span>
+    <button id="annulla" type="button">Annulla modifiche</button>
+    <button id="salva" type="button" class="primario">Salva</button>
+  </header>
+  <div id="messaggio" class="messaggio" hidden></div>
+  <main class="editor">
+    <aside class="tavolozza">
+      <h2>Aggiungi</h2>
+      <div id="tavolozza"></div>
+      <p class="aiuto">Trascina le zone per spostarle, gli angoli e i bordi per ridimensionarle. Frecce: sposta di 0,5% (con Maiusc di 5%). Canc: elimina.</p>
+    </aside>
+    <section class="area" id="area">
+      <div id="palco" class="palco"></div>
+    </section>
+    <aside class="proprieta" id="proprieta">
+      <p class="vuoto">Seleziona una zona per modificarla.</p>
+    </aside>
+  </main>
+  <main class="elenco" id="elenco" hidden></main>
+  <script type="module" src="{% static 'layout/editor.js' %}"></script>
+</body>
+</html>

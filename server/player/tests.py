@@ -9,3 +9,9 @@ class PagineTest(TestCase):
         r = self.client.get("/anteprima/00000000-0000-0000-0000-000000000001/")
         self.assertContains(r, 'data-modo="anteprima"')
         self.assertEqual(r["X-Frame-Options"], "SAMEORIGIN")
+
+    def test_editor_e_banco(self):
+        self.assertContains(self.client.get("/editor/"), "layout/editor.js")
+        r = self.client.get("/editor/00000000-0000-0000-0000-000000000001/")
+        self.assertContains(r, 'data-layout="00000000-0000-0000-0000-000000000001"')
+        self.assertContains(self.client.get("/banco/"), "eliminacode/banco.js")
