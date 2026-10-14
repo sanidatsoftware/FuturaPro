@@ -602,18 +602,18 @@ piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
 | `GET /api/audit/` | SystemAdministrator, Administrator |
 | `GET /api/teleassistenza/sessioni/` | SystemAdministrator, Tecnico, Administrator |
 | `POST /api/teleassistenza/sessioni/`, `POST …/{id}/chiudi/` | SystemAdministrator, Tecnico |
-| `/api/contenuti/` (upload multipart), `GET /api/contenuti/{id}/file/` | lettura: tutti — scrittura: Assoluto, Administrator, UserCliente |
-| `/api/playlist/`, `/api/pubblicazioni/` | lettura: tutti — scrittura: Assoluto, Administrator, UserCliente |
-| `POST /api/pubblica/` | Assoluto, Administrator, UserCliente |
+| `/api/contenuti/` (upload multipart), `GET /api/contenuti/{id}/file/` | lettura: tutti — scrittura: SystemAdministrator, Administrator, UserCliente |
+| `/api/playlist/`, `/api/pubblicazioni/` | lettura: tutti — scrittura: SystemAdministrator, Administrator, UserCliente |
+| `POST /api/pubblica/` | SystemAdministrator, Administrator, UserCliente |
 | `GET /api/anteprima/{monitor}/?quando=` | tutti |
-| `/api/layout/`, `POST /api/layout/da-modello/`, `GET /api/layout/modelli/` | lettura: tutti — scrittura: Assoluto, Administrator (se abilitato) |
+| `/api/layout/`, `POST /api/layout/da-modello/`, `GET /api/layout/modelli/` | lettura: tutti — scrittura: SystemAdministrator, Administrator (se abilitato) |
 | `GET /api/zone/{id}/dati/`, `GET /api/anteprima/{monitor}/manifest/` | tutti (anteprima) |
-| `GET /api/meteo/localita/?nome=` | Assoluto, Administrator |
+| `GET /api/meteo/localita/?nome=` | SystemAdministrator, Administrator |
 | `POST /api/player/abbinamento/`, `GET /api/player/stato/`, `POST /api/player/heartbeat/` | player |
 | `GET /api/player/zone/{id}/dati/`, `POST /api/player/zone/{id}/emetti/` | player |
-| `/api/reparti/` | lettura: tutti — scrittura: Assoluto, Administrator |
-| `POST /api/reparti/{id}/avanti/` (anche `indietro`, `ripeti`, `imposta`, `azzera`, `emetti`) | Assoluto, Administrator, UserCliente |
-| `POST/DELETE /api/reparti/{id}/chiave/` | Assoluto, Administrator |
+| `/api/reparti/` | lettura: tutti — scrittura: SystemAdministrator, Administrator |
+| `POST /api/reparti/{id}/avanti/` (anche `indietro`, `ripeti`, `imposta`, `azzera`, `emetti`) | SystemAdministrator, Administrator, UserCliente |
+| `POST/DELETE /api/reparti/{id}/chiave/` | SystemAdministrator, Administrator |
 | `GET /api/eliminacode/pulsante/`, `POST /api/eliminacode/pulsante/{avanti,indietro,ripeti}/` | chiave del reparto |
 | `GET /api/player/palinsesto/`, `GET /api/player/file/{id}/` | player |
 
