@@ -1,5 +1,6 @@
 import secrets
 
+from django.http import FileResponse
 from rest_framework import exceptions, serializers, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -12,8 +13,8 @@ from dispositivi.api import VistaPlayer, credenziale_dalla_richiesta
 from dispositivi.models import Monitor, impronta
 from layout.manifest import layout_del_monitor
 
-from . import servizi
-from .models import CredenzialePulsante, Reparto
+from . import annunci, servizi
+from .models import CredenzialePulsante, FileAnnuncio, Reparto, SerieAnnunci
 
 # Operazioni del banco: le fa anche lo UserCliente, che non gestisce i reparti.
 AZIONI_BANCO = {"avanti", "indietro", "ripeti", "azzera", "imposta", "emetti"}
@@ -30,12 +31,13 @@ class RepartoSerializer(serializers.ModelSerializer):
     ha_chiave = serializers.SerializerMethodField()
     # Se la sede ha un totem, numeri e chiamate stanno lì e non sul server.
     totem = serializers.CharField(source="sede.indirizzo_totem", read_only=True)
+    annunci = RiferimentoCliente(SerieAnnunci, required=False, allow_null=True)
 
     class Meta:
         model = Reparto
         fields = [
             "id", "sede", "nome", "colore", "colore_testo", "ordine", "massimo", "attivo", "azzeramento_automatico",
-            "numero", "in_coda", "ultimo_emesso", "chiamato_il", "ha_chiave", "totem",
+            "numero", "in_coda", "ultimo_emesso", "chiamato_il", "ha_chiave", "totem", "annunci",
         ]
         read_only_fields = ["chiamato_il"]
 
@@ -139,6 +141,108 @@ class RepartiViewSet(ViewSetCliente):
         CredenzialePulsante.objects.create(impronta_chiave=impronta(chiave), reparto=reparto, cliente_id=reparto.cliente_id)
         registra(request.user, "chiave_pulsante_creata", reparto)
         return Response({"chiave": chiave}, status=status.HTTP_201_CREATED)
+
+
+# --- Annunci registrati ----------------------------------------------------------
+
+
+class SerieAnnunciSerializer(serializers.ModelSerializer):
+    numeri = serializers.SerializerMethodField()
+    predefinito = serializers.SerializerMethodField()
+    reparti = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SerieAnnunci
+        fields = ["id", "nome", "numeri", "predefinito", "reparti", "creata"]
+        read_only_fields = ["creata"]
+
+    def get_numeri(self, serie):
+        # numero -> id del file, per ascoltarlo dal pannello
+        return {str(f.numero): str(f.id) for f in serie.file.all() if f.numero is not None}
+
+    def get_predefinito(self, serie):
+        return next((str(f.id) for f in serie.file.all() if f.numero is None), None)
+
+    def get_reparti(self, serie):
+        return [str(r.id) for r in serie.reparti.all()]
+
+    def validate_nome(self, nome):
+        nome = nome.strip()
+        doppione = SerieAnnunci.objects.filter(nome__iexact=nome)
+        if self.instance is not None:
+            doppione = doppione.exclude(id=self.instance.id)
+        if doppione.exists():
+            raise serializers.ValidationError("Esiste già una serie con questo nome.")
+        return nome
+
+
+class SerieAnnunciViewSet(ViewSetCliente):
+    """Gli annunci dei numeri (es. «SALUMERIA_27.mp3»), in serie collegate ai reparti."""
+
+    ruoli_scrittura = GESTIONE
+    serializer_class = SerieAnnunciSerializer
+
+    def get_queryset(self):
+        return SerieAnnunci.objects.prefetch_related("file", "reparti")
+
+    def perform_destroy(self, serie):
+        registra(self.request.user, "annunci_eliminati", serie, nome=serie.nome)
+        for f in serie.file.all():
+            f.delete()
+        serie.delete()
+
+    @action(detail=False, methods=["post"])
+    def importa(self, request):
+        """Molti file insieme (anche una cartella intera): serie e numero dai nomi dei file.
+        Con ``serie`` (id) vanno tutti in quella serie."""
+        files = request.FILES.getlist("file")
+        if not files:
+            raise exceptions.ValidationError({"file": "Scegli i file audio."})
+        serie = None
+        if request.data.get("serie"):
+            serie = SerieAnnunci.objects.filter(id=request.data["serie"]).first()
+            if serie is None:
+                raise exceptions.ValidationError({"serie": "Serie inesistente."})
+        esito = annunci.importa(files, serie)
+        registra(request.user, "annunci_caricati", serie, file=esito["caricati"], scartati=len(esito["scartati"]))
+        return Response(esito, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def togli(self, request, pk=None):
+        """Toglie i file di alcuni numeri (``numeri``) e/o il predefinito (``predefinito: true``)."""
+        serie = self.get_object()
+        numeri = [int(n) for n in request.data.get("numeri") or [] if str(n).isdigit()]
+        tolti = list(serie.file.filter(numero__in=numeri))
+        if request.data.get("predefinito") is True:
+            tolti += list(serie.file.filter(numero__isnull=True))
+        for f in tolti:
+            f.delete()
+        return Response(SerieAnnunciSerializer(SerieAnnunci.objects.get(id=serie.id)).data)
+
+    @action(detail=False, methods=["get"], url_path=r"ascolta/(?P<file_id>[0-9a-f-]{36})")
+    def ascolta(self, request, file_id=None):
+        f = FileAnnuncio.objects.filter(id=file_id).first()
+        if f is None:
+            raise exceptions.NotFound()
+        return _audio(f)
+
+
+def _audio(f):
+    tipo = {".wav": "audio/wav", ".ogg": "audio/ogg"}.get(f.file.name[-4:], "audio/mpeg")
+    return FileResponse(f.file.open("rb"), content_type=tipo)
+
+
+class AnnuncioPlayerView(VistaPlayer):
+    """Il file di un annuncio, per i player della sede dei reparti che lo usano."""
+
+    def get(self, request, file_id):
+        credenziale = credenziale_dalla_richiesta(request)
+        with contesto_cliente(credenziale.cliente_id):
+            monitor = Monitor.objects.get(id=credenziale.monitor_id)
+            f = FileAnnuncio.objects.filter(id=file_id, serie__reparti__sede_id=monitor.sede_id).first()
+            if f is None:
+                raise exceptions.NotFound()
+            return _audio(f)
 
 
 # --- Pulsantiere, bilance, script -----------------------------------------------

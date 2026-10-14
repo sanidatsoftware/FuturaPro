@@ -100,6 +100,12 @@ PORTA_CODE_HTTPS = 8443
 PORTA_CODE_HTTP = 8090
 
 
+def annunci_della_sede(sede_id):
+    from eliminacode.annunci import annunci_della_sede as calcola
+
+    return calcola(sede_id)
+
+
 def code_del_monitor(monitor, layout: dict) -> dict:
     """Dove sono le code del negozio. Con un totem, il monitor le legge da lì e il
     totem riceve anche la configurazione dei reparti (con le impronte delle chiavi
@@ -172,6 +178,8 @@ def manifest(monitor) -> dict:
         "riserva": riserva,
         "contenuti": {chiave: _voce(contenuto) for chiave, contenuto in contenuti.items()},
         "code": code_del_monitor(monitor, layout),
+        # I file audio dei numeri chiamati, per i reparti della sede che li hanno.
+        "annunci": annunci_della_sede(monitor.sede_id),
     }
     # La versione dipende solo dal contenuto: se nulla cambia, il player non riscarica.
     corpo["versione"] = sha256(json.dumps(corpo, sort_keys=True).encode()).hexdigest()

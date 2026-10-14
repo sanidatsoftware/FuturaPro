@@ -5,14 +5,17 @@
   le chiamate di bilance e banchi, dà i numeri ai monitor. Non dipende dal server
   centrale: se la rete verso il server cade, il negozio continua a dare i turni.
   Dal server arriva solo la configurazione (nomi, colori, chiavi delle bilance),
-  che il player del totem gli passa a ogni aggiornamento.
+  che il player del totem gli passa a ogni aggiornamento, con i file audio degli
+  annunci dei numeri (es. «SALUMERIA_27.mp3»): restano qui, in annunci\, e i monitor
+  del negozio li prendono da qui anche quando il server non è raggiungibile.
 
   Lo installa e lo avvia player-windows.ps1 (tipo totem) come attività di sistema.
   Porte: 8443 HTTPS (monitor e totem), 8090 HTTP (bilance e banchi in rete locale).
 
   Chi può fare cosa:
     - leggere i numeri (/stato): chiunque in rete; sono gli stessi mostrati a schermo;
-    - emettere biglietti e ricevere la configurazione: solo il totem stesso (127.0.0.1);
+    - leggere i file degli annunci (/annunci/<impronta>): chiunque in rete;
+    - emettere biglietti, ricevere la configurazione e i file: solo il totem stesso (127.0.0.1);
     - chiamare i numeri (/banco/…): solo con la chiave del reparto, come nel pannello.
 
   Numeri da 0 a 99 (o al massimo del reparto) e poi di nuovo 0; al primo uso di un
@@ -27,10 +30,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.0"
+$Versione = "1.1"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
+$cartellaAnnunci = Join-Path $Cartella "annunci"
 New-Item -ItemType Directory -Force -Path $Cartella | Out-Null
+New-Item -ItemType Directory -Force -Path $cartellaAnnunci | Out-Null
 
 function Registra([string]$testo) {
     $riga = "{0}  {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $testo
@@ -162,6 +167,36 @@ function Rispondi($contesto, [int]$codice, $corpo, [string]$tipo = "application/
     $r.OutputStream.Close()
 }
 
+# --- Annunci: un file per impronta SHA-256 (il nome non conta) ------------------------
+
+function Impronta-Byte([byte[]]$byte) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    return (($sha.ComputeHash($byte) | ForEach-Object { $_.ToString("x2") }) -join "")
+}
+
+function Annunci-Presenti {
+    return @(Get-ChildItem -Path $cartellaAnnunci -File | Where-Object { $_.Name -match "^[0-9a-f]{64}$" } | ForEach-Object { $_.Name })
+}
+
+# Tiene solo i file ancora usati dai reparti (l'elenco arriva con la configurazione).
+function Pulisci-Annunci($validi) {
+    $tenere = @{}
+    foreach ($v in @($validi)) { $tenere[[string]$v] = $true }
+    foreach ($nome in Annunci-Presenti) {
+        if (-not $tenere.ContainsKey($nome)) { Remove-Item -Force (Join-Path $cartellaAnnunci $nome) }
+    }
+}
+
+function Leggi-Byte($richiesta, [int]$massimo) {
+    $memoria = New-Object System.IO.MemoryStream
+    $blocco = New-Object byte[] 65536
+    while (($letti = $richiesta.InputStream.Read($blocco, 0, $blocco.Length)) -gt 0) {
+        $memoria.Write($blocco, 0, $letti)
+        if ($memoria.Length -gt $massimo) { return $null }
+    }
+    return $memoria.ToArray()
+}
+
 function Leggi-Corpo($richiesta) {
     $lettore = New-Object System.IO.StreamReader($richiesta.InputStream, [System.Text.Encoding]::UTF8)
     $testo = $lettore.ReadToEnd()
@@ -203,6 +238,15 @@ function Gestisci($contesto) {
         $attivi = @($script:reparti | Where-Object { $_.attivo } | Sort-Object { [int]$_.ordine }, { $_.nome })
         Rispondi $contesto 200 @{ reparti = @($attivi | ForEach-Object { Stato-Reparto $_ }) }; return
     }
+    if ($metodo -eq "GET" -and $percorso -eq "/annunci") {
+        Rispondi $contesto 200 @{ file = @(Annunci-Presenti) }; return
+    }
+    if ($metodo -eq "GET" -and $percorso -match "^/annunci/([0-9a-f]{64})$") {
+        $file = Join-Path $cartellaAnnunci $Matches[1]
+        if (Test-Path $file) { Rispondi $contesto 200 ([System.IO.File]::ReadAllBytes($file)) "audio/mpeg" }
+        else { Rispondi $contesto 404 @{ errore = "Annuncio non presente." } }
+        return
+    }
     if ($metodo -eq "GET" -and $percorso -eq "/certificato.cer") {
         $file = Join-Path $Cartella "certificato.cer"
         if (Test-Path $file) { Rispondi $contesto 200 ([System.IO.File]::ReadAllBytes($file)) "application/x-x509-ca-cert" }
@@ -216,7 +260,18 @@ function Gestisci($contesto) {
         $dati = Leggi-Corpo $richiesta
         $script:reparti = @($dati.reparti)
         Salva-Stato
+        if ($null -ne $dati.annunci) { Pulisci-Annunci $dati.annunci }
         Registra "configurazione: $(@($script:reparti).Count) reparti"
+        Rispondi $contesto 204 $null; return
+    }
+    if ($metodo -eq "POST" -and $percorso -match "^/annunci/([0-9a-f]{64})$") {
+        if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }
+        $impronta = $Matches[1]
+        $byte = Leggi-Byte $richiesta (3MB)
+        if ($null -eq $byte) { Rispondi $contesto 413 @{ errore = "File troppo grande." }; return }
+        # Si salva solo se il contenuto è proprio quello atteso.
+        if ((Impronta-Byte $byte) -ne $impronta) { Rispondi $contesto 400 @{ errore = "Impronta diversa." }; return }
+        [System.IO.File]::WriteAllBytes((Join-Path $cartellaAnnunci $impronta), $byte)
         Rispondi $contesto 204 $null; return
     }
     if ($metodo -eq "POST" -and $percorso -match "^/emetti/([0-9a-fA-F-]{36})$") {

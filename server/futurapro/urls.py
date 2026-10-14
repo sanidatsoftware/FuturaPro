@@ -25,7 +25,7 @@ from dispositivi.api import (
     StatoPlayerView,
 )
 from eliminacode import views as eliminacode
-from eliminacode.api import EmettiPlayerView, PulsanteView, RepartiViewSet
+from eliminacode.api import AnnuncioPlayerView, EmettiPlayerView, PulsanteView, RepartiViewSet, SerieAnnunciViewSet
 from layout import views as layout
 from layout.api import CercaLocalitaView, DatiZonaPlayerView, DatiZonaView, LayoutViewSet
 from pannello import views as pannello_viste
@@ -53,6 +53,7 @@ router.register("campagne", CampagneViewSet, basename="campagne")
 router.register("promozioni", PromozioniViewSet, basename="promozioni")
 router.register("layout", LayoutViewSet, basename="layout")
 router.register("reparti", RepartiViewSet, basename="reparti")
+router.register("annunci", SerieAnnunciViewSet, basename="annunci")
 router.register("teleassistenza/sessioni", SessioniViewSet, basename="teleassistenza")
 
 urlpatterns = [
@@ -71,6 +72,7 @@ urlpatterns = [
     path("api/player/zone/<uuid:zona_id>/emetti/", EmettiPlayerView.as_view(), name="player-emetti"),
     path("api/eliminacode/pulsante/", PulsanteView.as_view(), name="pulsante-stato"),
     path("api/eliminacode/pulsante/<str:operazione>/", PulsanteView.as_view(), name="pulsante"),
+    path("api/player/annunci/<uuid:file_id>/", AnnuncioPlayerView.as_view(), name="player-annuncio"),
     path("api/player/heartbeat/", HeartbeatView.as_view(), name="player-heartbeat"),
     path("api/player/schermata/", SchermataPlayerView.as_view(), name="player-schermata"),
     path("api/", include(router.urls)),

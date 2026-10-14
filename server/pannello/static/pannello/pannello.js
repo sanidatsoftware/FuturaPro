@@ -508,7 +508,7 @@ function schermoInMiniatura(m, cella) {
 // --- Reparti ----------------------------------------------------------------------------------
 
 async function schedaReparti() {
-  const [reparti, sedi] = await Promise.all([elenco("/api/reparti/"), elenco("/api/sedi/")]);
+  const [reparti, sedi, serie] = await Promise.all([elenco("/api/reparti/"), elenco("/api/sedi/"), tutteLePagine("/api/annunci/")]);
   const gestione = ruoloGestione();
 
   if (gestione) {
@@ -526,7 +526,7 @@ async function schedaReparti() {
 
   const tutti = sezione("Reparti");
   crea("p", { classe: "nota", testo: "Numeri da 0 a 99; la coda riparte ogni giorno. Il collegamento per bilancia o pulsantiera si apre una volta sul dispositivo, che lo ricorda." }, tutti);
-  const corpo = tabella(["Nome", "Sede", "Colori", "Ordine", "Attivo", "Ora", "Bilancia / pulsantiera", ""], tutti);
+  const corpo = tabella(["Nome", "Sede", "Colori", "Ordine", "Attivo", "Ora", "Annunci (mp3)", "Bilancia / pulsantiera", ""], tutti);
   for (const r of reparti) {
     const riga = crea("tr", {}, corpo);
     const nome = crea("input", { value: r.nome, disabled: !gestione }, crea("td", {}, riga));
@@ -538,6 +538,12 @@ async function schedaReparti() {
     const attivo = crea("input", { type: "checkbox", checked: r.attivo, disabled: !gestione }, crea("td", {}, riga));
     // Con il totem i numeri stanno lì: il server non li conosce.
     crea("td", { testo: r.totem ? `sul totem ${r.totem}` : `${r.numero ?? "–"} · ${r.in_coda} in coda` }, riga);
+    // Quale serie di file audio fa sentire il numero chiamato su questo reparto.
+    const annunci = scelta([["", "— din-don —"], ...serie.map((x) => [x.id, `${x.nome} (${Object.keys(x.numeri).length})`])], r.annunci || "");
+    annunci.disabled = !gestione;
+    annunci.title = "Alla chiamata i monitor fanno sentire il file del numero di questa serie.";
+    annunci.addEventListener("change", () => prova(() => api("PATCH", `/api/reparti/${r.id}/`, { annunci: annunci.value || null }), "Annunci del reparto aggiornati: i monitor li ricevono entro un minuto."));
+    crea("td", {}, riga).appendChild(annunci);
     const chiave = crea("td", { classe: "chiave" }, riga);
     if (gestione) {
       crea("button", {
@@ -581,6 +587,131 @@ async function schedaReparti() {
     }
   }
   if (!reparti.length) crea("p", { classe: "vuoto", testo: "Nessun reparto." }, tutti);
+  sezioneAnnunci(serie, reparti, sedi, gestione);
+}
+
+// --- Annunci dei numeri: un file audio per numero (es. «SALUMERIA_27.mp3») -----------------------
+
+const PER_INVIO = 40; // file per richiesta: una cartella intera parte a pezzi
+
+function sezioneAnnunci(serie, reparti, sedi, gestione) {
+  const box = sezione("🔊 Annunci dei numeri (file audio)");
+  crea("p", {
+    classe: "nota",
+    testo: "Quando il banco chiama un numero, i monitor fanno sentire il file audio di quel numero (es. «Salumeria, numero 27»). "
+      + "Carica l'intera cartella dei file: il nome decide tutto, come «SALUMERIA_27.mp3» → serie «SALUMERIA», numero 27. "
+      + "Le serie con lo stesso nome di un reparto gli vengono collegate da sole; le altre (es. «foodcop») si collegano dalla colonna «Annunci (mp3)» qui sopra. "
+      + "Un file senza numero (es. «DEFAULT.mp3»), caricato dentro una serie, vale per i numeri che non hanno il loro. Senza file si sente il din-don.",
+  }, box);
+  if (gestione) {
+    const pulsanti = crea("div", { classe: "riga" }, box);
+    const cartella = crea("input", { type: "file", multiple: true, hidden: true, webkitdirectory: true }, pulsanti);
+    const file = crea("input", { type: "file", multiple: true, hidden: true, accept: ".mp3,.wav,.ogg,audio/*" }, pulsanti);
+    crea("button", { classe: "primario", testo: "📁 Carica una cartella", "data-aiuto": "Scegli la cartella con tutti i file (es. «audio»): vengono caricati e divisi per serie in base al nome.", onclick: () => cartella.click() }, pulsanti);
+    crea("button", { testo: "Scegli file", onclick: () => file.click() }, pulsanti);
+    const esito = crea("div", { classe: "esito-annunci" }, box);
+    for (const input of [cartella, file]) input.addEventListener("change", () => caricaAnnunci([...input.files], null, esito));
+  }
+  if (!serie.length) {
+    crea("p", { classe: "vuoto", testo: "Nessun file audio caricato." }, box);
+    return;
+  }
+  for (const x of serie) {
+    const collegati = reparti.filter((r) => x.reparti.includes(r.id));
+    const massimo = Math.max(99, ...collegati.map((r) => r.massimo), ...Object.keys(x.numeri).map(Number));
+    const presenti = Object.keys(x.numeri).length;
+    const scheda = crea("details", { classe: "serie-annunci" }, box);
+    const titolo = crea("summary", {}, scheda);
+    crea("strong", { testo: x.nome }, titolo);
+    const mancanti = massimo + 1 - presenti;
+    crea("span", { classe: mancanti && !x.predefinito ? "attenzione" : "tenue", testo: ` · ${presenti} numeri${mancanti > 0 ? ` (${mancanti} senza file${x.predefinito ? ": suona il predefinito" : ""})` : ""}${x.predefinito ? " · predefinito ✓" : ""}` }, titolo);
+    crea("span", {
+      classe: collegati.length ? "tenue" : "attenzione",
+      testo: collegati.length ? ` · ${collegati.map((r) => `${r.nome} (${sedi.find((q) => q.id === r.sede)?.nome || ""})`).join(", ")}` : " · non collegata a nessun reparto",
+    }, titolo);
+
+    if (gestione) {
+      const azioni = crea("div", { classe: "riga" }, scheda);
+      const aggiungi = crea("input", { type: "file", multiple: true, hidden: true, accept: ".mp3,.wav,.ogg,audio/*" }, azioni);
+      const esito = crea("div", { classe: "esito-annunci" }, scheda);
+      aggiungi.addEventListener("change", () => caricaAnnunci([...aggiungi.files], x.id, esito));
+      crea("button", { testo: "Aggiungi o sostituisci file", "data-aiuto": "File di questa serie: il numero si legge dal nome; un file senza numero diventa il predefinito.", onclick: () => aggiungi.click() }, azioni);
+      const nome = crea("input", { value: x.nome, maxLength: 60, "aria-label": "Nome della serie" }, azioni);
+      crea("button", { testo: "Rinomina", onclick: () => prova(() => api("PATCH", `/api/annunci/${x.id}/`, { nome: nome.value }), "Serie rinominata.") }, azioni);
+      crea("button", {
+        testo: "Elimina la serie", classe: "pericolo",
+        onclick: () => confirm(`Eliminare la serie «${x.nome}» e tutti i suoi file? I reparti collegati torneranno al din-don.`) && prova(() => api("DELETE", `/api/annunci/${x.id}/`), "Serie eliminata."),
+      }, azioni);
+    }
+    // Un tasto per numero: verde se c'è il file (clic: si ascolta), grigio se manca.
+    const griglia = crea("div", { classe: "griglia-annunci" }, scheda);
+    const voci = [["predefinito", x.predefinito, "★"], ...Array.from({ length: massimo + 1 }, (_, n) => [n, x.numeri[String(n)], String(n)])];
+    for (const [numero, id, etichetta] of voci) {
+      const tasto = crea("button", {
+        type: "button", classe: `numero-annuncio${id ? " presente" : ""}${numero === "predefinito" ? " predefinito" : ""}`, testo: etichetta,
+        title: id ? `${numero === "predefinito" ? "Predefinito" : `Numero ${numero}`}: clic per ascoltare${gestione ? ", Alt+clic per togliere" : ""}` : `Numero ${numero}: nessun file`,
+      }, griglia);
+      if (!id) continue;
+      tasto.addEventListener("click", (e) => {
+        if (e.altKey && gestione) {
+          if (!confirm(`Togliere il file ${numero === "predefinito" ? "predefinito" : `del numero ${numero}`}?`)) return;
+          prova(() => api("POST", `/api/annunci/${x.id}/togli/`, numero === "predefinito" ? { predefinito: true } : { numeri: [numero] }), "File tolto.");
+          return;
+        }
+        tasto.classList.add("suona");
+        const audio = new Audio(conCliente(`/api/annunci/ascolta/${id}/`));
+        audio.addEventListener("ended", () => tasto.classList.remove("suona"));
+        audio.addEventListener("error", () => { tasto.classList.remove("suona"); avvisa("Il file non si riesce a riprodurre."); });
+        audio.play().catch(() => tasto.classList.remove("suona"));
+      });
+    }
+  }
+}
+
+async function caricaAnnunci(scelti, serie, esito) {
+  const audio = scelti.filter((f) => /\.(mp3|wav|ogg)$/i.test(f.name));
+  if (!audio.length) {
+    avvisa("Nessun file audio (mp3, wav, ogg) tra quelli scelti.");
+    return;
+  }
+  const totale = { caricati: 0, uguali: 0, scartati: [], serie: new Map() };
+  esito.replaceChildren();
+  const avanzamento = crea("p", { classe: "nota" }, esito);
+  try {
+    for (let i = 0; i < audio.length; i += PER_INVIO) {
+      avanzamento.textContent = `Caricamento ${Math.min(i + PER_INVIO, audio.length)} di ${audio.length}…`;
+      const dati = new FormData();
+      for (const f of audio.slice(i, i + PER_INVIO)) dati.append("file", f, f.name);
+      if (serie) dati.append("serie", serie);
+      const parziale = await api("POST", "/api/annunci/importa/", dati);
+      totale.caricati += parziale.caricati;
+      totale.uguali += parziale.uguali;
+      totale.scartati.push(...parziale.scartati);
+      for (const s of parziale.serie) {
+        const somma = totale.serie.get(s.id) || { nome: s.nome, file: 0, collegati: [] };
+        somma.file += s.file;
+        somma.collegati.push(...s.collegati);
+        totale.serie.set(s.id, somma);
+      }
+    }
+  } catch (errore) {
+    avvisa(errore.message);
+    avanzamento.textContent = "Caricamento interrotto.";
+    return;
+  }
+  const righe = [...totale.serie.values()].map((s) => `${s.nome}: ${s.file} file${s.collegati.length ? ` → collegata a ${s.collegati.join(", ")}` : ""}`);
+  avvisa(`Annunci caricati: ${totale.caricati} nuovi${totale.uguali ? `, ${totale.uguali} già presenti` : ""}${totale.scartati.length ? `, ${totale.scartati.length} scartati` : ""}.`, "ok");
+  await mostra(stato.scheda);
+  // Il riepilogo resta visibile dopo il ridisegno.
+  const box = document.querySelector(".esito-annunci");
+  if (!box) return;
+  crea("p", { classe: "nota", testo: righe.join(" · ") }, box);
+  if (totale.scartati.length) {
+    const dettagli = crea("details", {}, box);
+    crea("summary", { testo: `${totale.scartati.length} file non caricati` }, dettagli);
+    const elenco = crea("ul", {}, dettagli);
+    for (const s of totale.scartati) crea("li", { testo: `${s.file}: ${s.motivo}` }, elenco);
+  }
 }
 
 // --- Sedi e gruppi -------------------------------------------------------------------------------

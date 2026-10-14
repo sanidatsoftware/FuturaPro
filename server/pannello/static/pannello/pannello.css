@@ -115,3 +115,16 @@ td select { max-width: 190px; }
 .mini-schermo.con-foto img { object-fit: cover; }
 .mini-schermo.scatto .vetro-schermo::after { content: ""; position: absolute; inset: 0; background: #fff; animation: flash .9s ease-out infinite; }
 @keyframes flash { 0% { opacity: .7; } 100% { opacity: 0; } }
+
+/* Annunci dei numeri */
+.serie-annunci { border: 1px solid var(--linea); border-radius: 10px; padding: 8px 12px; margin: 8px 0; background: var(--carta); }
+.serie-annunci summary { cursor: pointer; padding: 4px 0; }
+.serie-annunci .tenue { color: var(--tenue); }
+.serie-annunci .attenzione { color: #b26a00; font-weight: 600; }
+.griglia-annunci { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 4px; margin-top: 8px; }
+.numero-annuncio { margin: 0; padding: 6px 0; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--tenue); background: transparent; border-style: dashed; cursor: default; }
+.numero-annuncio.presente { cursor: pointer; color: var(--ok); background: var(--ok-tenue); border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); font-weight: 600; }
+.numero-annuncio.predefinito.presente { color: #b26a00; background: rgba(242, 169, 59, .16); }
+.numero-annuncio.suona { background: var(--ok); color: #fff; animation: suona-annuncio .6s ease-in-out infinite alternate; }
+@keyframes suona-annuncio { to { transform: scale(1.12); } }
+.esito-annunci ul { margin: 6px 0; font-size: 13px; }

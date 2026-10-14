@@ -75,9 +75,20 @@ async function fileConCache(id, voce, scarica) {
   return url;
 }
 
+// I file audio dei numeri chiamati (annunci registrati): { id, sha256, url } per ognuno.
+function fileAnnunci(manifest) {
+  const voci = [];
+  for (const serie of Object.values(manifest.annunci?.serie || {})) {
+    for (const [id, sha256] of [...Object.values(serie.numeri), ...(serie.predefinito ? [serie.predefinito] : [])]) {
+      voci.push({ id, sha256, url: `/api/player/annunci/${id}/` });
+    }
+  }
+  return voci;
+}
+
 // I file che non sono più nel manifest si tolgono dalla cache.
 async function pulisciCache(manifest) {
-  const validi = new Set(Object.values(manifest.contenuti).filter((v) => v.sha256).map((v) => `/file/${v.sha256}`));
+  const validi = new Set([...Object.values(manifest.contenuti), ...fileAnnunci(manifest)].filter((v) => v.sha256).map((v) => `/file/${v.sha256}`));
   try {
     const cache = await caches.open(CACHE_FILE);
     for (const richiesta of await cache.keys()) {
@@ -97,7 +108,7 @@ async function pulisciCache(manifest) {
 // Scarica in cache tutti i file di un manifest, prima di mostrarlo: così non manca
 // mai una slide, e se la rete cade dopo, il monitor ha già tutto. Restituisce
 // false se qualcosa non è arrivato (si riprova al giro successivo).
-async function preparaFile(manifest, scarica) {
+async function preparaFile(manifest, scarica, voci = Object.values(manifest.contenuti)) {
   let cache;
   try {
     cache = await caches.open(CACHE_FILE);
@@ -105,7 +116,7 @@ async function preparaFile(manifest, scarica) {
     return true; // niente Cache API (pagina non sicura): i file arrivano quando servono
   }
   let completo = true;
-  for (const voce of Object.values(manifest.contenuti)) {
+  for (const voce of voci) {
     if (!voce.sha256) continue;
     const chiave = `/file/${voce.sha256}`;
     if (await cache.match(chiave)) continue;
@@ -174,18 +185,50 @@ async function codeDalTotem(indirizzo, zona) {
 
 // La configurazione dei reparti passa dal manifest al servizio code del totem.
 let configInviata = null;
-async function inviaConfigCode(manifest) {
+async function inviaConfigCode(manifest, scarica) {
   const reparti = manifest?.code?.reparti;
   if (!reparti) return;
-  const firma = JSON.stringify(reparti);
-  if (firma === configInviata) return;
+  // Con la configurazione va l'elenco degli annunci da tenere: gli altri il servizio li cancella.
+  const annunci = fileAnnunci(manifest);
+  const firma = JSON.stringify([reparti, annunci.map((v) => v.sha256)]);
+  if (firma !== configInviata) {
+    try {
+      const risposta = await conLimite(`${SERVIZIO_LOCALE}/config`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reparti, annunci: annunci.map((v) => v.sha256) }),
+      });
+      if (risposta.ok) configInviata = firma;
+    } catch {
+      return; // servizio code non ancora partito: si riprova al prossimo giro
+    }
+  }
+  await copiaAnnunciSulTotem(annunci, scarica);
+}
+
+// I file degli annunci restano anche sul totem: i monitor del negozio li prendono da lì,
+// e li suonano anche quando il server o internet non rispondono.
+let copiaInCorso = false;
+async function copiaAnnunciSulTotem(annunci, scarica) {
+  if (copiaInCorso || !annunci.length) return;
+  copiaInCorso = true;
   try {
-    const risposta = await conLimite(`${SERVIZIO_LOCALE}/config`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reparti }),
-    });
-    if (risposta.ok) configInviata = firma;
+    const presenti = new Set((await (await conLimite(`${SERVIZIO_LOCALE}/annunci`)).json()).file || []);
+    let cache = null;
+    try {
+      cache = await caches.open(CACHE_FILE);
+    } catch {
+      cache = null;
+    }
+    for (const voce of annunci) {
+      if (presenti.has(voce.sha256)) continue;
+      const risposta = (cache && (await cache.match(`/file/${voce.sha256}`))) || (await scarica(voce).catch(() => null));
+      if (!risposta?.ok) continue;
+      await conLimite(`${SERVIZIO_LOCALE}/annunci/${voce.sha256}`, { method: "POST", body: await risposta.blob() }).catch(() => {});
+    }
   } catch {
-    // Servizio code non ancora partito: si riprova al prossimo giro.
+    // Si riprova al prossimo giro.
+  } finally {
+    copiaInCorso = false;
   }
 }
 
@@ -241,8 +284,18 @@ async function avviaPlayer() {
   const token = memoria("futurapro.token") && salvato ? memoria("futurapro.token") : await abbina();
   const intestazioni = { Authorization: `Device ${token}` };
   const scaricaFile = (voce) => conLimite(voce.url, { headers: intestazioni }, 120_000);
+  // Gli annunci dei numeri: prima dal totem del negozio (rete locale), poi dal server.
+  const scaricaAnnuncio = async (voce) => {
+    const totem = serviziCode(motore.manifest);
+    if (totem) {
+      const locale = await conLimite(`${totem}/annunci/${voce.sha256}`, {}, 5000).catch(() => null);
+      if (locale?.ok) return locale;
+    }
+    return scaricaFile(voce);
+  };
   const motore = new Motore(radice, {
     file: (id, voce) => (voce ? fileConCache(id, voce, () => scaricaFile(voce)) : Promise.resolve(null)),
+    annuncio: (voce) => fileConCache(voce.id, voce, () => scaricaAnnuncio(voce)),
     dati: (zonaId) =>
       conRiserva(zonaId, async () => {
         const zona = zonaDelManifest(motore.manifest, zonaId);
@@ -272,7 +325,7 @@ async function avviaPlayer() {
     mostrato = JSON.parse(salvato);
     nascondiAvviso();
     motore.mostra(mostrato);
-    inviaConfigCode(mostrato);
+    inviaConfigCode(mostrato, scaricaFile);
   }
 
   let etichetta = null;
@@ -301,13 +354,14 @@ async function avviaPlayer() {
       memoria("futurapro.manifest", JSON.stringify(manifest));
       nascondiAvviso();
       motore.mostra(manifest);
-      pulisciCache(manifest);
+      // Gli annunci dei numeri si scaricano dopo, senza far aspettare le slide.
+      pulisciCache(manifest).then(() => preparaFile(manifest, scaricaAnnuncio, fileAnnunci(manifest)));
       battito();
     } catch {
       // Offline: si continua con quello che c'è.
     } finally {
       inCorso = false;
-      inviaConfigCode(mostrato);
+      inviaConfigCode(mostrato, scaricaFile);
     }
   };
 
@@ -455,6 +509,7 @@ async function avviaAnteprima() {
   };
   const motore = new Motore(radice, {
     file: (id, voce) => (voce ? fileConCache(id, voce, () => leggi(`/api/contenuti/${id}/file/`)) : Promise.resolve(null)),
+    annuncio: (voce) => fileConCache(voce.id, voce, () => leggi(`/api/annunci/ascolta/${voce.id}/`)),
     dati: async (zonaId) => (await leggi(`/api/zone/${zonaId}/dati/?monitor=${monitor}`)).json(),
     // In anteprima non si emettono biglietti veri.
     emetti: async () => ({ reparto: "Anteprima", colore: "#5a5a5a", numero: 0, davanti: 0, anteprima: true }),

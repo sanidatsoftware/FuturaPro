@@ -136,7 +136,7 @@ const CAMPI = {
     { nome: "disposizione", etichetta: "Disposizione", tipo: "scelta", valori: [["automatica", "Automatica"], ["colonna", "In colonna"], ["riga", "In riga"], ["griglia", "A griglia"]], predefinito: "automatica" },
     { nome: "testo_coda", etichetta: "Testo clienti in coda ({n} = numero; vuoto = nascosto)", tipo: "testo", predefinito: "" },
     { nome: "bordo", etichetta: "Bordo tra i riquadri", tipo: "si_no", predefinito: true },
-    { nome: "annuncio", etichetta: "Alla chiamata", tipo: "scelta", valori: [["nessuno", "Solo lampeggio"], ["suono", "Din-don"], ["voce", "Din-don e voce"]], predefinito: "suono" },
+    { nome: "annuncio", etichetta: "Alla chiamata", tipo: "scelta", valori: [["nessuno", "Solo lampeggio"], ["suono", "Audio del numero (mp3), se no din-don"], ["voce", "Audio del numero (mp3), se no din-don e voce"]], predefinito: "suono" },
     { nome: "personalizza", etichetta: "Aspetto dei reparti in questa zona", tipo: "personalizza" },
   ],
   prendi_numero: [

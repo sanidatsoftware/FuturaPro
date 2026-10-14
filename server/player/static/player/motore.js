@@ -609,9 +609,43 @@ function dinDon() {
   }
 }
 
-// «Salumeria, numero 27» con la voce italiana del sistema, se c'è (Windows e Android ne hanno una).
-function annuncia(tipo, nome, numero) {
+// Il file registrato per quel numero del reparto (es. «SALUMERIA_27.mp3»), o il predefinito
+// della serie; null se il reparto non ha annunci registrati.
+function fileDelNumero(manifest, repartoId, numero) {
+  const serie = manifest?.annunci?.serie?.[manifest.annunci.reparti?.[repartoId]];
+  const trovato = serie && ((numero !== null && numero !== undefined && serie.numeri[String(numero)]) || serie.predefinito);
+  return trovato ? { id: trovato[0], sha256: trovato[1], url: `/api/player/annunci/${trovato[0]}/` } : null;
+}
+
+// Gli annunci uno dopo l'altro: due banchi che chiamano insieme non si sovrappongono.
+let ultimoAnnuncio = Promise.resolve();
+
+function suona(url) {
+  return new Promise((ok) => {
+    const audio = new Audio(url);
+    const fine = (riuscito) => ok(riuscito);
+    audio.addEventListener("ended", () => fine(true), { once: true });
+    audio.addEventListener("error", () => fine(false), { once: true });
+    setTimeout(() => fine(true), 15000);
+    audio.play().catch(() => fine(false));
+  });
+}
+
+// Alla chiamata: il file registrato del numero, se il reparto ce l'ha; altrimenti il din-don
+// (e la voce del sistema, se scelta nel layout).
+function annuncia(tipo, coda, motore) {
   if (tipo === "nessuno") return;
+  ultimoAnnuncio = ultimoAnnuncio.then(async () => {
+    const voce = fileDelNumero(motore.manifest, coda.id, coda.numero);
+    const url = voce && motore.fonte.annuncio ? await motore.fonte.annuncio(voce).catch(() => null) : null;
+    if (url && (await suona(url))) return;
+    sintetizza(tipo, coda.nome, coda.numero);
+    await attendi(tipo === "voce" ? 4000 : 1500);
+  });
+}
+
+// «Salumeria, numero 27» con la voce italiana del sistema, se c'è (Windows e Android ne hanno una).
+function sintetizza(tipo, nome, numero) {
   dinDon();
   if (tipo !== "voce" || !("speechSynthesis" in window)) return;
   const voce = speechSynthesis.getVoices().find((v) => v.lang?.toLowerCase().startsWith("it"));
@@ -667,7 +701,7 @@ class ZonaCoda {
         riquadro.el.classList.remove("chiamata");
         riquadro.el.getBoundingClientRect();
         riquadro.el.classList.add("chiamata");
-        annuncia(this.config.annuncio, coda.nome, coda.numero);
+        annuncia(this.config.annuncio, coda, this.motore);
       }
       this.chiamate.set(coda.id, coda.chiamato_il);
     }

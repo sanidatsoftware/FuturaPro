@@ -330,3 +330,105 @@ class CodeSulTotemTest(ConReparti):
         # Le sedi senza totem continuano come prima.
         self.come(self.admin_a)
         self.assertEqual(self.client.post(f"/api/reparti/{self.roma.id}/avanti/").status_code, 200)
+
+
+class AnnunciTest(ConReparti):
+    """I file audio dei numeri (es. «SALUMERIA_27.mp3»), come nei pacchetti già in uso."""
+
+    @classmethod
+    def setUpClass(cls):
+        import tempfile
+
+        from django.test import override_settings
+
+        cls.media = tempfile.mkdtemp()
+        cls._media = override_settings(MEDIA_ROOT=cls.media)
+        cls._media.enable()
+        super().setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        import shutil
+
+        super().tearDownClass()
+        cls._media.disable()
+        shutil.rmtree(cls.media, ignore_errors=True)
+
+    @staticmethod
+    def mp3(nome, contenuto=b""):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        return SimpleUploadedFile(nome, b"ID3\x03\x00\x00\x00" + contenuto + nome.encode(), content_type="audio/mpeg")
+
+    def test_nomi_dei_file(self):
+        from .annunci import leggi_nome
+
+        self.assertEqual(leggi_nome("SALUMERIA_27.mp3"), ("SALUMERIA", 27))
+        self.assertEqual(leggi_nome("Pescheria 7.MP3"), ("Pescheria", 7))
+        self.assertEqual(leggi_nome("12.mp3"), ("", 12))
+        self.assertEqual(leggi_nome("DEFAULT.mp3"), ("DEFAULT", None))
+
+    def test_mp3_con_byte_a_zero_in_testa(self):
+        import io
+
+        from .annunci import formato_audio
+
+        self.assertEqual(formato_audio(io.BytesIO(b"\0" * 417 + b"\xff\xfb\x90\xc0" + b"\0" * 100)), ".mp3")
+        self.assertIsNone(formato_audio(io.BytesIO(b"\0" * 5000)))
+
+    def test_importazione_collega_i_reparti_e_va_nel_manifest(self):
+        self.come(self.admin_a)
+        files = [self.mp3("SALUMERIA_0.mp3"), self.mp3("SALUMERIA_27.mp3"), self.mp3("foodcop_5.mp3"), self.mp3("DEFAULT.mp3")]
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        files.append(SimpleUploadedFile("SALUMERIA_3.mp3", b"non audio"))
+        r = self.client.post("/api/annunci/importa/", {"file": files}, format="multipart")
+        self.assertEqual(r.status_code, 201, r.content)
+        esito = r.json()
+        self.assertEqual(esito["caricati"], 3)
+        self.assertEqual({s["nome"]: s["file"] for s in esito["serie"]}, {"SALUMERIA": 2, "foodcop": 1})
+        self.assertEqual(len(esito["scartati"]), 2)  # DEFAULT senza serie, e il file che non è audio
+        salumeria = next(s for s in esito["serie"] if s["nome"] == "SALUMERIA")
+        self.assertEqual(salumeria["collegati"], ["Salumeria (Milano)"])
+        # Il predefinito si carica dentro la serie.
+        r = self.client.post("/api/annunci/importa/", {"file": [self.mp3("DEFAULT.mp3")], "serie": salumeria["id"]}, format="multipart")
+        self.assertEqual(r.json()["caricati"], 1)
+        serie = self.client.get(f"/api/annunci/{salumeria['id']}/").json()
+        self.assertEqual(set(serie["numeri"]), {"0", "27"})
+        self.assertTrue(serie["predefinito"])
+        self.assertEqual(serie["reparti"], [str(self.salumeria.id)])
+        # Ricaricare lo stesso file non duplica nulla.
+        r = self.client.post("/api/annunci/importa/", {"file": [self.mp3("SALUMERIA_27.mp3")]}, format="multipart")
+        self.assertEqual((r.json()["caricati"], r.json()["uguali"]), (0, 1))
+        self.assertEqual(self.client.get(f"/api/annunci/ascolta/{serie['numeri']['27']}/").status_code, 200)
+
+        # Il monitor di Milano li riceve nel manifest e li può scaricare; quello di Roma no.
+        from contenuti import palinsesto
+
+        with contesto_cliente(self.a.id):
+            corpo = palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))
+        annunci = corpo["annunci"]
+        self.assertEqual(annunci["reparti"], {str(self.salumeria.id): salumeria["id"]})
+        file_27 = annunci["serie"][salumeria["id"]]["numeri"]["27"][0]
+        self.assertEqual(annunci["serie"][salumeria["id"]]["predefinito"][0], serie["predefinito"])
+        token = secrets.token_urlsafe(32)
+        with contesto_cliente(self.a.id):
+            CredenzialeDispositivo.objects.create(impronta_token=impronta(token), monitor=self.mon_a_milano, cliente_id=self.a.id)
+            roma = Monitor.objects.create(cliente=self.a, sede=self.a_roma, nome="Roma", piattaforma="windows")
+        self.client.logout()
+        r = self.client.get(f"/api/player/annunci/{file_27}/", HTTP_AUTHORIZATION=f"Device {token}")
+        self.assertEqual((r.status_code, r["Content-Type"]), (200, "audio/mpeg"))
+        token_roma = secrets.token_urlsafe(32)
+        with contesto_cliente(self.a.id):
+            CredenzialeDispositivo.objects.create(impronta_token=impronta(token_roma), monitor=roma, cliente_id=self.a.id)
+        self.assertEqual(self.client.get(f"/api/player/annunci/{file_27}/", HTTP_AUTHORIZATION=f"Device {token_roma}").status_code, 404)
+
+        # Si tolgono singoli numeri; una serie si collega a mano a un altro reparto.
+        self.come(self.admin_a)
+        r = self.client.post(f"/api/annunci/{salumeria['id']}/togli/", {"numeri": [27]}, format="json")
+        self.assertEqual(set(r.json()["numeri"]), {"0"})
+        r = self.client.patch(f"/api/reparti/{self.roma.id}/", {"annunci": salumeria["id"]}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(len(self.client.get(f"/api/annunci/{salumeria['id']}/").json()["reparti"]), 2)
+        self.assertEqual(self.client.delete(f"/api/annunci/{salumeria['id']}/").status_code, 204)
+        self.assertIsNone(self.client.get(f"/api/reparti/{self.salumeria.id}/").json()["annunci"])

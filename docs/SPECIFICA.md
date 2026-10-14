@@ -356,8 +356,22 @@ Con `reparti` vuoto un solo layout serve tutti i negozi: ognuno mostra i suoi ba
 
 **Chiamata sui display.** Il riquadro lampeggia e, se la zona lo prevede, suona il «din-don»
 (sintetizzato, nessun file) e la voce di sistema dice «Salumeria, numero 27». La voce italiana
-c'è su Windows e Android; i file audio registrati del sistema attuale si potranno caricare come
-alternativa. Conviene far annunciare un solo monitor per negozio.
+c'è su Windows e Android. Conviene far annunciare un solo monitor per negozio. L'annuncio parte
+a ogni chiamata: avanti, indietro, ripeti e imposta.
+
+**Annunci registrati** (scheda «Reparti ed eliminacode»). Un file audio per numero, come nei
+pacchetti già in uso: «SALUMERIA_27.mp3» è il 27 della serie «SALUMERIA» (mp3, wav, ogg; anche
+con byte a zero in testa). Si carica l'intera cartella (`POST /api/annunci/importa/`, a pezzi di
+40 file): le serie si creano dal nome e si collegano da sole ai reparti con lo stesso nome; le
+altre si collegano dalla colonna «Annunci (mp3)» (campo `annunci` del reparto). Una serie può
+servire i reparti di più sedi. Un file senza numero caricato dentro una serie (es. «DEFAULT.mp3»)
+vale per i numeri senza file. Nel pannello ogni serie mostra la griglia dei numeri: clic per
+ascoltare, Alt+clic per togliere. Alla chiamata il monitor suona il file del numero (in coda,
+uno dopo l'altro, se due banchi chiamano insieme); se manca, il din-don. Il manifest elenca i
+file (`annunci`: reparto → serie, numero → id e impronta) e il player li tiene nella sua cache:
+si sentono anche senza server. Con il totem, il player del totem li copia nel servizio code
+(`C:\FuturaPro\code\annunci`, `GET/POST /annunci/<sha256>`, cancellati quando non servono
+più) e i monitor del negozio li prendono da lì prima che dal server (`/api/player/annunci/<id>/`).
 
 **Totem.** Il cliente tocca il reparto, il server assegna il numero, lo schermo lo mostra con
 le persone che lo precedono e il player stampa:
@@ -526,7 +540,8 @@ piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
    - [x] Layout grafici per cliente: zone, orientamento e rotazione, meteo, notizie, modelli pronti
    - [x] Motore di rendering e player nel browser (kiosk), anteprima grafica
    - [x] Eliminacode: reparti, banco, chiavi per pulsantiere e bilance, display, totem con stampa
-   - [ ] Eliminacode: file audio propri, statistiche di attesa, coda seguita dal telefono (QR)
+   - [x] Eliminacode: file audio propri (annunci registrati, copiati sul totem)
+   - [ ] Eliminacode: statistiche di attesa, coda seguita dal telefono (QR)
    - [x] Editor visuale dei layout (zone da trascinare e configurare, orizzontale e verticale)
    - [ ] Pannello web completo con selettore azienda (contenuti, monitor, utenti, reparti)
    - [ ] Player Android e Windows con cache offline
