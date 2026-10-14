@@ -778,7 +778,7 @@ async function avviaEditor(id) {
 
   try {
     const [layout, playlist, contenuti, reparti] = await Promise.all([
-      api("GET", `/api/layout/${id}/`), tutti("/api/playlist/"), tutti("/api/contenuti/"), tutti("/api/reparti/"),
+      api("GET", `/api/layout/${id}/`), tutti("/api/playlist/"), tutti("/api/contenuti/?uso=libreria"), tutti("/api/reparti/"),
     ]);
     stato.archivi = { playlist, immagini: contenuti.filter((c) => c.tipo === "immagine"), reparti };
     caricaLayout(layout);

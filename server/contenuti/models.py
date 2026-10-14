@@ -16,6 +16,13 @@ class Tipo(models.TextChoices):
     DIRETTA = "diretta", "Diretta (streaming)"
 
 
+class Uso(models.TextChoices):
+    LIBRERIA = "libreria", "Libreria delle promozioni"
+    # Il logo o il video che uno schermo mostra quando non c'è nulla in onda: caricato
+    # a parte, non compare nella libreria e non scade con le promozioni.
+    RISERVA = "riserva", "Riserva degli schermi"
+
+
 def percorso_file(contenuto, nome_originale):
     # Un percorso per cliente, e un nome che non dipende da quello caricato.
     if contenuto.cliente_id is None:
@@ -34,6 +41,7 @@ class Contenuto(ModelloCliente):
     # Vuota: le immagini restano DURATA_IMMAGINE secondi, i video vanno fino alla fine.
     durata = models.PositiveIntegerField(null=True, blank=True)
     caricato_da = models.CharField(max_length=150, blank=True)
+    uso = models.CharField(max_length=10, choices=Uso.choices, default=Uso.LIBRERIA)
     # Dirette: il logo del canale (dalla lista M3U) e chi ha confermato che la
     # riproduzione in pubblico è autorizzata (canone, licenze, abbonamenti).
     logo_url = models.URLField(max_length=500, blank=True)

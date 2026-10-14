@@ -136,7 +136,7 @@ function confermaAbbandono() {
 
 async function caricaTutto() {
   const [contenuti, campagne, insegne, gruppi, monitor, sedi] = await Promise.all([
-    tutte("/api/contenuti/"), tutte("/api/campagne/"), tutte("/api/insegne/"),
+    tutte("/api/contenuti/?uso=libreria"), tutte("/api/campagne/"), tutte("/api/insegne/"),
     tutte("/api/gruppi/"), tutte("/api/monitor/"), tutte("/api/sedi/"),
   ]);
   Object.assign(S, { contenuti, campagne, insegne, gruppi, monitor, sedi });

@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 from django.core.files.storage import default_storage
+from django.db.models import Q
 from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import authentication, exceptions, serializers, status
@@ -43,6 +46,17 @@ class GruppiViewSet(ViewSetCliente):
         instance.delete()
 
 
+def elimina_riserve_orfane(appena_tolta=None):
+    """Le riserve caricate per gli schermi che nessuno schermo usa più: via dal server
+    (e quindi, al prossimo palinsesto, anche dalla cache dei player). Quelle caricate da
+    poco restano un giorno, nel caso stiano per essere assegnate."""
+    usate = Monitor.objects.exclude(immagine_riserva__isnull=True).values("immagine_riserva_id")
+    orfane = Contenuto.objects.filter(uso="riserva").exclude(id__in=usate)
+    vecchie = Q(creato__lt=timezone.now() - timedelta(days=1))
+    for contenuto in orfane.filter(vecchie | Q(id=appena_tolta) if appena_tolta else vecchie):
+        contenuto.delete()
+
+
 class MonitorSerializer(serializers.ModelSerializer):
     sede = RiferimentoCliente(Sede)
     gruppi = RiferimentoCliente(GruppoMonitor, many=True, required=False)
@@ -68,8 +82,8 @@ class MonitorSerializer(serializers.ModelSerializer):
         if layout is not None and layout.orientamento != orientamento:
             raise serializers.ValidationError({"layout": f"Il layout è {layout.orientamento}, il monitor {orientamento}."})
         riserva = dati.get("immagine_riserva")
-        if riserva is not None and riserva.tipo != "immagine":
-            raise serializers.ValidationError({"immagine_riserva": "Dev'essere un'immagine."})
+        if riserva is not None and riserva.tipo not in ("immagine", "video"):
+            raise serializers.ValidationError({"immagine_riserva": "Dev'essere un'immagine o un video."})
         return dati
 
 
@@ -159,12 +173,16 @@ class MonitorViewSet(ViewSetCliente):
 
     def perform_update(self, serializer):
         self._verifica_abilitazione()
+        vecchia = serializer.instance.immagine_riserva_id
         registra(self.request.user, "monitor_modificato", serializer.save())
+        elimina_riserve_orfane(vecchia)
 
     def perform_destroy(self, monitor):
         self._verifica_abilitazione()
+        vecchia = monitor.immagine_riserva_id
         registra(self.request.user, "monitor_rimosso", monitor, nome=monitor.nome)
         monitor.delete()
+        elimina_riserve_orfane(vecchia)
 
 
 # --- Player -----------------------------------------------------------------

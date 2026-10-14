@@ -226,8 +226,11 @@ class ZonaSlide {
       return m.playlist[this.config.sorgente] || [];
     }
     const inSequenza = inOnda(m.pubblicazioni, istanteNelFuso(m.fuso_orario)).flatMap((p) => m.playlist[p.playlist] || []);
-    // Niente in onda: l'immagine di riserva dello schermo (es. il logo), se c'è.
-    if (!inSequenza.length && m.riserva && m.contenuti[m.riserva]) return [{ contenuto: m.riserva, durata: 30 }];
+    // Niente in onda: la riserva dello schermo (es. il logo o un video istituzionale), se c'è.
+    // Un video va fino alla fine e poi ricomincia.
+    if (!inSequenza.length && m.riserva && m.contenuti[m.riserva]) {
+      return [{ contenuto: m.riserva, durata: m.contenuti[m.riserva].tipo === "video" ? null : 30 }];
+    }
     return inSequenza;
   }
 
@@ -246,6 +249,18 @@ class ZonaSlide {
       // Un'immagine sola resta ferma: niente transizione su se stessa.
       if (sequenza.length === 1 && this.corrente === elemento.contenuto && voce.tipo !== "video") {
         await attendi((elemento.durata || 10) * 1000);
+        continue;
+      }
+      // Un video solo ricomincia da capo dove si trova, senza transizione su se stesso.
+      const video = this.strato?.querySelector("video");
+      if (sequenza.length === 1 && this.corrente === elemento.contenuto && voce.tipo === "video" && video) {
+        video.currentTime = 0;
+        video.play().catch(() => {});
+        await Promise.race([
+          new Promise((ok) => video.addEventListener("ended", ok, { once: true })),
+          new Promise((ok) => video.addEventListener("error", ok, { once: true })),
+          attendi((elemento.durata || 3600) * 1000),
+        ]);
         continue;
       }
       const mostrato = voce && (await this.mostraElemento(elemento, voce));

@@ -22,7 +22,7 @@ from dispositivi.models import GruppoMonitor, Monitor
 from . import palinsesto
 from .file import crea_miniatura, impronta_e_dimensione, misure_immagine, riconosci
 from . import campagne, dirette
-from .models import Campagna, Contenuto, ElementoPlaylist, Playlist, Promozione, Pubblicazione, Tipo
+from .models import Campagna, Contenuto, ElementoPlaylist, Playlist, Promozione, Pubblicazione, Tipo, Uso
 
 MB = 1024 * 1024
 
@@ -45,7 +45,7 @@ class ContenutoSerializer(serializers.ModelSerializer):
         model = Contenuto
         fields = [
             "id", "nome", "tipo", "file", "url", "mime", "dimensione", "sha256", "durata",
-            "larghezza", "altezza", "orientamento", "logo_url", "autorizzata_da", "autorizzata_il", "caricato_da", "creato",
+            "larghezza", "altezza", "orientamento", "logo_url", "autorizzata_da", "autorizzata_il", "caricato_da", "uso", "creato",
         ]
         read_only_fields = ["tipo", "mime", "dimensione", "sha256", "logo_url", "autorizzata_da", "autorizzata_il", "caricato_da", "creato"]
         extra_kwargs = {
@@ -60,7 +60,11 @@ class ContenutoSerializer(serializers.ModelSerializer):
         if self.instance is not None:
             if "file" in dati or "url" in dati:
                 raise serializers.ValidationError("Il file di un contenuto non si sostituisce: caricane uno nuovo.")
+            if "uso" in dati and dati["uso"] != self.instance.uso:
+                raise serializers.ValidationError({"uso": "Non si cambia dopo il caricamento."})
             return dati
+        if dati.get("uso") == Uso.RISERVA and not dati.get("file"):
+            raise serializers.ValidationError({"file": "La riserva di uno schermo è un'immagine o un video da caricare."})
         if bool(dati.get("file")) == bool(dati.get("url")):
             raise serializers.ValidationError("Indica un file oppure l'indirizzo di una pagina web.")
         if dati.get("url"):
@@ -80,6 +84,8 @@ class ContenutoSerializer(serializers.ModelSerializer):
         if occupato + file.size > abilitazioni.spazio_mb * MB:
             raise serializers.ValidationError({"file": f"Spazio esaurito: il cliente dispone di {abilitazioni.spazio_mb} MB."})
         dati["tipo"], dati["mime"] = formato
+        if dati.get("uso") == Uso.RISERVA and dati["tipo"] not in (Tipo.IMMAGINE, Tipo.VIDEO):
+            raise serializers.ValidationError({"file": "La riserva di uno schermo è un'immagine o un video."})
         dati["sha256"], dati["dimensione"] = impronta_e_dimensione(file)
         if dati["tipo"] == Tipo.IMMAGINE:
             misure = misure_immagine(file)
@@ -96,7 +102,10 @@ class ContenutiViewSet(ViewSetCliente):
     serializer_class = ContenutoSerializer
 
     def get_queryset(self):
-        return Contenuto.objects.all()
+        contenuti = Contenuto.objects.all()
+        # ?uso=libreria: solo le immagini delle promozioni; ?uso=riserva: solo i loghi degli schermi.
+        uso = self.request.query_params.get("uso")
+        return contenuti.filter(uso=uso) if uso in Uso.values else contenuti
 
     def perform_create(self, serializer):
         contenuto = serializer.save(caricato_da=self.request.user.username)

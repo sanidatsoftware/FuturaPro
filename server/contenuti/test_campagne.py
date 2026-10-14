@@ -183,6 +183,27 @@ class CampagneTest(ConFile):
         # Le immagini di riserva non si cancellano con la pulizia.
         self.assertNotIn(logo, [str(i) for i in self.client.get("/api/contenuti/pulizia/").json()["id"]])
 
+    def test_riserva_caricata_a_parte_e_tolta_quando_non_serve(self):
+        self.come(self.admin_a)
+        logo = self.carica(immagine(192, 108, "logo.jpg"), uso="riserva")["id"]
+        libreria = self.carica(immagine(192, 108))["id"]
+        # Fuori dalla libreria delle promozioni.
+        elenco = [c["id"] for c in self.client.get("/api/contenuti/?uso=libreria").json()["results"]]
+        self.assertIn(libreria, elenco)
+        self.assertNotIn(logo, elenco)
+        self.assertEqual([c["id"] for c in self.client.get("/api/contenuti/?uso=riserva").json()["results"]], [logo])
+        self.assertEqual(self.client.patch(f"/api/contenuti/{logo}/", {"uso": "libreria"}, format="json").status_code, 400)
+        indirizzo = f"/api/monitor/{self.mon_a_milano.id}/"
+        self.assertEqual(self.client.patch(indirizzo, {"immagine_riserva": logo}, format="json").status_code, 200)
+        # Cambiata con un'altra (o tolta): quella di prima, non più usata, sparisce dal server.
+        nuovo = self.carica(immagine(192, 108, "logo2.jpg"), uso="riserva")["id"]
+        self.assertEqual(self.client.patch(indirizzo, {"immagine_riserva": nuovo}, format="json").status_code, 200)
+        self.assertEqual(self.client.get(f"/api/contenuti/{logo}/").status_code, 404)
+        self.assertEqual(self.client.patch(indirizzo, {"immagine_riserva": None}, format="json").status_code, 200)
+        self.assertEqual(self.client.get(f"/api/contenuti/{nuovo}/").status_code, 404)
+        # Le immagini della libreria non si toccano.
+        self.assertEqual(self.client.get(f"/api/contenuti/{libreria}/").status_code, 200)
+
     def test_csv_con_errori_non_salva_nulla(self):
         self.come(self.admin_a)
         testo = (

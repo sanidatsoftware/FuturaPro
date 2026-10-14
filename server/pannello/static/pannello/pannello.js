@@ -234,16 +234,16 @@ async function abilitazioni(cliente, cella) {
 // --- Monitor ----------------------------------------------------------------------------
 
 async function schedaMonitor() {
-  const [monitor, sedi, gruppi, layout, contenuti] = await Promise.all([
-    elenco("/api/monitor/"), elenco("/api/sedi/"), elenco("/api/gruppi/"), elenco("/api/layout/"), tutteLePagine("/api/contenuti/"),
+  const [monitor, sedi, gruppi, layout, riserve] = await Promise.all([
+    elenco("/api/monitor/"), elenco("/api/sedi/"), elenco("/api/gruppi/"), elenco("/api/layout/"), tutteLePagine("/api/contenuti/?uso=riserva"),
   ]);
-  const immagini = contenuti.filter((c) => c.tipo === "immagine");
-  // Per un totem le immagini verticali, per un monitor le orizzontali (le altre in fondo).
-  const opzioniRiserva = (orientamento) => [
-    ["", "— schermo nero —"],
-    ...[...immagini].sort((a, b) => (b.orientamento === orientamento) - (a.orientamento === orientamento) || a.nome.localeCompare(b.nome))
-      .map((c) => [c.id, `${c.nome}${c.orientamento && c.orientamento !== orientamento ? ` (${c.orientamento})` : ""}`]),
-  ];
+  // Le riserve assegnate prima che si caricassero a parte (dalla libreria): restano scelte.
+  const note = new Set(riserve.map((c) => c.id));
+  for (const id of new Set(monitor.map((m) => m.immagine_riserva).filter((id) => id && !note.has(id)))) {
+    const vecchia = await api("GET", `/api/contenuti/${id}/`).catch(() => null);
+    if (vecchia) riserve.push(vecchia);
+  }
+  const sceltaRiserva = (orientamento, valore, alCambio) => sceltaFileRiserva(riserve, orientamento, valore, alCambio);
   const gestione = ruoloGestione();
 
   if (gestione) {
@@ -267,23 +267,23 @@ async function schedaMonitor() {
   }
 
   if (gestione && monitor.length) {
-    const riserva = sezione("Immagine di riserva");
+    const riserva = sezione("Immagine o video di riserva");
     crea("p", {
       classe: "nota",
-      testo: "Quello che mostrano le slide quando non c'è nessuna promozione in onda (es. tra un volantino e l'altro): di solito il logo del negozio. Si può scegliere per ogni schermo nella tabella qui sotto, o per tutti insieme.",
+      testo: "Quello che mostrano le slide quando non c'è nessuna promozione in onda (es. tra un volantino e l'altro): di solito il logo del negozio o un breve video istituzionale. Si sceglie dal computer ed è conservato a parte: non compare nella libreria delle promozioni e non viene cancellato quando le promozioni scadono. Quando nessuno schermo lo usa più, sparisce dal server e dai player.",
     }, riserva);
     const riga = crea("div", { classe: "riga" }, riserva);
-    const perTotem = campo("Per tutti i totem", scelta(opzioniRiserva("verticale")), riga);
-    const perMonitor = campo("Per tutti i monitor", scelta(opzioniRiserva("orizzontale")), riga);
+    const perTotem = campo("Per tutti i totem", sceltaRiserva("verticale", ""), riga);
+    const perMonitor = campo("Per tutti i monitor", sceltaRiserva("orizzontale", ""), riga);
     crea("button", {
       classe: "primario", testo: "Applica a tutti",
-      "data-aiuto": "Imposta l'immagine di riserva scelta su tutti i totem e su tutti i monitor del cliente.",
+      "data-aiuto": "Imposta la riserva scelta su tutti i totem e su tutti i monitor del cliente.",
       onclick: () => prova(async () => {
         for (const m of monitor) {
           const valore = m.orientamento === "verticale" ? perTotem.value : perMonitor.value;
           await api("PATCH", `/api/monitor/${m.id}/`, { immagine_riserva: valore || null });
         }
-      }, "Immagine di riserva impostata: gli schermi la ricevono entro un minuto."),
+      }, "Riserva impostata: gli schermi la ricevono entro un minuto."),
     }, riga);
   }
 
@@ -301,8 +301,7 @@ async function schedaMonitor() {
     const salva = (dati) => prova(() => api("PATCH", `/api/monitor/${m.id}/`, dati), "Salvato.");
     const orientamento = scelta([["orizzontale", "Orizzontale"], ["verticale", "Verticale (totem)"]], m.orientamento);
     const rotazione = scelta([[0, "0°"], [90, "90°"], [180, "180°"], [270, "270°"]], m.rotazione);
-    const sceltaRiserva = scelta(opzioniRiserva(m.orientamento), m.immagine_riserva || "");
-    sceltaRiserva.classList.add("riserva");
+    const riservaDelMonitor = sceltaRiserva(m.orientamento, m.immagine_riserva || "", (valore) => salva({ immagine_riserva: valore || null }));
     const sceltaLayout = scelta(
       [["", "Predefinito"], ...layout.filter((l) => l.orientamento === m.orientamento).map((l) => [l.id, l.nome])],
       m.layout || "",
@@ -310,8 +309,9 @@ async function schedaMonitor() {
     // Cosa va in onda adesso: se è vuoto, al monitor non arriva nessuna pubblicazione.
     const inOnda = crea("td", { testo: "…" }, riga);
     api("GET", `/api/anteprima/${m.id}/`).then(({ sequenza, riserva, aggiornato }) => {
-      schermo.primo(sequenza[0] || (riserva ? { tipo: "immagine", contenuto: riserva } : null));
-      inOnda.textContent = sequenza.length ? `${sequenza.length} contenut${sequenza.length === 1 ? "o" : "i"}` : riserva ? "Immagine di riserva" : "Niente";
+      const tipoRiserva = riserve.find((c) => c.id === riserva)?.tipo || "immagine";
+      schermo.primo(sequenza[0] || (riserva ? { tipo: tipoRiserva, contenuto: riserva } : null));
+      inOnda.textContent = sequenza.length ? `${sequenza.length} contenut${sequenza.length === 1 ? "o" : "i"}` : riserva ? (tipoRiserva === "video" ? "Video di riserva" : "Immagine di riserva") : "Niente";
       if (!sequenza.length && !riserva) {
         inOnda.className = "attenzione";
         inOnda.title = "Nessuna pubblicazione valida adesso per questo schermo o per i suoi gruppi.";
@@ -341,7 +341,7 @@ async function schedaMonitor() {
       l.append(` ${g.nome}`);
     }
     if (!gruppi.length) cellaGruppi.textContent = "—";
-    for (const [controllo, chiave] of [[orientamento, "orientamento"], [rotazione, "rotazione"], [sceltaLayout, "layout"], [sceltaRiserva, "immagine_riserva"]]) {
+    for (const [controllo, chiave] of [[orientamento, "orientamento"], [rotazione, "rotazione"], [sceltaLayout, "layout"]]) {
       controllo.disabled = !gestione;
       controllo.addEventListener("change", () => {
         // Cambiando orientamento il layout assegnato non vale più: si torna al predefinito.
@@ -351,6 +351,8 @@ async function schedaMonitor() {
       });
       crea("td", {}, riga).appendChild(controllo);
     }
+    riservaDelMonitor.disabled = !gestione;
+    crea("td", {}, riga).appendChild(riservaDelMonitor);
     const azioni = crea("td", { classe: "azioni" }, riga);
     if (gestione) {
       crea("button", {
@@ -364,6 +366,79 @@ async function schedaMonitor() {
 // Lo schermo disegnato con il suo orientamento. Dentro, l'ultima fotografia vera di ciò che
 // il monitor mostrava (con l'ora); un clic gliene chiede una nuova, scattata in quell'istante.
 // Se non ce ne sono, la prima immagine in onda. Doppio clic: l'anteprima simulata a tutto schermo.
+// La riserva di uno schermo: una di quelle già caricate, oppure un file nuovo dal computer.
+// «alCambio» riceve l'id scelto ("" = schermo nero); senza, la scelta resta nel menu.
+const CARICA = "__carica";
+
+function sceltaFileRiserva(riserve, orientamento, valore, alCambio) {
+  const voci = [...riserve].sort((a, b) => (b.orientamento === orientamento) - (a.orientamento === orientamento) || a.nome.localeCompare(b.nome));
+  const menu = scelta([
+    ["", "— nessuna: schermo nero —"],
+    ...voci.map((c) => [c.id, `${c.tipo === "video" ? "▶ " : ""}${c.nome}${c.orientamento && c.orientamento !== orientamento ? ` (${c.orientamento})` : ""}`]),
+    [CARICA, "📁 Carica dal computer…"],
+  ], valore);
+  menu.classList.add("riserva");
+  let precedente = menu.value;
+  menu.addEventListener("change", () => {
+    if (menu.value !== CARICA) {
+      precedente = menu.value;
+      alCambio?.(menu.value);
+      return;
+    }
+    menu.value = precedente; // finché il file non è caricato, resta la scelta di prima
+    const file = crea("input", { type: "file", accept: "image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm,video/quicktime" });
+    file.addEventListener("change", async () => {
+      const scelto = file.files[0];
+      if (!scelto) return;
+      const attesa = crea("option", { value: "", testo: `Caricamento di ${scelto.name}…` });
+      menu.prepend(attesa);
+      menu.value = "";
+      menu.disabled = true;
+      try {
+        const nuova = await caricaRiserva(scelto);
+        riserve.push(nuova);
+        const opzione = crea("option", { value: nuova.id, testo: `${nuova.tipo === "video" ? "▶ " : ""}${nuova.nome}` });
+        menu.insertBefore(opzione, menu.querySelector(`option[value="${CARICA}"]`));
+        menu.value = precedente = nuova.id;
+        if (alCambio) alCambio(nuova.id);
+        else avvisa("File caricato: premi «Applica a tutti» per usarlo.", "ok");
+      } catch (errore) {
+        menu.value = precedente;
+        avvisa(errore.message);
+      } finally {
+        attesa.remove();
+        menu.disabled = false;
+      }
+    });
+    file.click();
+  });
+  return menu;
+}
+
+async function caricaRiserva(file) {
+  const dati = new FormData();
+  dati.append("file", file);
+  dati.append("nome", file.name.replace(/\.[^.]+$/, ""));
+  dati.append("uso", "riserva");
+  // Le misure dei video le legge il browser (per le immagini le legge il server).
+  if (file.type.startsWith("video/")) {
+    const url = URL.createObjectURL(file);
+    const misure = await new Promise((ok) => {
+      const v = crea("video", { preload: "metadata", muted: true });
+      v.onloadedmetadata = () => ok([v.videoWidth, v.videoHeight]);
+      v.onerror = () => ok(null);
+      setTimeout(() => ok(null), 10000);
+      v.src = url;
+    });
+    URL.revokeObjectURL(url);
+    if (misure?.[0]) {
+      dati.append("larghezza", misure[0]);
+      dati.append("altezza", misure[1]);
+    }
+  }
+  return api("POST", "/api/contenuti/", dati);
+}
+
 function schermoInMiniatura(m, cella) {
   const verticale = m.orientamento === "verticale";
   const cornice = crea("button", {
