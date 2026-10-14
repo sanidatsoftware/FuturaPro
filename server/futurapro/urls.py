@@ -3,10 +3,11 @@ from django.views.generic import RedirectView
 from rest_framework.routers import DefaultRouter
 
 from audit.api import AuditClienteViewSet, AuditPiattaformaViewSet
-from clienti.api import AbilitazioniView, ClientiViewSet, SediViewSet
+from clienti.api import AbilitazioniView, ClientiViewSet, InsegneViewSet, SediViewSet
 from contenuti.api import (
     AnteprimaManifestView,
     AnteprimaView,
+    CampagneViewSet,
     ContenutiViewSet,
     FilePlayerView,
     PalinsestoPlayerView,
@@ -19,6 +20,7 @@ from eliminacode import views as eliminacode
 from eliminacode.api import EmettiPlayerView, PulsanteView, RepartiViewSet
 from layout import views as layout
 from layout.api import CercaLocalitaView, DatiZonaPlayerView, DatiZonaView, LayoutViewSet
+from pannello import views as pannello_viste
 from pannello.views import pannello
 from player import views as player
 from teleassistenza.api import SessioniViewSet
@@ -30,6 +32,7 @@ router.register("piattaforma/clienti", ClientiViewSet, basename="clienti")
 router.register("piattaforma/utenti", UtentiPiattaformaViewSet, basename="utenti-piattaforma")
 router.register("piattaforma/audit", AuditPiattaformaViewSet, basename="audit-piattaforma")
 # Cliente: il proprio per gli utenti del cliente, quello in X-Cliente per la piattaforma.
+router.register("insegne", InsegneViewSet, basename="insegne")
 router.register("sedi", SediViewSet, basename="sedi")
 router.register("gruppi", GruppiViewSet, basename="gruppi")
 router.register("monitor", MonitorViewSet, basename="monitor")
@@ -38,6 +41,7 @@ router.register("audit", AuditClienteViewSet, basename="audit")
 router.register("contenuti", ContenutiViewSet, basename="contenuti")
 router.register("playlist", PlaylistViewSet, basename="playlist")
 router.register("pubblicazioni", PubblicazioniViewSet, basename="pubblicazioni")
+router.register("campagne", CampagneViewSet, basename="campagne")
 router.register("layout", LayoutViewSet, basename="layout")
 router.register("reparti", RepartiViewSet, basename="reparti")
 router.register("teleassistenza/sessioni", SessioniViewSet, basename="teleassistenza")
@@ -60,7 +64,12 @@ urlpatterns = [
     path("api/eliminacode/pulsante/<str:operazione>/", PulsanteView.as_view(), name="pulsante"),
     path("api/player/heartbeat/", HeartbeatView.as_view(), name="player-heartbeat"),
     path("api/", include(router.urls)),
+    path("api/piattaforma/aspetto/", pannello_viste.AspettoView.as_view(), name="aspetto"),
+    # La pagina di accesso è la nostra, anche per chi arriva dall'API navigabile.
+    path("api/sessione/login/", pannello_viste.Accesso.as_view()),
     path("api/sessione/", include("rest_framework.urls")),
+    path("accesso/", pannello_viste.Accesso.as_view(), name="accesso"),
+    path("aspetto/logo/", pannello_viste.logo, name="logo"),
     path("", RedirectView.as_view(url="/pannello/", permanent=False)),
     path("pannello/", pannello, name="pannello"),
     path("player/", player.schermo, name="player"),

@@ -336,7 +336,7 @@ async function avviaAnteprima() {
     file: (id, voce) => (voce ? fileConCache(id, voce, () => leggi(`/api/contenuti/${id}/file/`)) : Promise.resolve(null)),
     dati: async (zonaId) => (await leggi(`/api/zone/${zonaId}/dati/?monitor=${monitor}`)).json(),
     // In anteprima non si emettono biglietti veri.
-    emetti: async () => ({ reparto: "Anteprima", colore: "#5a5a5a", numero: 0, davanti: 0 }),
+    emetti: async () => ({ reparto: "Anteprima", colore: "#5a5a5a", numero: 0, davanti: 0, anteprima: true }),
   });
   const aggiorna = async () => {
     try {

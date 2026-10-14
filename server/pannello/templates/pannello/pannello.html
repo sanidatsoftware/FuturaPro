@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pannello · FuturaPro</title>
+  <title>Pannello · {{ aspetto.nome_app }}</title>
   <link rel="stylesheet" href="{% static 'pannello/pannello.css' %}">
 </head>
 <body>
-  <header class="barra">
-    <strong class="marchio">FuturaPro</strong>
+  <header class="barra" style="background: {{ aspetto.colore }}">
+    <strong class="marchio">{% if aspetto.logo %}<img src="/aspetto/logo/?v={{ aspetto.modificato|date:'U' }}" alt="">{% endif %}{{ aspetto.nome_app }}</strong>
     <label id="scelta-cliente" hidden>Cliente <select id="cliente"></select></label>
     <span class="spazio"></span>
     <span id="utente" class="utente"></span>

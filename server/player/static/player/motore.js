@@ -685,6 +685,10 @@ class ZonaPrendiNumero {
       const quando = new Date().toLocaleString("it-IT", { timeZone: this.motore.fuso, dateStyle: "short", timeStyle: "short" });
       const davanti = biglietto.davanti > 0 ? `Persone prima di te: ${biglietto.davanti}` : "Sei il prossimo!";
       const dati = { ...biglietto, davanti, quando, intestazione: this.config.intestazione, messaggio: this.config.messaggio };
+      if (biglietto.anteprima) {
+        this.mostraEsito(dati, "Anteprima: biglietto di prova, non conta e non si stampa. I biglietti veri li emette il totem.");
+        return;
+      }
       let errore = null;
       try {
         if (this.config.stampa === "epson") await stampaEpson(this.config.stampante, dati);

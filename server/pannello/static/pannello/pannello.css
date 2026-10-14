@@ -13,7 +13,8 @@ input.corto { width: 70px; }
 input.link { width: 100%; font-size: 12px; margin: 2px 0; }
 
 .barra { display: flex; align-items: center; gap: 14px; padding: 10px 16px; background: var(--primario); color: #fff; flex-wrap: wrap; }
-.barra .marchio { font-size: 18px; }
+.barra .marchio { font-size: 18px; display: flex; align-items: center; gap: 10px; }
+.barra .marchio img { height: 30px; max-width: 140px; object-fit: contain; background: #fff; border-radius: 6px; padding: 2px 6px; }
 .barra .spazio { flex: 1; }
 .barra .utente { font-size: 13px; opacity: .9; }
 .barra form { margin: 0; }
@@ -55,3 +56,6 @@ td.chiave { max-width: 360px; }
 .miniatura { aspect-ratio: 16 / 9; background: #222; color: #fff; display: flex; align-items: center; justify-content: center; border-radius: 6px; overflow: hidden; }
 .miniatura img { width: 100%; height: 100%; object-fit: contain; }
 td.attenzione { color: var(--errore); font-weight: 600; cursor: help; }
+
+.pallino { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; }
+.anteprima-logo { max-height: 70px; max-width: 220px; object-fit: contain; margin: 0 16px 10px 0; padding: 6px; border: 1px solid var(--linea); border-radius: 8px; background: #fff; }

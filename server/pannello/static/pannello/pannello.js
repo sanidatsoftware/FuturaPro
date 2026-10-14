@@ -121,6 +121,7 @@ const SCHEDE = {
   banco: { titolo: "Banco", visibile: () => stato.io.ruolo !== "tecnico", collegamento: () => conCliente("/banco/") },
   sedi: { titolo: "Sedi e gruppi", visibile: ruoloGestione, mostra: schedaSedi },
   utenti: { titolo: "Utenti", visibile: ruoloGestione, mostra: schedaUtenti },
+  aspetto: { titolo: "Aspetto", visibile: () => stato.io.ruolo === "admin_assoluto", serveCliente: false, mostra: schedaAspetto },
 };
 
 function disegnaSchede() {
@@ -487,7 +488,46 @@ async function schedaReparti() {
 // --- Sedi e gruppi -------------------------------------------------------------------------------
 
 async function schedaSedi() {
-  const [sedi, gruppi] = await Promise.all([elenco("/api/sedi/"), elenco("/api/gruppi/")]);
+  const [sedi, gruppi, insegne] = await Promise.all([elenco("/api/sedi/"), elenco("/api/gruppi/"), elenco("/api/insegne/")]);
+
+  // Facoltative: servono a pubblicare per insegna quando l'azienda ha più marchi.
+  const boxInsegne = sezione("Insegne");
+  crea("p", {
+    classe: "nota",
+    testo: "Facoltative: se l'azienda ha negozi con insegne diverse, assegna l'insegna a ogni sede e potrai pubblicare le campagne per insegna.",
+  }, boxInsegne);
+  const nuovaInsegna = crea("div", { classe: "riga" }, boxInsegne);
+  const nomeInsegna = campo("Nome", crea("input", { placeholder: "es. Tocal Express" }), nuovaInsegna);
+  const coloreInsegna = campo("Colore", crea("input", { type: "color", value: "#ec6a1f" }), nuovaInsegna);
+  crea("button", {
+    classe: "primario", testo: "Aggiungi",
+    onclick: () => prova(() => api("POST", "/api/insegne/", { nome: nomeInsegna.value, colore: coloreInsegna.value }), "Insegna aggiunta."),
+  }, nuovaInsegna);
+  const corpoInsegne = tabella(["Insegna", "Sedi", ""], boxInsegne);
+  for (const i of insegne) {
+    const r = crea("tr", {}, corpoInsegne);
+    const nome = crea("td", {}, r);
+    crea("span", { classe: "pallino", style: `background:${i.colore}` }, nome);
+    nome.append(` ${i.nome}`);
+    crea("td", { testo: String(sedi.filter((s) => s.insegna === i.id).length) }, r);
+    crea("button", {
+      testo: "Elimina", classe: "pericolo",
+      onclick: () => confirm(`Eliminare l'insegna «${i.nome}»? Le sedi restano, senza insegna.`) && prova(() => api("DELETE", `/api/insegne/${i.id}/`), "Eliminata."),
+    }, crea("td", {}, r));
+  }
+
+  const boxSediInsegne = sezione("Insegna di ogni sede");
+  const corpoSediInsegne = tabella(["Sede", "Insegna", ""], boxSediInsegne);
+  for (const sede of sedi) {
+    const riga = crea("tr", {}, corpoSediInsegne);
+    crea("td", { testo: sede.nome }, riga);
+    const scelta_ = scelta([["", "— nessuna —"], ...insegne.map((i) => [i.id, i.nome])], sede.insegna || "");
+    crea("td", {}, riga).appendChild(scelta_);
+    crea("button", {
+      testo: "Salva", classe: "primario",
+      onclick: () => prova(() => api("PATCH", `/api/sedi/${sede.id}/`, { insegna: scelta_.value || null }), "Insegna della sede salvata."),
+    }, crea("td", {}, riga));
+  }
 
   const totem = sezione("Totem delle code");
   crea("p", {
@@ -520,6 +560,44 @@ async function schedaSedi() {
       crea("button", { testo: "Elimina", classe: "pericolo", onclick: () => confirm(`Eliminare «${v.nome}»?`) && prova(() => api("DELETE", `${url}${v.id}/`), "Eliminato.") }, crea("td", {}, r));
     }
   }
+}
+
+// --- Aspetto della piattaforma ---------------------------------------------------------------------
+
+async function schedaAspetto() {
+  const aspetto = await api("GET", "/api/piattaforma/aspetto/");
+  const box = sezione("Nome e logo della piattaforma");
+  crea("p", { classe: "nota", testo: "Compaiono nella pagina di accesso, nella barra del pannello e nei titoli delle pagine. Valgono per tutti i clienti." }, box);
+  const riga = crea("div", { classe: "riga" }, box);
+  const nome = campo("Nome dell'applicazione", crea("input", { value: aspetto.nome_app, maxLength: 60 }), riga);
+  const sottotitolo = campo("Frase della pagina di accesso", crea("input", { value: aspetto.sottotitolo, maxLength: 120, size: 50 }), riga);
+  const colore = campo("Colore", crea("input", { type: "color", value: aspetto.colore }), riga);
+  const rigaLogo = crea("div", { classe: "riga" }, box);
+  if (aspetto.ha_logo) crea("img", { src: `/aspetto/logo/?v=${Date.parse(aspetto.modificato)}`, classe: "anteprima-logo", alt: "Logo attuale" }, rigaLogo);
+  const logo = campo("Logo (PNG, JPEG o WebP, fino a 2 MB; meglio con fondo trasparente)", crea("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif" }), rigaLogo);
+  const azioni = crea("div", { classe: "riga" }, box);
+  crea("button", {
+    classe: "primario", testo: "Salva",
+    onclick: () => prova(async () => {
+      const dati = new FormData();
+      dati.append("nome_app", nome.value.trim());
+      dati.append("sottotitolo", sottotitolo.value.trim());
+      dati.append("colore", colore.value);
+      if (logo.files[0]) dati.append("logo", logo.files[0]);
+      await api("PATCH", "/api/piattaforma/aspetto/", dati);
+      setTimeout(() => location.reload(), 600);
+    }, "Salvato: la pagina si ricarica con il nuovo aspetto."),
+  }, azioni);
+  if (aspetto.ha_logo) {
+    crea("button", {
+      classe: "pericolo", testo: "Togli il logo",
+      onclick: () => prova(async () => {
+        await api("PATCH", "/api/piattaforma/aspetto/", { logo: null });
+        setTimeout(() => location.reload(), 600);
+      }, "Logo tolto."),
+    }, azioni);
+  }
+  crea("a", { href: "/accesso/?anteprima=1", target: "_blank", testo: "Vedi la pagina di accesso ↗" }, azioni);
 }
 
 // --- Utenti --------------------------------------------------------------------------------------

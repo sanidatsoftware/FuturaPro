@@ -2,9 +2,9 @@ from django.db import transaction
 from rest_framework import generics, mixins, serializers, viewsets
 
 from audit.models import registra
-from core.api import GESTIONE, SOLO_ASSOLUTO, TELEASSISTENZA, ViewSetCliente, VistaConContesto, sedi_visibili
+from core.api import GESTIONE, SOLO_ASSOLUTO, TELEASSISTENZA, RiferimentoCliente, ViewSetCliente, VistaConContesto, sedi_visibili
 
-from .models import Abilitazioni, Cliente, Sede
+from .models import Abilitazioni, Cliente, Insegna, Sede
 
 
 class ClienteSerializer(serializers.ModelSerializer):
@@ -63,13 +63,39 @@ class AbilitazioniView(VistaConContesto, generics.RetrieveUpdateAPIView):
         registra(self.request.user, "abilitazioni_modificate", abilitazioni, dati=serializer.data)
 
 
+class InsegnaSerializer(serializers.ModelSerializer):
+    colore = serializers.RegexField(r"^#[0-9a-fA-F]{6}$", required=False)
+
+    class Meta:
+        model = Insegna
+        fields = ["id", "nome", "colore"]
+
+
+class InsegneViewSet(ViewSetCliente):
+    serializer_class = InsegnaSerializer
+
+    def get_queryset(self):
+        return Insegna.objects.all()
+
+    def perform_create(self, serializer):
+        registra(self.request.user, "insegna_creata", serializer.save())
+
+    def perform_update(self, serializer):
+        registra(self.request.user, "insegna_modificata", serializer.save())
+
+    def perform_destroy(self, instance):
+        registra(self.request.user, "insegna_eliminata", instance, nome=instance.nome)
+        instance.delete()
+
+
 class SedeSerializer(serializers.ModelSerializer):
     # Solo l'host: niente protocollo, porta o percorso (le porte del totem sono fisse).
     indirizzo_totem = serializers.RegexField(r"^[A-Za-z0-9.-]{1,100}$", required=False, allow_blank=True)
+    insegna = RiferimentoCliente(Insegna, required=False, allow_null=True)
 
     class Meta:
         model = Sede
-        fields = ["id", "nome", "indirizzo", "indirizzo_totem"]
+        fields = ["id", "nome", "indirizzo", "insegna", "indirizzo_totem"]
 
 
 class SediViewSet(ViewSetCliente):

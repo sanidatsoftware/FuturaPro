@@ -1,7 +1,10 @@
 from django.conf import settings
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.db.models import Sum
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse
 from django.utils import timezone
+from django.db import transaction
 from django.utils.dateparse import parse_datetime
 from rest_framework import exceptions, serializers, status
 from rest_framework.decorators import action
@@ -13,11 +16,13 @@ from clienti.models import Abilitazioni
 from core.api import CONTENUTI, TUTTI, RiferimentoCliente, ViewSetCliente, VistaConContesto, sedi_visibili
 from core.contesto import contesto_cliente
 from dispositivi.api import VistaPlayer, credenziale_dalla_richiesta
+from clienti.models import Insegna
 from dispositivi.models import GruppoMonitor, Monitor
 
 from . import palinsesto
-from .file import impronta_e_dimensione, riconosci
-from .models import Contenuto, ElementoPlaylist, Playlist, Pubblicazione, Tipo
+from .file import crea_miniatura, impronta_e_dimensione, misure_immagine, riconosci
+from . import campagne
+from .models import Campagna, Contenuto, ElementoPlaylist, Playlist, Pubblicazione, Tipo
 
 MB = 1024 * 1024
 
@@ -34,12 +39,22 @@ def _servi(contenuto):
 
 class ContenutoSerializer(serializers.ModelSerializer):
     file = serializers.FileField(write_only=True, required=False)
+    orientamento = serializers.CharField(read_only=True)
 
     class Meta:
         model = Contenuto
-        fields = ["id", "nome", "tipo", "file", "url", "mime", "dimensione", "sha256", "durata", "caricato_da", "creato"]
+        fields = [
+            "id", "nome", "tipo", "file", "url", "mime", "dimensione", "sha256", "durata",
+            "larghezza", "altezza", "orientamento", "caricato_da", "creato",
+        ]
         read_only_fields = ["tipo", "mime", "dimensione", "sha256", "caricato_da", "creato"]
-        extra_kwargs = {"nome": {"required": False}, "durata": {"min_value": 1}}
+        extra_kwargs = {
+            "nome": {"required": False},
+            "durata": {"min_value": 1},
+            # Per i video le manda il pannello (le legge il browser); per le immagini vince il server.
+            "larghezza": {"min_value": 1, "max_value": 30000},
+            "altezza": {"min_value": 1, "max_value": 30000},
+        }
 
     def validate(self, dati):
         if self.instance is not None:
@@ -66,6 +81,10 @@ class ContenutoSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"file": f"Spazio esaurito: il cliente dispone di {abilitazioni.spazio_mb} MB."})
         dati["tipo"], dati["mime"] = formato
         dati["sha256"], dati["dimensione"] = impronta_e_dimensione(file)
+        if dati["tipo"] == Tipo.IMMAGINE:
+            misure = misure_immagine(file)
+            if misure:
+                dati["larghezza"], dati["altezza"] = misure
         dati["nome"] = dati.get("nome") or file.name
         return dati
 
@@ -93,6 +112,27 @@ class ContenutiViewSet(ViewSetCliente):
     @action(detail=True, methods=["get"])
     def file(self, request, pk=None):
         return _servi(self.get_object())
+
+    @action(detail=True, methods=["get"])
+    def miniatura(self, request, pk=None):
+        """Una JPEG piccola dell'immagine, creata la prima volta che serve e poi conservata."""
+        contenuto = self.get_object()
+        if contenuto.tipo != Tipo.IMMAGINE or not contenuto.file:
+            raise exceptions.NotFound()
+        percorso = contenuto.percorso_miniatura
+        if default_storage.exists(percorso):
+            with default_storage.open(percorso, "rb") as f:
+                dati = f.read()
+        else:
+            with contenuto.file.open("rb") as originale:
+                dati = crea_miniatura(originale)
+            if dati is None:
+                raise exceptions.NotFound()
+            default_storage.save(percorso, ContentFile(dati))
+        risposta = HttpResponse(dati, content_type="image/jpeg")
+        # Il contenuto non cambia mai (si carica un file nuovo): il browser la tiene a lungo.
+        risposta["Cache-Control"] = "private, max-age=604800, immutable"
+        return risposta
 
 
 # --- Playlist -----------------------------------------------------------------
@@ -216,10 +256,11 @@ class PubblicazioneSerializer(RegoleSerializer, serializers.ModelSerializer):
     class Meta:
         model = Pubblicazione
         fields = [
-            "id", "nome", "playlist", "monitor", "gruppi", "data_inizio", "data_fine",
-            "ora_inizio", "ora_fine", "giorni", "priorita", "attiva", "creata",
+            "id", "nome", "playlist", "monitor", "gruppi", "insegne", "orientamento", "campagna",
+            "data_inizio", "data_fine", "ora_inizio", "ora_fine", "giorni", "priorita", "attiva", "creata",
         ]
-        read_only_fields = ["creata"]
+        # Insegne e orientamento si scelgono dalla campagna, che ne è la proprietaria.
+        read_only_fields = ["creata", "insegne", "orientamento", "campagna"]
 
 
 class PubblicazioniViewSet(ViewSetCliente):
@@ -247,6 +288,169 @@ class PubblicazioniViewSet(ViewSetCliente):
         self._modificabile(pubblicazione)
         registra(self.request.user, "pubblicazione_eliminata", pubblicazione, nome=pubblicazione.nome)
         pubblicazione.delete()
+
+
+# --- Campagne -----------------------------------------------------------------
+
+
+class CampagnaSerializer(serializers.ModelSerializer):
+    insegne = RiferimentoCliente(Insegna, many=True, required=False)
+    gruppi = RiferimentoCliente(GruppoMonitor, many=True, required=False)
+    monitor = RiferimentoCliente(Monitor, many=True, required=False)
+    contenuti = RiferimentoCliente(Contenuto, many=True, required=False)
+    colore = serializers.RegexField(r"^#[0-9a-fA-F]{6}$", required=False)
+    giorni = serializers.ListField(child=serializers.IntegerField(min_value=0, max_value=6), required=False)
+    stato = serializers.SerializerMethodField()
+    pubblicazioni = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Campagna
+        fields = [
+            "id", "nome", "codice", "colore", "note", "data_inizio", "data_fine", "ora_inizio", "ora_fine",
+            "giorni", "priorita", "durata", "insegne", "gruppi", "monitor", "contenuti", "stato",
+            "pubblicazioni", "creata", "modificata",
+        ]
+        read_only_fields = ["creata", "modificata"]
+        extra_kwargs = {"durata": {"min_value": 1, "max_value": 3600}, "priorita": {"min_value": -100, "max_value": 100}}
+
+    def get_stato(self, campagna):
+        return campagne.stato(campagna, timezone.localdate())
+
+    def get_pubblicazioni(self, campagna):
+        return [
+            {"id": p.id, "orientamento": p.orientamento, "contenuti": p.playlist.elementi.count()}
+            for p in campagna.pubblicazioni.select_related("playlist")
+        ]
+
+    def to_representation(self, campagna):
+        dati = super().to_representation(campagna)
+        # Nell'ordine della campagna, non in quello del database.
+        dati["contenuti"] = [str(v.contenuto_id) for v in campagna.voci.order_by("ordine")]
+        return dati
+
+    def validate_giorni(self, giorni):
+        return sorted(set(giorni))
+
+    def validate(self, dati):
+        corrente = self.instance
+
+        def valore(campo):
+            return dati[campo] if campo in dati else getattr(corrente, campo, None)
+
+        if valore("data_inizio") and valore("data_fine") and valore("data_fine") < valore("data_inizio"):
+            raise serializers.ValidationError({"data_fine": "Precede la data di inizio."})
+        utente = self.context["request"].user
+        limitate = sedi_visibili(utente)
+        if limitate is not None:
+            if dati.get("insegne") or dati.get("gruppi"):
+                raise exceptions.PermissionDenied("Puoi pubblicare solo sui singoli monitor delle tue sedi.")
+            verifica_destinatari(utente, dati.get("monitor", []), [])
+        return dati
+
+    def _salva(self, campagna, contenuti):
+        if contenuti is not None:
+            campagne.salva_contenuti(campagna, contenuti)
+        campagne.sincronizza(campagna)
+        return campagna
+
+    def create(self, dati):
+        contenuti = dati.pop("contenuti", None)
+        return self._salva(super().create(dati), contenuti)
+
+    def update(self, campagna, dati):
+        contenuti = dati.pop("contenuti", None)
+        return self._salva(super().update(campagna, dati), contenuti)
+
+
+class CampagneViewSet(ViewSetCliente):
+    """Le campagne promozionali: la pagina «Creazione palinsesto» lavora su queste."""
+
+    ruoli_scrittura = CONTENUTI
+    serializer_class = CampagnaSerializer
+
+    def get_queryset(self):
+        campagne_ = Campagna.objects.prefetch_related("insegne", "gruppi", "monitor")
+        limitate = sedi_visibili(self.request.user)
+        if limitate is None:
+            return campagne_
+        return campagne_.filter(monitor__sede_id__in=limitate).distinct()
+
+    def _modificabile(self, campagna):
+        limitate = sedi_visibili(self.request.user)
+        if limitate is not None and (campagna.insegne.exists() or campagna.gruppi.exists()):
+            raise exceptions.PermissionDenied("La campagna riguarda anche monitor fuori dalle tue sedi.")
+
+    def perform_create(self, serializer):
+        registra(self.request.user, "campagna_creata", serializer.save())
+
+    def perform_update(self, serializer):
+        self._modificabile(serializer.instance)
+        registra(self.request.user, "campagna_modificata", serializer.save())
+
+    def perform_destroy(self, campagna):
+        self._modificabile(campagna)
+        registra(self.request.user, "campagna_eliminata", campagna, nome=campagna.nome)
+        for pubblicazione in campagna.pubblicazioni.select_related("playlist"):
+            pubblicazione.playlist.delete()
+        campagna.delete()
+
+    @action(detail=False, methods=["get"])
+    def modello(self, request):
+        """Il tracciato del CSV, con tre righe d'esempio da sostituire."""
+        risposta = HttpResponse("\ufeff" + campagne.MODELLO, content_type="text/csv; charset=utf-8")
+        risposta["Content-Disposition"] = 'attachment; filename="campagne-futurapro.csv"'
+        return risposta
+
+    @action(detail=False, methods=["post"])
+    def importa(self, request):
+        """Carica le campagne di un CSV. Con ``prova=1`` controlla soltanto e mostra l'esito riga per riga.
+
+        Tutto o niente: se una riga ha un errore non si salva nessuna campagna.
+        """
+        if sedi_visibili(request.user) is not None:
+            raise exceptions.PermissionDenied("L'importazione è riservata a chi gestisce tutto il cliente.")
+        file = request.FILES.get("file")
+        if file is None:
+            raise exceptions.ValidationError({"file": "Scegli il file CSV."})
+        if file.size > 2 * MB:
+            raise exceptions.ValidationError({"file": "File troppo grande (massimo 2 MB)."})
+        grezzo = file.read()
+        try:
+            testo = grezzo.decode("utf-8")
+        except UnicodeDecodeError:
+            testo = grezzo.decode("cp1252")  # Excel italiano
+        try:
+            righe = campagne.leggi_csv(testo, Insegna.objects.all(), GruppoMonitor.objects.all(), Monitor.objects.all())
+        except campagne.ErroreRiga as errore:
+            raise exceptions.ValidationError({"file": str(errore)})
+        except Exception:
+            raise exceptions.ValidationError({"file": "Il file non è un CSV leggibile."})
+        esistenti = {c.casefold() for c in Campagna.objects.values_list("nome", flat=True)}
+        esito = [
+            {
+                "riga": r["riga"],
+                "nome": r["nome"],
+                "errori": r["errori"],
+                "azione": "errore" if r["errori"] else ("aggiorna" if r["nome"].casefold() in esistenti else "crea"),
+                **(
+                    {
+                        "data_inizio": r["dati"]["data_inizio"], "data_fine": r["dati"]["data_fine"],
+                        "insegne": [i.nome for i in r["insegne"]], "gruppi": [g.nome for g in r["gruppi"]],
+                        "monitor": [m.nome for m in r["monitor"]],
+                    }
+                    if not r["errori"] else {}
+                ),
+            }
+            for r in righe
+        ]
+        valide = not any(r["errori"] for r in righe) and bool(righe)
+        if request.data.get("prova") in ("1", "true", True) or not valide:
+            return Response({"righe": esito, "valido": valide, "salvate": 0},
+                            status=status.HTTP_200_OK if valide or request.data.get("prova") else status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            salvate = campagne.importa(righe)
+        registra(request.user, "campagne_importate", None, numero=len(salvate))
+        return Response({"righe": esito, "valido": True, "salvate": len(salvate)}, status=status.HTTP_201_CREATED)
 
 
 class PubblicaSerializer(RegoleSerializer):

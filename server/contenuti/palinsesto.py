@@ -50,8 +50,12 @@ def valida(pubblicazione, istante: datetime) -> bool:
 
 
 def pubblicazioni_del_monitor(monitor):
+    destinatari = Q(monitor=monitor) | Q(gruppi__monitor=monitor)
+    if monitor.sede.insegna_id:
+        destinatari |= Q(insegne=monitor.sede.insegna_id)
     return (
-        Pubblicazione.objects.filter(Q(monitor=monitor) | Q(gruppi__monitor=monitor))
+        Pubblicazione.objects.filter(destinatari)
+        .filter(Q(orientamento="") | Q(orientamento=monitor.orientamento))
         .distinct()
         .order_by("-priorita", "creata")
     )

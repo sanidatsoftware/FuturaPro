@@ -31,6 +31,9 @@ class Contenuto(ModelloCliente):
     # Vuota: le immagini restano DURATA_IMMAGINE secondi, i video vanno fino alla fine.
     durata = models.PositiveIntegerField(null=True, blank=True)
     caricato_da = models.CharField(max_length=150, blank=True)
+    # Misure in pixel: le immagini le legge il server, i video le manda il pannello.
+    larghezza = models.PositiveIntegerField(null=True, blank=True)
+    altezza = models.PositiveIntegerField(null=True, blank=True)
     creato = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -40,12 +43,28 @@ class Contenuto(ModelloCliente):
     def __str__(self):
         return self.nome
 
+    @property
+    def orientamento(self) -> str | None:
+        """«verticale» per i totem, «orizzontale» per i monitor; None se le misure mancano."""
+        if not self.larghezza or not self.altezza:
+            return None
+        return "verticale" if self.altezza > self.larghezza else "orizzontale"
+
+    @property
+    def percorso_miniatura(self) -> str:
+        return f"clienti/{self.cliente_id}/miniature/{self.id}.jpg"
+
     def delete(self, *args, **kwargs):
         file = self.file
+        miniatura = self.percorso_miniatura
         risultato = super().delete(*args, **kwargs)
         if file:
             # Il file sparisce solo se la cancellazione nel database va a buon fine.
-            transaction.on_commit(lambda: file.storage.delete(file.name))
+            def cancella():
+                file.storage.delete(file.name)
+                file.storage.delete(miniatura)
+
+            transaction.on_commit(cancella)
         return risultato
 
 
@@ -74,6 +93,56 @@ class ElementoPlaylist(ModelloCliente):
         ordering = ["playlist", "ordine"]
 
 
+class Orientamento(models.TextChoices):
+    ORIZZONTALE = "orizzontale", "Monitor (orizzontale)"
+    VERTICALE = "verticale", "Totem (verticale)"
+
+
+class Campagna(ModelloCliente):
+    """Un periodo promozionale (es. «Volantino 6-19 ottobre»): date, destinatari e contenuti.
+
+    Si può creare vuota, anche da un CSV a inizio anno, e riempire più tardi. I suoi
+    contenuti diventano una pubblicazione per orientamento: le immagini verticali
+    vanno ai totem, quelle orizzontali ai monitor (``contenuti.campagne``).
+    """
+
+    nome = models.CharField(max_length=200)
+    codice = models.CharField(max_length=50, blank=True, help_text="Riferimento interno, es. il numero del volantino.")
+    colore = models.CharField(max_length=7, default="#3d6fb6")
+    note = models.CharField(max_length=500, blank=True)
+    data_inizio = models.DateField(null=True, blank=True)
+    data_fine = models.DateField(null=True, blank=True)
+    ora_inizio = models.TimeField(null=True, blank=True)
+    ora_fine = models.TimeField(null=True, blank=True)
+    giorni = models.JSONField(default=list, blank=True)
+    priorita = models.IntegerField(default=0)
+    # Secondi per ogni immagine; i video vanno fino alla fine.
+    durata = models.PositiveIntegerField(null=True, blank=True)
+    insegne = models.ManyToManyField("clienti.Insegna", blank=True, related_name="campagne")
+    gruppi = models.ManyToManyField("dispositivi.GruppoMonitor", blank=True, related_name="campagne")
+    monitor = models.ManyToManyField("dispositivi.Monitor", blank=True, related_name="campagne")
+    contenuti = models.ManyToManyField(Contenuto, through="ContenutoCampagna", blank=True, related_name="campagne")
+    creata = models.DateTimeField(auto_now_add=True)
+    modificata = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["data_inizio", "nome"]
+        verbose_name_plural = "campagne"
+        constraints = [models.UniqueConstraint(fields=["cliente", "nome"], name="campagna_nome_unico")]
+
+    def __str__(self):
+        return self.nome
+
+
+class ContenutoCampagna(ModelloCliente):
+    campagna = models.ForeignKey(Campagna, on_delete=models.CASCADE, related_name="voci")
+    contenuto = models.ForeignKey(Contenuto, on_delete=models.CASCADE, related_name="+")
+    ordine = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = ["campagna", "ordine"]
+
+
 class Pubblicazione(ModelloCliente):
     """Una playlist pubblicata su certi monitor, con le sue regole di calendario.
 
@@ -86,6 +155,12 @@ class Pubblicazione(ModelloCliente):
     playlist = models.ForeignKey(Playlist, on_delete=models.CASCADE, related_name="pubblicazioni")
     monitor = models.ManyToManyField("dispositivi.Monitor", blank=True, related_name="pubblicazioni")
     gruppi = models.ManyToManyField("dispositivi.GruppoMonitor", blank=True, related_name="pubblicazioni")
+    # Tutti i monitor delle sedi di queste insegne.
+    insegne = models.ManyToManyField("clienti.Insegna", blank=True, related_name="pubblicazioni")
+    # Vuoto: tutti i destinatari; altrimenti solo i monitor di questo orientamento.
+    orientamento = models.CharField(max_length=12, choices=Orientamento.choices, blank=True)
+    # Le pubblicazioni di una campagna le crea e aggiorna la campagna stessa.
+    campagna = models.ForeignKey(Campagna, on_delete=models.CASCADE, null=True, blank=True, related_name="pubblicazioni")
     data_inizio = models.DateField(null=True, blank=True)
     data_fine = models.DateField(null=True, blank=True)
     ora_inizio = models.TimeField(null=True, blank=True)

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Accesso · {{ aspetto.nome_app }}</title>
+  <style>
+    :root { --colore: {{ aspetto.colore }}; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif; color: #1d2330; background: #0f1724;
+      display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(360px, 1fr);
+    }
+    .vetrina {
+      position: relative; overflow: hidden; color: #fff; padding: 56px; display: flex; flex-direction: column; justify-content: space-between;
+      background:
+        radial-gradient(1200px 600px at 10% 110%, color-mix(in srgb, var(--colore) 85%, #fff 15%) 0%, transparent 60%),
+        radial-gradient(900px 500px at 110% -10%, color-mix(in srgb, var(--colore) 70%, #000 30%) 0%, transparent 65%),
+        linear-gradient(135deg, color-mix(in srgb, var(--colore) 55%, #0f1724 45%), #0f1724);
+    }
+    .vetrina::after {
+      content: ""; position: absolute; inset: -40%; opacity: .08; pointer-events: none;
+      background-image: linear-gradient(rgba(255,255,255,.9) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.9) 1px, transparent 1px);
+      background-size: 48px 48px; transform: rotate(-12deg);
+    }
+    .marchio { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; }
+    .marchio img { max-height: 64px; max-width: 240px; object-fit: contain; filter: drop-shadow(0 4px 14px rgba(0,0,0,.35)); }
+    .marchio .nome { font-size: 26px; font-weight: 700; letter-spacing: .2px; }
+    .messaggio { position: relative; z-index: 1; max-width: 560px; }
+    .messaggio h1 { font-size: clamp(30px, 3.4vw, 46px); line-height: 1.1; margin: 0 0 14px; font-weight: 750; }
+    .messaggio p { font-size: 17px; opacity: .85; margin: 0; line-height: 1.5; }
+    .schermi { position: relative; z-index: 1; display: flex; gap: 14px; align-items: flex-end; }
+    .schermi span { display: block; border-radius: 10px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25); backdrop-filter: blur(4px); }
+    .schermi .monitor { width: 180px; height: 104px; }
+    .schermi .totem { width: 62px; height: 132px; }
+    .modulo { background: #fff; display: flex; align-items: center; justify-content: center; padding: 40px 28px; }
+    form { width: 100%; max-width: 360px; }
+    form h2 { margin: 0 0 6px; font-size: 24px; }
+    form .sotto { margin: 0 0 26px; color: #5d6675; font-size: 14px; }
+    label { display: block; font-size: 13px; color: #5d6675; margin: 0 0 6px; }
+    input {
+      width: 100%; font: inherit; font-size: 16px; padding: 12px 14px; border: 1px solid #d3d8e0; border-radius: 10px; margin: 0 0 18px;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input:focus { outline: none; border-color: var(--colore); box-shadow: 0 0 0 4px color-mix(in srgb, var(--colore) 18%, transparent); }
+    button {
+      width: 100%; font: inherit; font-size: 16px; font-weight: 600; padding: 13px; border: 0; border-radius: 10px; cursor: pointer;
+      color: #fff; background: var(--colore); box-shadow: 0 8px 20px color-mix(in srgb, var(--colore) 35%, transparent); transition: transform .1s, filter .15s;
+    }
+    button:hover { filter: brightness(1.08); }
+    button:active { transform: translateY(1px); }
+    .errore { background: #fdecea; color: #c62828; padding: 10px 12px; border-radius: 8px; font-size: 14px; margin: 0 0 18px; }
+    .piede { margin-top: 28px; font-size: 12px; color: #8a93a3; text-align: center; }
+    @media (max-width: 820px) {
+      body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+      .vetrina { padding: 28px 22px; gap: 20px; }
+      .schermi, .messaggio p { display: none; }
+      .messaggio h1 { font-size: 24px; margin: 0; }
+    }
+  </style>
+</head>
+<body>
+  <section class="vetrina">
+    <div class="marchio">
+      {% if aspetto.logo %}<img src="/aspetto/logo/?v={{ aspetto.modificato|date:'U' }}" alt="">{% endif %}
+      <span class="nome">{{ aspetto.nome_app }}</span>
+    </div>
+    <div class="messaggio">
+      <h1>{{ aspetto.sottotitolo }}</h1>
+      <p>Monitor, totem ed eliminacode di tutti i punti vendita, da un'unica console.</p>
+    </div>
+    <div class="schermi" aria-hidden="true"><span class="monitor"></span><span class="totem"></span><span class="monitor"></span></div>
+  </section>
+  <main class="modulo">
+    <form method="post">
+      {% csrf_token %}
+      <h2>Accedi</h2>
+      <p class="sotto">Inserisci le credenziali che ti sono state assegnate.</p>
+      {% if form.errors %}<p class="errore">Nome utente o password non corretti.</p>{% endif %}
+      <label for="id_username">Nome utente</label>
+      <input id="id_username" name="username" autocomplete="username" autofocus required value="{{ form.username.value|default:'' }}">
+      <label for="id_password">Password</label>
+      <input id="id_password" name="password" type="password" autocomplete="current-password" required>
+      <input type="hidden" name="next" value="{{ next }}">
+      <button type="submit">Entra</button>
+      <p class="piede">{{ aspetto.nome_app }}</p>
+    </form>
+  </main>
+</body>
+</html>

@@ -60,9 +60,26 @@ class Abilitazioni(ModelloCliente):
         constraints = [models.UniqueConstraint(fields=["cliente"], name="abilitazioni_una_per_cliente")]
 
 
+class Insegna(ModelloCliente):
+    """Il marchio con cui si presenta un negozio: un'azienda può averne più d'uno
+    (es. «Tocal» e «Tocal Express»). Facoltativa: serve a pubblicare per insegna."""
+
+    nome = models.CharField(max_length=100)
+    colore = models.CharField(max_length=7, default="#ec6a1f")
+
+    class Meta:
+        ordering = ["nome"]
+        verbose_name_plural = "insegne"
+        constraints = [models.UniqueConstraint(fields=["cliente", "nome"], name="insegna_nome_unico")]
+
+    def __str__(self):
+        return self.nome
+
+
 class Sede(ModelloCliente):
     nome = models.CharField(max_length=200)
     indirizzo = models.CharField(max_length=300, blank=True)
+    insegna = models.ForeignKey(Insegna, on_delete=models.SET_NULL, null=True, blank=True, related_name="sedi")
     # IP (o nome) in rete locale del totem che gestisce le code del negozio. Se c'è,
     # numeri e biglietti li tiene il totem e il negozio va avanti anche senza server
     # centrale; se manca, le code le tiene il server.

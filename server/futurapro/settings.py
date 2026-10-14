@@ -64,6 +64,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "pannello.contesto.aspetto",
             ]
         },
     }
@@ -86,7 +87,7 @@ DATABASES = {
 }
 
 AUTH_USER_MODEL = "utenti.Utente"
-LOGIN_URL = "/api/sessione/login/"
+LOGIN_URL = "/accesso/"
 LOGIN_REDIRECT_URL = "/pannello/"
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
