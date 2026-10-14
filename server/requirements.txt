@@ -4,3 +4,4 @@ psycopg[binary]>=3.2,<3.4
 defusedxml>=0.7,<0.8
 gunicorn>=23,<24
 Pillow>=11,<13
+cryptography>=44,<51
