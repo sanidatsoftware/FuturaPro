@@ -12,7 +12,9 @@ from .models import TipoZona
 
 COLORE = r"^#[0-9a-fA-F]{6}$"
 TRANSIZIONI = ["nessuna", "dissolvenza", "scorri_sinistra", "scorri_alto", "zoom"]
-ADATTAMENTI = ["adatta", "riempi"]  # contain / cover
+# adatta: intera (contain); riempi: taglia i bordi (cover); sfondo: intera, con la stessa
+# immagine sfocata a riempire le bande; allunga: riempie deformando (fill).
+ADATTAMENTI = ["adatta", "riempi", "sfondo", "allunga"]
 ALLINEAMENTI = ["sinistra", "centro", "destra"]
 
 

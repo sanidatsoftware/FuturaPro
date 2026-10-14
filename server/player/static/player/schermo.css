@@ -24,6 +24,8 @@ html, body {
 /* Slide: gli strati si sovrappongono durante la transizione. */
 .strato { position: absolute; inset: 0; }
 .media { width: 100%; height: 100%; border: 0; display: block; background: transparent; }
+.media.sfocato { position: absolute; inset: 0; object-fit: cover; filter: blur(28px) brightness(0.85); transform: scale(1.15); }
+.strato > .media:not(.sfocato), .zona > .media:not(.sfocato) { position: relative; }
 
 .zona-orologio, .zona-testo {
   display: flex;

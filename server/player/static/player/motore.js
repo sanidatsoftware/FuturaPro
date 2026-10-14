@@ -171,7 +171,7 @@ class ZonaSlide {
       const url = await this.motore.fonte.file(elemento.contenuto, voce);
       if (!url) return null;
       media = crea(voce.tipo === "video" ? "video" : "img", "media", strato);
-      media.style.objectFit = this.config.adattamento === "riempi" ? "cover" : "contain";
+      adatta(media, this.config.adattamento, url);
       if (voce.tipo === "video") Object.assign(media, { muted: true, playsInline: true, preload: "auto" });
       media.src = url;
       const pronto = voce.tipo === "video" ? "canplay" : "load";
@@ -390,6 +390,20 @@ class ZonaTesto {
   ferma() {}
 }
 
+const OBJECT_FIT = { adatta: "contain", sfondo: "contain", riempi: "cover", allunga: "fill" };
+
+// Applica l'adattamento a un'immagine o a un video. «sfondo» mette dietro la stessa
+// immagine ingrandita e sfocata, così le bande vuote prendono i suoi colori
+// (per i video solo «adatta»: sfocare un video costa troppo ai player deboli).
+function adatta(media, modo, url) {
+  media.style.objectFit = OBJECT_FIT[modo] || "contain";
+  if (modo !== "sfondo" || media.tagName !== "IMG") return;
+  const dietro = crea("img", "media sfocato");
+  dietro.alt = "";
+  dietro.src = url;
+  media.before(dietro);
+}
+
 class ZonaImmagine {
   constructor(el, zona, px, motore) {
     Object.assign(this, { el, zona, motore });
@@ -400,7 +414,7 @@ class ZonaImmagine {
     const url = await this.motore.fonte.file(id, this.motore.manifest.contenuti[id]);
     if (!url) return;
     const img = crea("img", "media", this.el);
-    img.style.objectFit = this.zona.configurazione.adattamento === "riempi" ? "cover" : "contain";
+    adatta(img, this.zona.configurazione.adattamento, url);
     img.src = url;
   }
 

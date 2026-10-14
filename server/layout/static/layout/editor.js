@@ -70,7 +70,12 @@ const TIPI = {
 };
 
 const ALLINEAMENTO = [["sinistra", "Sinistra"], ["centro", "Centro"], ["destra", "Destra"]];
-const ADATTAMENTO = [["adatta", "Adatta (intera, senza tagli)"], ["riempi", "Riempi (taglia i bordi)"]];
+const ADATTAMENTO = [
+  ["adatta", "Adatta (intera, senza tagli)"],
+  ["sfondo", "Adatta con sfondo sfocato"],
+  ["riempi", "Riempi (taglia i bordi)"],
+  ["allunga", "Allunga (riempie deformando)"],
+];
 
 const CAMPI = {
   slide: [
@@ -326,6 +331,12 @@ function aggiornaGeometria(zona) {
     const campo = pannello.querySelector(`[data-geometria="${k}"]`);
     if (campo && document.activeElement !== campo) campo.value = zona[k];
   }
+  // Le immagini preparate a questa misura riempiono la zona senza tagli né bande.
+  const pixel = pannello.querySelector(".pixel");
+  if (pixel) {
+    const [w, h] = RISOLUZIONE[stato.layout.orientamento];
+    pixel.textContent = `Immagini ideali: ${Math.round((w * zona.larghezza) / 100)} × ${Math.round((h * zona.altezza) / 100)} pixel`;
+  }
 }
 
 function cambia(zona, nome, valore) {
@@ -472,6 +483,8 @@ function mostraProprieta() {
       aggiornaGeometria(zona);
     });
   }
+  crea("p", { classe: "nota pixel" }, geometria);
+  aggiornaGeometria(zona);
 
   const azioni = crea("div", { classe: "azioni" }, pannello);
   const pulsante = (testo, azione, classe = "") => crea("button", { type: "button", testo, classe }, azioni).addEventListener("click", azione);

@@ -94,6 +94,7 @@ input[type="checkbox"] { width: auto; }
 .proprieta .geometria { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; border: 1px solid var(--linea); border-radius: 8px; margin: 0 0 10px; }
 .proprieta .geometria legend { font-size: 12px; color: var(--tenue); }
 .proprieta .geometria .campo { margin: 0; }
+.proprieta .geometria .pixel { grid-column: 1 / -1; margin: 2px 0 0; }
 .proprieta .azioni { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
 .proprieta .spunta { display: flex; align-items: center; gap: 6px; }
 .proprieta .riga-colore { display: flex; align-items: center; gap: 10px; }
