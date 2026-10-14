@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.core.files.storage import default_storage
 from django.db.models import F, Q
@@ -297,6 +297,69 @@ def download_del_monitor(monitor):
         "dalle": impostazioni.dalle.strftime("%H:%M"), "alle": impostazioni.alle.strftime("%H:%M"),
         "kbps": impostazioni.kbps, "subito_fino": impostazioni.subito_fino.isoformat() if subito else None,
     }
+
+
+class StoricoAllarmiView(VistaConContesto, APIView):
+    """Lo storico degli allarmi degli schermi: ?dal=&al=&monitor=, ?formato=csv.
+    Con il riepilogo per schermo: quante volte si è scollegato e per quanto è rimasto fuori."""
+
+    def get(self, request):
+        from django.http import HttpResponse
+
+        p = request.query_params
+        try:
+            al = date.fromisoformat(p.get("al") or timezone.localdate().isoformat())
+            dal = date.fromisoformat(p.get("dal") or (al - timedelta(days=29)).isoformat())
+        except ValueError:
+            raise exceptions.ValidationError("Date non valide.")
+        inizio = timezone.make_aware(datetime.combine(dal, time.min))
+        fine = timezone.make_aware(datetime.combine(al + timedelta(days=1), time.min))
+        monitor = Monitor.objects.select_related("sede")
+        limitate = sedi_visibili(request.user)
+        if limitate is not None:
+            monitor = monitor.filter(sede_id__in=limitate)
+        if p.get("monitor"):
+            monitor = monitor.filter(id=p["monitor"])
+        eventi = list(
+            EventoSchermo.objects.filter(monitor__in=monitor, quando__gte=inizio, quando__lt=fine)
+            .select_related("monitor", "monitor__sede").order_by("quando")
+        )
+        # Fuori linea: dallo scollegamento al ritorno (o ad adesso, se non è ancora tornato).
+        riepilogo = {}
+        aperti = {}
+        for e in eventi:
+            r = riepilogo.setdefault(e.monitor_id, {"monitor": e.monitor.nome, "sede": e.monitor.sede.nome, "scollegamenti": 0, "minuti": 0, "ancora_fuori": False})
+            if e.tipo == EventoSchermo.Tipo.SCOLLEGATO:
+                r["scollegamenti"] += 1
+                aperti[e.monitor_id] = e.quando
+            elif e.monitor_id in aperti:
+                r["minuti"] += int((e.quando - aperti.pop(e.monitor_id)).total_seconds() // 60)
+        for monitor_id, da in aperti.items():
+            riepilogo[monitor_id]["minuti"] += int((min(timezone.now(), fine) - da).total_seconds() // 60)
+            riepilogo[monitor_id]["ancora_fuori"] = True
+        righe = [
+            {"monitor": e.monitor.nome, "sede": e.monitor.sede.nome, "tipo": e.tipo, "quando": e.quando,
+             "dettaglio": e.dettaglio, "email": e.email_inviata}
+            for e in reversed(eventi)
+        ]
+        if p.get("formato") == "csv":
+            import csv
+            import io
+
+            uscita = io.StringIO()
+            scrittore = csv.writer(uscita, delimiter=";")
+            scrittore.writerow(["Quando", "Schermo", "Negozio", "Evento", "Dettaglio", "Email inviata"])
+            for r in righe:
+                scrittore.writerow([timezone.localtime(r["quando"]).strftime("%d/%m/%Y %H:%M"), r["monitor"], r["sede"],
+                                    "Scollegato" if r["tipo"] == "scollegato" else "Di nuovo in linea", r["dettaglio"], "sì" if r["email"] else ""])
+            risposta = HttpResponse("\ufeff" + uscita.getvalue(), content_type="text/csv; charset=utf-8")
+            risposta["Content-Disposition"] = f'attachment; filename="storico-allarmi-{dal}-{al}.csv"'
+            return risposta
+        return Response({
+            "dal": dal, "al": al, "eventi": righe[:1000],
+            "riepilogo": sorted(riepilogo.values(), key=lambda r: -r["minuti"]),
+            "schermi": [{"id": str(m.id), "nome": m.nome} for m in monitor.order_by("nome")],
+        })
 
 
 class AbbinamentoSerializer(serializers.Serializer):

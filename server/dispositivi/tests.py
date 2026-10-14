@@ -115,3 +115,32 @@ class DownloadTest(Base):
             self.assertIsNotNone(palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))["download"]["subito_fino"])
         self.come(self.user_a)
         self.assertEqual(self.client.put("/api/download/", {"attivo": False}, format="json").status_code, 403)
+
+
+class StoricoERegistroTest(Base):
+    def test_storico_allarmi_e_registro_con_filtri(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from .models import EventoSchermo
+
+        adesso = timezone.now()
+        with contesto_cliente(self.a.id):
+            for tipo, minuti_fa in (("scollegato", 90), ("ricollegato", 30)):
+                e = EventoSchermo.objects.create(cliente=self.a, monitor=self.mon_a_milano, tipo=tipo, dettaglio="prova")
+                EventoSchermo.objects.filter(id=e.id).update(quando=adesso - timedelta(minutes=minuti_fa))
+        self.come(self.admin_a)
+        dati = self.client.get("/api/storico-allarmi/").json()
+        self.assertEqual(dati["riepilogo"][0]["scollegamenti"], 1)
+        self.assertEqual(dati["riepilogo"][0]["minuti"], 60)
+        self.assertIn("Scollegato", self.client.get("/api/storico-allarmi/?formato=csv").content.decode())
+        # Il registro delle operazioni, con i filtri e il CSV.
+        self.client.patch(f"/api/monitor/{self.mon_a_milano.id}/", {"nome": "Ingresso nuovo"}, format="json")
+        registro = self.client.get("/api/audit/?cerca=monitor").json()
+        self.assertTrue(any(e["azione"] == "monitor_modificato" for e in registro["results"]))
+        self.assertIn("admin_a", registro["utenti"])
+        self.assertEqual(self.client.get("/api/audit/?dal=2000-01-01&al=2000-01-02").json()["count"], 0)
+        self.assertIn("monitor_modificato", self.client.get("/api/audit/?formato=csv").content.decode())
+        self.come(self.user_a)
+        self.assertEqual(self.client.get("/api/audit/").status_code, 403)

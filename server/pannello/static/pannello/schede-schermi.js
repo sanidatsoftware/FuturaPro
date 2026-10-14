@@ -325,18 +325,8 @@ export async function schedaStato() {
   await sezioneInvii(H, "schermi", { nomePredefinito: "Disponibilità degli schermi" });
 
   const storico = sezione("Storico");
-  if (!dati.eventi.length) crea("p", { classe: "vuoto", testo: "Nessun allarme finora." }, storico);
-  else {
-    const c = H.tabella(["Quando", "Schermo", "Sede", "", "Email"], storico);
-    for (const e of dati.eventi) {
-      const r = crea("tr", {}, c);
-      crea("td", { testo: new Date(e.quando).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" }) }, r);
-      crea("td", { testo: e.monitor }, r);
-      crea("td", { testo: e.sede }, r);
-      crea("td", { testo: `${e.tipo === "scollegato" ? "🔴 Scollegato" : "🟢 Di nuovo in linea"} · ${e.dettaglio}` }, r);
-      crea("td", { testo: e.email ? "inviata" : "—", classe: "tenue" }, r);
-    }
-  }
+  crea("p", { classe: "nota", testo: `${dati.eventi.length ? `Ultimo allarme: ${dati.eventi[0].monitor}, ${new Date(dati.eventi[0].quando).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}. ` : "Nessun allarme finora. "}Lo storico completo, con il tempo fuori linea di ogni schermo, è in «Report & Log → Storico allarmi».` }, storico);
+  crea("button", { testo: "Apri lo storico allarmi", onclick: () => H.mostra("storico_allarmi") }, storico);
 }
 
 // --- Fasce di download ------------------------------------------------------------------------

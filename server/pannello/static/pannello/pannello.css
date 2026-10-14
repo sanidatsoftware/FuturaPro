@@ -217,3 +217,4 @@ a.pulsante { display: inline-block; padding: 6px 12px; border-radius: 8px; borde
 .invio.spento { opacity: .6; }
 .nuovo-invio summary { cursor: pointer; font-weight: 600; color: var(--primario); margin: 8px 0; }
 input.corto { width: 90px; }
+.dettagli-registro { font-size: 13px; color: var(--tenue); max-width: 520px; }

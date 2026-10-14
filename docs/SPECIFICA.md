@@ -316,6 +316,14 @@ pianificatore` (servizio `pianificatore`, ogni minuto, dalle 7): una volta per p
 nuovo tentativo dopo 30 minuti se il server di posta non risponde. «Invia adesso» manda subito
 il periodo appena concluso.
 
+### Report & Log
+
+Il gruppo di menu «Report & Log» raccoglie messa in onda, tempi d'attesa, il **registro delle
+operazioni** (`/api/audit/` per l'azienda, `/api/piattaforma/audit/` per il SystemAdministrator
+con «tutta la piattaforma»; filtri per periodo, utente e testo, 100 righe per pagina, CSV) e lo
+**storico degli allarmi** (`/api/storico-allarmi/`: eventi per periodo e schermo, con il
+riepilogo di scollegamenti e tempo fuori linea, anche se lo schermo è ancora scollegato; CSV).
+
 ### Listini prezzi (facoltativi)
 
 `/api/listini/`: tabelle di prodotti (prodotto, prezzo, unità, nota, evidenza, visibile) mostrate
