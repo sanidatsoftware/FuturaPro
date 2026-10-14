@@ -5,7 +5,7 @@ from django.utils import timezone
 
 from core.contesto import contesto_cliente
 from core.tests.test_isolamento import Base
-from dispositivi.models import CredenzialeDispositivo, impronta
+from dispositivi.models import CredenzialeDispositivo, Monitor, impronta
 
 from . import servizi
 from .models import Reparto
@@ -227,3 +227,67 @@ class PersonalizzazioneTest(ConReparti):
         self.come(self.admin_a)
         r = self.client.patch(f"/api/reparti/{self.salumeria.id}/", {"colore_testo": "#1d1d1d"})
         self.assertEqual(r.json()["colore_testo"], "#1d1d1d")
+
+
+class CodeSulTotemTest(ConReparti):
+    """Con l'indirizzo del totem sulla sede, le code le tiene il totem: il manifest lo dice."""
+
+    def player(self, monitor):
+        token = secrets.token_urlsafe(32)
+        with contesto_cliente(monitor.cliente_id):
+            CredenzialeDispositivo.objects.create(impronta_token=impronta(token), monitor=monitor, cliente_id=monitor.cliente_id)
+        return {"HTTP_AUTHORIZATION": f"Device {token}"}
+
+    def test_manifest(self):
+        self.come(self.admin_a)
+        self.assertEqual(self.client.patch(f"/api/sedi/{self.a_milano.id}/", {"indirizzo_totem": "https://x"}).status_code, 400)
+        self.client.patch(f"/api/sedi/{self.a_milano.id}/", {"indirizzo_totem": "192.168.1.70"})
+        chiave = self.client.post(f"/api/reparti/{self.salumeria.id}/chiave/").json()["chiave"]
+        totem = self.client.post(
+            "/api/layout/",
+            {"nome": "Totem", "zone": [{"tipo": "prendi_numero", "x": 0, "y": 0, "larghezza": 100, "altezza": 100}]},
+            format="json",
+        ).json()["id"]
+        self.client.patch(f"/api/monitor/{self.mon_a_milano.id}/", {"layout": totem}, format="json")
+        self.client.logout()
+
+        code = self.client.get("/api/player/palinsesto/", **self.player(self.mon_a_milano)).json()["code"]
+        self.assertEqual((code["modo"], code["indirizzo"]), ("totem", "https://192.168.1.70:8443"))
+        salumeria = next(r for r in code["reparti"] if r["nome"] == "Salumeria")
+        self.assertEqual(salumeria["chiavi"], [impronta(chiave)])
+        # Solo i reparti della sua sede.
+        self.assertNotIn("Gastronomia", [r["nome"] for r in code["reparti"]])
+
+        # Un monitor della stessa sede senza zona «prendi numero» sa dove leggere, ma non riceve le chiavi.
+        with contesto_cliente(self.a.id):
+            altro = Monitor.objects.create(sede=self.a_milano, nome="Display", piattaforma="windows")
+        code = self.client.get("/api/player/palinsesto/", **self.player(altro)).json()["code"]
+        self.assertEqual(code, {"modo": "totem", "indirizzo": "https://192.168.1.70:8443"})
+        # E un monitor di una sede senza totem resta sul server.
+        code = self.client.get("/api/player/palinsesto/", **self.player(self.mon_a_roma)).json()["code"]
+        self.assertEqual(code, {"modo": "server"})
+
+    def test_il_pannello_sa_se_il_monitor_e_aggiornato(self):
+        dispositivo = self.player(self.mon_a_milano)
+        versione = self.client.get("/api/player/palinsesto/", **dispositivo).json()["versione"]
+        self.come(self.admin_a)
+        self.assertFalse(self.client.get(f"/api/anteprima/{self.mon_a_milano.id}/").json()["aggiornato"])
+        self.client.logout()
+        self.client.post("/api/player/heartbeat/", {"manifest": versione}, **dispositivo)
+        self.come(self.admin_a)
+        self.assertTrue(self.client.get(f"/api/anteprima/{self.mon_a_milano.id}/").json()["aggiornato"])
+
+    def test_con_il_totem_il_server_non_da_numeri(self):
+        self.come(self.admin_a)
+        chiave = self.client.post(f"/api/reparti/{self.salumeria.id}/chiave/").json()["chiave"]
+        self.client.patch(f"/api/sedi/{self.a_milano.id}/", {"indirizzo_totem": "192.168.1.70"})
+        r = self.client.post(f"/api/reparti/{self.salumeria.id}/avanti/")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("192.168.1.70", str(r.json()))
+        self.assertEqual(self.client.get(f"/api/reparti/{self.salumeria.id}/").json()["totem"], "192.168.1.70")
+        self.client.logout()
+        r = self.client.post("/api/eliminacode/pulsante/avanti/", HTTP_AUTHORIZATION=f"Pulsante {chiave}")
+        self.assertEqual(r.status_code, 400)
+        # Le sedi senza totem continuano come prima.
+        self.come(self.admin_a)
+        self.assertEqual(self.client.post(f"/api/reparti/{self.roma.id}/avanti/").status_code, 200)

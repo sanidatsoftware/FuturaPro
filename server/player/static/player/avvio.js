@@ -3,7 +3,7 @@
 
 import { Motore } from "./motore.js";
 
-const VERSIONE = "web-0.1";
+const VERSIONE = "web-0.2";
 const OGNI_MANIFEST = 30_000;
 const OGNI_HEARTBEAT = 60_000;
 const OGNI_STATO = 5_000;
@@ -91,6 +91,101 @@ async function pulisciCache(manifest) {
   }
 }
 
+// Scarica in cache tutti i file di un manifest, prima di mostrarlo: così non manca
+// mai una slide, e se la rete cade dopo, il monitor ha già tutto. Restituisce
+// false se qualcosa non è arrivato (si riprova al giro successivo).
+async function preparaFile(manifest, scarica) {
+  let cache;
+  try {
+    cache = await caches.open(CACHE_FILE);
+  } catch {
+    return true; // niente Cache API (pagina non sicura): i file arrivano quando servono
+  }
+  let completo = true;
+  for (const voce of Object.values(manifest.contenuti)) {
+    if (!voce.sha256) continue;
+    const chiave = `/file/${voce.sha256}`;
+    if (await cache.match(chiave)) continue;
+    try {
+      const risposta = await scarica(voce);
+      if (!risposta.ok) throw new Error(risposta.status);
+      await cache.put(chiave, risposta);
+    } catch {
+      completo = false;
+    }
+  }
+  return completo;
+}
+
+// Una richiesta che non resta appesa: il servizio code o il server potrebbero non rispondere.
+async function conLimite(url, opzioni = {}, ms = 8000) {
+  const controllo = new AbortController();
+  const limite = setTimeout(() => controllo.abort(), ms);
+  try {
+    return await fetch(url, { ...opzioni, signal: controllo.signal });
+  } finally {
+    clearTimeout(limite);
+  }
+}
+
+// Meteo, notizie e code: l'ultimo dato ricevuto resta salvato e si usa se la fonte non risponde.
+async function conRiserva(chiave, leggi) {
+  try {
+    const dati = await leggi();
+    memoria(`futurapro.dati.${chiave}`, JSON.stringify(dati));
+    return dati;
+  } catch (errore) {
+    const salvato = memoria(`futurapro.dati.${chiave}`);
+    if (salvato) return JSON.parse(salvato);
+    throw errore;
+  }
+}
+
+// --- Code del negozio: sul totem o sul server -----------------------------------
+//
+// Se la sede ha un totem, le code le tiene il suo servizio (porta 8443): i monitor
+// leggono i numeri da lì, il totem stesso emette i biglietti in locale. Il totem si
+// riconosce perché solo il suo manifest porta la configurazione dei reparti.
+
+const SERVIZIO_LOCALE = "https://127.0.0.1:8443";
+
+function serviziCode(manifest) {
+  const code = manifest?.code;
+  if (!code || code.modo !== "totem") return null;
+  return code.reparti ? SERVIZIO_LOCALE : code.indirizzo;
+}
+
+function zonaDelManifest(manifest, zonaId) {
+  return manifest?.layout?.zone.find((z) => z.id === zonaId);
+}
+
+async function codeDalTotem(indirizzo, zona) {
+  const risposta = await conLimite(`${indirizzo}/stato`, {}, 5000);
+  if (!risposta.ok) throw new Error(risposta.status);
+  const { reparti } = await risposta.json();
+  const scelti = zona.configurazione.reparti || [];
+  if (!scelti.length) return { code: reparti };
+  const perId = new Map(reparti.map((r) => [r.id, r]));
+  return { code: scelti.map((id) => perId.get(id)).filter(Boolean) };
+}
+
+// La configurazione dei reparti passa dal manifest al servizio code del totem.
+let configInviata = null;
+async function inviaConfigCode(manifest) {
+  const reparti = manifest?.code?.reparti;
+  if (!reparti) return;
+  const firma = JSON.stringify(reparti);
+  if (firma === configInviata) return;
+  try {
+    const risposta = await conLimite(`${SERVIZIO_LOCALE}/config`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reparti }),
+    });
+    if (risposta.ok) configInviata = firma;
+  } catch {
+    // Servizio code non ancora partito: si riprova al prossimo giro.
+  }
+}
+
 // --- Player --------------------------------------------------------------------
 
 function nuovoToken() {
@@ -137,33 +232,53 @@ async function abbina() {
 }
 
 async function avviaPlayer() {
-  const token = await abbina();
+  // Già abbinato e con un manifest salvato: si parte subito, anche senza server.
+  // Se nel frattempo il monitor è stato rimosso, il primo aggiornamento lo scopre.
+  const salvato = memoria("futurapro.manifest");
+  const token = memoria("futurapro.token") && salvato ? memoria("futurapro.token") : await abbina();
   const intestazioni = { Authorization: `Device ${token}` };
+  const scaricaFile = (voce) => conLimite(voce.url, { headers: intestazioni }, 120_000);
   const motore = new Motore(radice, {
-    file: (id, voce) => (voce ? fileConCache(id, voce, () => fetch(voce.url, { headers: intestazioni })) : Promise.resolve(null)),
-    dati: async (zonaId) => (await fetch(`/api/player/zone/${zonaId}/dati/`, { headers: intestazioni })).json(),
+    file: (id, voce) => (voce ? fileConCache(id, voce, () => scaricaFile(voce)) : Promise.resolve(null)),
+    dati: (zonaId) =>
+      conRiserva(zonaId, async () => {
+        const zona = zonaDelManifest(motore.manifest, zonaId);
+        const totem = serviziCode(motore.manifest);
+        if (totem && zona && (zona.tipo === "coda" || zona.tipo === "prendi_numero")) return codeDalTotem(totem, zona);
+        const risposta = await conLimite(`/api/player/zone/${zonaId}/dati/`, { headers: intestazioni });
+        if (!risposta.ok) throw new Error(risposta.status);
+        return risposta.json();
+      }),
     emetti: async (zonaId, reparto) => {
-      const risposta = await fetch(`/api/player/zone/${zonaId}/emetti/`, {
-        method: "POST",
-        headers: { ...intestazioni, "Content-Type": "application/json" },
-        body: JSON.stringify({ reparto }),
-      });
+      const totem = serviziCode(motore.manifest);
+      const risposta = totem
+        ? await conLimite(`${SERVIZIO_LOCALE}/emetti/${reparto}`, { method: "POST" }, 5000)
+        : await conLimite(`/api/player/zone/${zonaId}/emetti/`, {
+          method: "POST",
+          headers: { ...intestazioni, "Content-Type": "application/json" },
+          body: JSON.stringify({ reparto }),
+        });
       if (!risposta.ok) throw new Error(risposta.status);
       return risposta.json();
     },
   });
 
   // All'avvio, l'ultimo manifest ricevuto: lo schermo riparte anche senza rete.
-  const salvato = memoria("futurapro.manifest");
+  let mostrato = null;
   if (salvato) {
+    mostrato = JSON.parse(salvato);
     nascondiAvviso();
-    motore.mostra(JSON.parse(salvato));
+    motore.mostra(mostrato);
+    inviaConfigCode(mostrato);
   }
 
   let etichetta = null;
+  let inCorso = false;
   const aggiorna = async () => {
+    if (inCorso) return; // un download lungo non si sovrappone al successivo
+    inCorso = true;
     try {
-      const risposta = await fetch("/api/player/palinsesto/", {
+      const risposta = await conLimite("/api/player/palinsesto/", {
         headers: { ...intestazioni, ...(etichetta ? { "If-None-Match": etichetta } : {}) },
       });
       if (risposta.status === 401) {
@@ -174,25 +289,34 @@ async function avviaPlayer() {
         return;
       }
       if (risposta.status === 304 || !risposta.ok) return;
-      etichetta = risposta.headers.get("ETag");
       const manifest = await risposta.json();
+      // Il nuovo palinsesto va in onda solo quando tutti i suoi file sono sul monitor.
+      const pronto = await preparaFile(manifest, scaricaFile);
+      if (!pronto && mostrato) return; // si riprova al prossimo giro, intanto resta il precedente
+      etichetta = risposta.headers.get("ETag");
+      mostrato = manifest;
       memoria("futurapro.manifest", JSON.stringify(manifest));
       nascondiAvviso();
       motore.mostra(manifest);
       pulisciCache(manifest);
+      battito();
     } catch {
       // Offline: si continua con quello che c'è.
+    } finally {
+      inCorso = false;
+      inviaConfigCode(mostrato);
     }
   };
-  await aggiorna();
-  setInterval(aggiorna, OGNI_MANIFEST);
 
+  // Il segnale periodico dice anche quale versione del palinsesto è in onda.
   const battito = () =>
     fetch("/api/player/heartbeat/", {
       method: "POST",
       headers: { ...intestazioni, "Content-Type": "application/json" },
-      body: JSON.stringify({ versione: VERSIONE }),
+      body: JSON.stringify({ versione: VERSIONE, manifest: mostrato?.versione || "" }),
     }).catch(() => {});
+  await aggiorna();
+  setInterval(aggiorna, OGNI_MANIFEST);
   battito();
   setInterval(battito, OGNI_HEARTBEAT);
 }
@@ -227,5 +351,10 @@ async function avviaAnteprima() {
   setInterval(aggiorna, 15_000);
 }
 
-if (impostazioni.modo === "anteprima") avviaAnteprima();
-else avviaPlayer();
+if (impostazioni.modo === "anteprima") {
+  avviaAnteprima();
+} else {
+  // Il player si salva nel browser: riparte anche se all'accensione il server non risponde.
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/player/sw.js", { scope: "/player/" }).catch(() => {});
+  avviaPlayer();
+}

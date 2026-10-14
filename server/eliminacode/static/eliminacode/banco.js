@@ -114,7 +114,7 @@
       }
       segnala(true, "Collegato");
       var reparti = modo === "chiave" ? [corpo] : corpo.results.filter(function (r) { return r.attivo; });
-      reparti.forEach(mostra);
+      reparti.forEach(function (r) { if (r.totem) mostraSulTotem(r); else mostra(r); });
     });
   }
 
@@ -166,6 +166,23 @@
       if (codice === 200 && corpo) mostra(corpo);
       else segnala(false, "Operazione non riuscita (" + codice + ")");
     });
+  }
+
+  // Con il totem le chiamate passano da lui: qui si indica dove.
+  function mostraSulTotem(reparto) {
+    if (schede[reparto.id]) return;
+    var el = document.createElement("section");
+    el.className = "scheda";
+    el.style.borderTopColor = reparto.colore;
+    var nome = document.createElement("h2");
+    nome.textContent = reparto.nome;
+    var testo = document.createElement("p");
+    testo.className = "coda";
+    testo.textContent = "Le code di questa sede sono sul totem: usa il collegamento del reparto (http://" + reparto.totem + ":8090/banco/#chiave=…), creato nel pannello.";
+    el.appendChild(nome);
+    el.appendChild(testo);
+    contenitore.appendChild(el);
+    schede[reparto.id] = { numero: document.createElement("div"), coda: document.createElement("div") };
   }
 
   function mostra(reparto) {

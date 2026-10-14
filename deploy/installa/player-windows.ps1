@@ -16,6 +16,8 @@
   Altre opzioni:
     -Tipo monitor|totem   non chiedere il tipo
     -Utente NOME          utente Windows che avvia il player (predefinito: quello attuale)
+    -Totem IP             (monitor) indirizzo del totem del negozio, per leggere i numeri dei reparti
+    -IndirizzoTotem IP    (totem) indirizzo di questo totem in rete locale, se diverso da quello trovato
     -Configura            apre il browser del player in una finestra normale, per
                           accettare il certificato di una stampante o controllare le impostazioni
     -Rimuovi              toglie il player da questo PC
@@ -25,6 +27,8 @@ param(
     [string]$Server,
     [ValidateSet("monitor", "totem")][string]$Tipo,
     [string]$Utente = $env:USERNAME,
+    [string]$Totem,
+    [string]$IndirizzoTotem,
     [switch]$Configura,
     [switch]$Rimuovi
 )
@@ -36,6 +40,9 @@ $Cartella = "C:\FuturaPro"
 $Profilo = Join-Path $Cartella "profilo"
 $Impostazioni = Join-Path $Cartella "impostazioni.json"
 $NomeAttivita = "FuturaPro Player"
+$NomeAttivitaCode = "FuturaPro Code"
+$CartellaCode = Join-Path $Cartella "code"
+$AppIdCode = "{6f0b1d6e-2a4c-4f7e-9c1d-5a1f2b3c4d5e}"
 
 function Scrivi([string]$testo, [string]$colore = "Cyan") { Write-Host $testo -ForegroundColor $colore }
 
@@ -65,8 +72,17 @@ function Ferma-Player {
 if ($Rimuovi) {
     Ferma-Player
     Unregister-ScheduledTask -TaskName $NomeAttivita -Confirm:$false -ErrorAction SilentlyContinue
+    # Il servizio code, se questo PC era un totem.
+    Stop-ScheduledTask -TaskName $NomeAttivitaCode -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $NomeAttivitaCode -Confirm:$false -ErrorAction SilentlyContinue
+    netsh http delete sslcert ipport=0.0.0.0:8443 2>&1 | Out-Null
+    Remove-NetFirewallRule -DisplayName "FuturaPro code" -ErrorAction SilentlyContinue
+    if (Test-Path (Join-Path $CartellaCode "stato.json")) {
+        Copy-Item (Join-Path $CartellaCode "stato.json") (Join-Path $env:TEMP "futurapro-code-stato.json") -Force
+        Scrivi "Copia dello stato delle code in $env:TEMP\futurapro-code-stato.json" "Yellow"
+    }
     Remove-Item $Cartella -Recurse -Force -ErrorAction SilentlyContinue
-    Scrivi "Player FuturaPro rimosso. Il certificato del server, se installato, resta tra quelli attendibili." "Green"
+    Scrivi "Player FuturaPro rimosso. I certificati installati restano tra quelli attendibili." "Green"
     exit 0
 }
 
@@ -125,6 +141,103 @@ try {
     Scrivi "Il server risponde in HTTPS." "Green"
 } catch {
     throw "Il server non risponde su https://$Server/player/ ($($_.Exception.Message)). Controlla indirizzo, rete e certificato."
+}
+
+function Impronta-Certificato([string]$file) {
+    $c = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($file)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    return ($sha.ComputeHash($c.RawData) | ForEach-Object { $_.ToString("X2") }) -join ""
+}
+
+# --- 2b. Totem: servizio code -----------------------------------------------------------------
+# Le code del negozio le tiene il totem: numeri, biglietti, chiamate di bilance e banchi.
+# Funziona anche senza server centrale; dal server arriva solo la configurazione dei reparti.
+if ($Tipo -eq "totem") {
+    Scrivi "`nServizio code del totem" "Cyan"
+    if (-not $IndirizzoTotem) {
+        $trovato = Get-NetIPAddress -AddressFamily IPv4 |
+            Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } |
+            Sort-Object InterfaceMetric | Select-Object -First 1 -ExpandProperty IPAddress
+        $risposta = Read-Host "Indirizzo IP di questo totem in rete locale (deve essere fisso) [$trovato]"
+        if ($risposta) { $IndirizzoTotem = $risposta } else { $IndirizzoTotem = $trovato }
+    }
+    New-Item -ItemType Directory -Force -Path $CartellaCode | Out-Null
+    foreach ($file in @("code-totem.ps1", "banco.html")) {
+        Invoke-WebRequest -UseBasicParsing -Uri "http://$Server/installa/$file" -OutFile (Join-Path $CartellaCode $file)
+    }
+
+    # Certificato del servizio: lo stesso a ogni reinstallazione, finché l'IP non cambia.
+    $soggetto = "CN=FuturaPro code $IndirizzoTotem"
+    $certificato = Get-ChildItem Cert:\LocalMachine\My |
+        Where-Object { $_.Subject -eq $soggetto -and $_.NotAfter -gt (Get-Date).AddDays(30) } | Select-Object -First 1
+    if (-not $certificato) {
+        $certificato = New-SelfSignedCertificate -Subject $soggetto -CertStoreLocation Cert:\LocalMachine\My `
+            -NotAfter (Get-Date).AddYears(10) -KeyAlgorithm RSA -KeyLength 2048 -FriendlyName "FuturaPro code" `
+            -TextExtension @(
+                "2.5.29.17={text}IPAddress=$IndirizzoTotem&IPAddress=127.0.0.1&DNS=localhost&DNS=$env:COMPUTERNAME",
+                "2.5.29.37={text}1.3.6.1.5.5.7.3.1"
+            )
+    }
+    $fileCertificatoCode = Join-Path $CartellaCode "certificato.cer"
+    Export-Certificate -Cert $certificato -FilePath $fileCertificatoCode | Out-Null
+    # Il totem stesso parla con il suo servizio in HTTPS (https://127.0.0.1:8443).
+    Import-Certificate -FilePath $fileCertificatoCode -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+    netsh http delete sslcert ipport=0.0.0.0:8443 2>&1 | Out-Null
+    $esito = netsh http add sslcert ipport=0.0.0.0:8443 certhash=$($certificato.Thumbprint) appid=$AppIdCode 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "Collegamento del certificato alla porta 8443 non riuscito: $esito" }
+
+    Remove-NetFirewallRule -DisplayName "FuturaPro code" -ErrorAction SilentlyContinue
+    New-NetFirewallRule -DisplayName "FuturaPro code" -Direction Inbound -Protocol TCP -LocalPort 8090, 8443 `
+        -Action Allow -Profile Any | Out-Null
+
+    # Attività di sistema: parte all'accensione, anche senza nessuno collegato, e riparte se si ferma.
+    Stop-ScheduledTask -TaskName $NomeAttivitaCode -ErrorAction SilentlyContinue
+    $azioneCode = New-ScheduledTaskAction -Execute "powershell.exe" `
+        -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$CartellaCode\code-totem.ps1`" -Cartella `"$CartellaCode`""
+    $principaleCode = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    $regoleCode = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName $NomeAttivitaCode -Action $azioneCode -Trigger (New-ScheduledTaskTrigger -AtStartup) `
+        -Principal $principaleCode -Settings $regoleCode -Force | Out-Null
+    Start-ScheduledTask -TaskName $NomeAttivitaCode
+
+    $pronto = $false
+    for ($i = 0; $i -lt 15; $i++) {
+        Start-Sleep -Seconds 2
+        try { Invoke-WebRequest -UseBasicParsing -Uri "https://127.0.0.1:8443/salute" -TimeoutSec 5 | Out-Null; $pronto = $true; break } catch { }
+    }
+    if (-not $pronto) { throw "Il servizio code non risponde. Registro: $CartellaCode\registro.log" }
+    $improntaCode = Impronta-Certificato $fileCertificatoCode
+    Scrivi "Servizio code attivo su https://$($IndirizzoTotem):8443 e http://$($IndirizzoTotem):8090" "Green"
+    Scrivi "Impronta del certificato del totem (la chiederà l'installazione dei monitor):" "Yellow"
+    Write-Host "  $improntaCode"
+}
+
+# --- 2c. Monitor: certificato del totem del negozio -------------------------------------------
+if ($Tipo -eq "monitor") {
+    if (-not $PSBoundParameters.ContainsKey("Totem")) {
+        $Totem = Read-Host "Indirizzo IP del totem del negozio, per i numeri dei reparti (vuoto se non c'è)"
+    }
+    if ($Totem) {
+        $fileCertificatoTotem = Join-Path $env:TEMP "futurapro-totem.cer"
+        try {
+            Invoke-WebRequest -UseBasicParsing -Uri "http://$($Totem):8090/certificato.cer" -OutFile $fileCertificatoTotem -TimeoutSec 15
+        } catch {
+            throw "Il totem $Totem non risponde (http://$($Totem):8090). Installa prima il totem, poi rilancia sul monitor."
+        }
+        Scrivi "`nImpronta del certificato del totem:" "Yellow"
+        Write-Host "  $(Impronta-Certificato $fileCertificatoTotem)"
+        Scrivi "Deve coincidere con quella mostrata alla fine dell'installazione del totem." "Yellow"
+        $conferma = Read-Host "Coincide? (S/N)"
+        if ($conferma -notmatch '^[sSyY]') { throw "Installazione interrotta: impronta del totem non confermata." }
+        Import-Certificate -FilePath $fileCertificatoTotem -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+        try {
+            Invoke-WebRequest -UseBasicParsing -Uri "https://$($Totem):8443/salute" -TimeoutSec 10 | Out-Null
+            Scrivi "Il monitor raggiunge le code del totem." "Green"
+        } catch {
+            Scrivi "Attenzione: https://$($Totem):8443 non risponde ($($_.Exception.Message))." "Yellow"
+        }
+    }
 }
 
 # --- 3. Avvio del browser a schermo intero ------------------------------------------------------
@@ -192,6 +305,9 @@ if ($Utente -eq $env:USERNAME) {
 
 Scrivi "`nUltimi passi:" "Yellow"
 Write-Host "  1. Nel pannello (https://$Server/pannello/) vai in Monitor -> Abbina e inserisci il codice mostrato."
+if ($Tipo -eq "totem") {
+    Write-Host "     Poi in Sedi e gruppi scrivi $IndirizzoTotem come «Totem delle code» della sede del negozio."
+}
 Write-Host "  2. Accesso automatico di Windows: premi Win+R, scrivi netplwiz, togli la spunta"
 Write-Host "     'Per utilizzare questo computer è necessario che l'utente immetta il nome utente e la password'."
 if ($Tipo -eq "totem") {

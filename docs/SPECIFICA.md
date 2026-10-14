@@ -190,6 +190,25 @@ usarli per sondare la rete del server.
 
 ## 7. Eliminacode
 
+**Dove stanno le code.** Se la sede ha un **totem** (campo *Totem delle code* della sede), le code le
+tiene il **servizio code del totem** (`deploy/installa/code-totem.ps1`, attività di sistema
+Windows): numeri, biglietti, chiamate di bilance e banchi, numeri per i monitor. Il negozio dà i
+turni anche senza server centrale, che fornisce solo la configurazione (reparti, colori, impronte
+delle chiavi) attraverso il manifest del totem. Per quella sede il server rifiuta le operazioni di
+coda, così i numeri non stanno mai in due posti. Senza totem le code le tiene il server, come
+descritto sotto.
+
+Servizio code del totem:
+
+| Porta | Chi | Cosa |
+|---|---|---|
+| 8443 HTTPS | monitor e totem | `GET /stato` (numeri, chiunque in rete); `POST /config` e `POST /emetti/<reparto>` (solo dal totem stesso, 127.0.0.1) |
+| 8090 HTTP | bilance, banchi, pulsanti | `GET /banco/` (pagina), `GET /banco/stato/`, `POST /banco/{avanti,indietro,ripeti,azzera,imposta}/` con la chiave del reparto |
+
+Il certificato del servizio è autofirmato, creato all'installazione del totem per il suo IP (e per
+127.0.0.1), e reso attendibile su totem e monitor dopo il confronto dell'impronta. Lo stato si salva
+in `stato.json` a ogni operazione (scrittura atomica); le richieste sono servite una alla volta.
+
 FuturaPro gestisce le code dei banchi (salumeria, macelleria, gastronomia…) e le mostra sugli
 stessi schermi delle offerte. Sostituisce il sistema attuale (server WebSocket PHP, file di
 testo, script Python per i pulsanti, pagine per le bilance DIGI, totem con stampante Epson).
@@ -258,6 +277,12 @@ codice serve:
   così riparte anche senza rete;
 - le **app native**, che lo caricheranno in WebView (Android) e WebView2 (Windows);
 - l'**anteprima** nel pannello (`/anteprima/<monitor>/`), con la sessione dell'utente.
+
+**Offline.** Il player si salva nel browser con un service worker (`/player/sw.js`) e riparte
+anche se all'accensione il server non risponde. Un nuovo palinsesto va in onda solo quando tutti i
+suoi file sono scaricati; fino ad allora resta il precedente. Meteo, notizie e numeri dei reparti
+tengono l'ultimo dato ricevuto. Il segnale periodico dice al server quale versione del palinsesto
+è in onda: il pannello segnala i monitor non aggiornati.
 
 `regole.js` replica le regole del palinsesto del server; `regole.test.mjs` verifica che diano gli
 stessi risultati dei test Python.

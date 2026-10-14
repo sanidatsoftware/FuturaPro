@@ -64,9 +64,12 @@ class AbilitazioniView(VistaConContesto, generics.RetrieveUpdateAPIView):
 
 
 class SedeSerializer(serializers.ModelSerializer):
+    # Solo l'host: niente protocollo, porta o percorso (le porte del totem sono fisse).
+    indirizzo_totem = serializers.RegexField(r"^[A-Za-z0-9.-]{1,100}$", required=False, allow_blank=True)
+
     class Meta:
         model = Sede
-        fields = ["id", "nome", "indirizzo"]
+        fields = ["id", "nome", "indirizzo", "indirizzo_totem"]
 
 
 class SediViewSet(ViewSetCliente):

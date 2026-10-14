@@ -110,6 +110,9 @@ Rilanciare `sudo ./installa.sh` è sicuro: password e dati restano, si aggiornan
 
 ## 2. Monitor (Windows 10/11)
 
+> Se il negozio ha un **totem** per i biglietti, installa **prima il totem** (sezione 3): i monitor
+> leggono i numeri dei reparti da lui, e la loro installazione ne chiede l'indirizzo.
+
 Serve **Google Chrome** (consigliato) o Microsoft Edge, già presente su Windows.
 
 1. Accedi a Windows con l'utente che userà il monitor (meglio un utente locale dedicato, es. «schermo»,
@@ -121,7 +124,9 @@ Serve **Google Chrome** (consigliato) o Microsoft Edge, già presente su Windows
    irm http://SERVER/installa/player-windows.ps1 -OutFile $env:TEMP\futurapro.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\futurapro.ps1 -Server SERVER
    ```
 
-4. Alla domanda sul tipo rispondi **1 (monitor)**.
+4. Alla domanda sul tipo rispondi **1 (monitor)**. Poi lo script chiede l'**IP del totem** del
+   negozio (vuoto se non c'è) e ne mostra l'impronta del certificato: deve coincidere con quella
+   mostrata alla fine dell'installazione del totem.
 5. Con il certificato interno lo script mostra un'**impronta**: deve essere **identica** a quella
    annotata dall'installazione del server. Se coincide rispondi **S**.
 
@@ -150,15 +155,31 @@ Monitor montato in verticale? Nel pannello, in **Monitor**, scegli *Verticale* e
 
 ## 3. Totem (Windows 10/11, touch, con stampante)
 
-Come il monitor, con tre differenze.
+**Il totem gestisce le code del negozio.** Assegna i numeri dei biglietti, riceve le chiamate di
+bilance e banchi, dà i numeri ai monitor: tutto nella rete del negozio, anche se il server centrale
+non è raggiungibile. Dal server riceve solo la configurazione (nomi e colori dei reparti, chiavi
+delle bilance) e i contenuti da mostrare.
+
+Al totem serve un **IP fisso** (indirizzo statico o prenotazione DHCP): monitor e bilance lo
+chiamano per indirizzo.
 
 1. **Prima** installa la stampante dei biglietti in Windows e impostala come **predefinita**
    (Epson TM: driver *Epson Advanced Printer Driver*, carta 80 mm). Stampa una pagina di prova da
    Windows.
-2. Lancia lo stesso comando PowerShell e alla domanda sul tipo rispondi **2 (totem)**: il browser
-   stamperà i biglietti senza mostrare finestre.
-3. Nel pannello, abbinando, scegli il tipo **Totem verticale**. Nel layout del totem
+2. Lancia lo stesso comando PowerShell del monitor e alla domanda sul tipo rispondi **2 (totem)**.
+   Lo script conferma l'IP del totem e installa, oltre al player:
+   - il **servizio code** («FuturaPro Code»), che parte all'accensione anche senza nessuno collegato;
+   - il suo certificato e le regole del firewall per le porte **8443** (monitor) e **8090** (bilance).
+
+   Alla fine mostra l'**impronta del certificato del totem**: annotala, la chiederanno i monitor.
+3. Nel pannello: **Sedi e gruppi → Totem delle code**, scrivi l'IP del totem accanto alla sede e
+   **Salva**. Da quel momento le code della sede le tiene il totem.
+4. Abbina il totem (**Monitor → Abbina**) con il tipo **Totem verticale**. Nel layout del totem
    (**Layout ↗** → zona *Prendi il numero*) imposta **Stampa del biglietto: Stampante di sistema**.
+
+Lo stato delle code è salvato sul totem (`C:\FuturaPro\code\stato.json`) e sopravvive ai
+riavvii; ogni giorno le code ripartono da 0. Registro delle operazioni:
+`C:\FuturaPro\code\registro.log`.
 
 La stampante non risponde? Il totem lo dice e mostra comunque il numero al cliente.
 
@@ -179,9 +200,11 @@ per bilancia.
 1. Pannello → **Reparti ed eliminacode** → riga del reparto (es. Salumeria) → **Crea collegamento**.
 2. Compaiono due indirizzi del tipo `…/banco/#chiave=…`. Il collegamento appare **solo ora**:
    copialo subito.
-   - usa quello **https** se il browser della bilancia accetta il certificato del server;
-   - altrimenti quello **http**, che funziona solo dalla rete del negozio (se all'installazione hai
-     risposto **S** al banco in HTTP).
+   - **Con il totem** (il caso normale): gli indirizzi puntano al totem. Per la bilancia usa il primo,
+     `http://IP-TOTEM:8090/banco/#chiave=…`. Il totem riceve la nuova chiave entro mezzo minuto.
+   - Senza totem puntano al server: usa quello **https** se il browser della bilancia accetta il
+     certificato del server, altrimenti quello **http** (solo dalla rete del negozio, se
+     all'installazione hai risposto **S** al banco in HTTP).
 3. Sulla bilancia imposta quell'indirizzo come **pagina iniziale** del browser e aprilo una volta: la
    chiave resta salvata sulla bilancia e sparisce dall'indirizzo.
 
@@ -197,10 +220,21 @@ python3 pulsante.py https://SERVER CHIAVE avanti      # oppure: indietro, ripeti
 ```
 
 `CHIAVE` è la parte dopo `#chiave=` del collegamento. Con il certificato interno aggiungi
-`--ca futurapro-ca.crt`, scaricato da `http://SERVER/futurapro-ca.crt`.
+`--ca futurapro-ca.crt`, scaricato da `http://SERVER/futurapro-ca.crt`. **Con il totem** si chiama lui:
+`python3 pulsante.py http://IP-TOTEM:8090 CHIAVE avanti --totem`.
 
-**Dal banco con tablet o PC**: `https://SERVER/banco/` con l'utente del pannello (anche un
-UserCliente): mostra tutti i reparti della sede.
+**Dal banco con tablet o PC**: con il totem, lo stesso collegamento del reparto delle bilance
+(`http://IP-TOTEM:8090/banco/#chiave=…`). Senza totem, `https://SERVER/banco/` con l'utente del
+pannello (anche un UserCliente): mostra tutti i reparti della sede.
+
+### Cosa funziona senza server centrale
+
+| | Senza server centrale |
+|---|---|
+| Slide | continuano; il monitor si riaccende con l'ultimo palinsesto ricevuto |
+| Orologio, meteo, notizie | orologio sì; meteo e notizie restano all'ultimo dato ricevuto |
+| Biglietti, chiamate, numeri a schermo | sì, se c'è il totem (la rete del negozio basta) |
+| Nuove pubblicazioni, abbinamenti, pannello | no: riprendono quando il server torna |
 
 ---
 

@@ -63,6 +63,10 @@ class Abilitazioni(ModelloCliente):
 class Sede(ModelloCliente):
     nome = models.CharField(max_length=200)
     indirizzo = models.CharField(max_length=300, blank=True)
+    # IP (o nome) in rete locale del totem che gestisce le code del negozio. Se c'è,
+    # numeri e biglietti li tiene il totem e il negozio va avanti anche senza server
+    # centrale; se manca, le code le tiene il server.
+    indirizzo_totem = models.CharField(max_length=100, blank=True)
 
     class Meta:
         ordering = ["nome"]

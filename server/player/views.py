@@ -11,3 +11,10 @@ def schermo(request):
 def anteprima(request, monitor_id):
     """L'anteprima di un monitor nel pannello; i dati li legge con la sessione dell'utente."""
     return render(request, "player/schermo.html", {"modo": "anteprima", "monitor": monitor_id})
+
+
+def service_worker(request):
+    """Servito sotto /player/ perché il suo raggio d'azione sia la pagina del player."""
+    risposta = render(request, "player/sw.js", content_type="text/javascript; charset=utf-8")
+    risposta["Cache-Control"] = "no-cache"
+    return risposta

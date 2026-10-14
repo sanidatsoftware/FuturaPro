@@ -329,7 +329,9 @@ class AnteprimaView(VistaConContesto, APIView):
                         "durata": palinsesto.durata_effettiva(elemento),
                     }
                 )
-        return Response({"monitor": monitor.id, "quando": istante, "sequenza": sequenza})
+        # Il player ha già l'ultima versione? (la dichiara a ogni segnale periodico)
+        aggiornato = bool(monitor.manifest_ricevuto) and monitor.manifest_ricevuto == palinsesto.manifest(monitor)["versione"]
+        return Response({"monitor": monitor.id, "quando": istante, "sequenza": sequenza, "aggiornato": aggiornato})
 
 
 class AnteprimaManifestView(VistaConContesto, APIView):

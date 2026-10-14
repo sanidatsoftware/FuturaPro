@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Banco · FuturaPro</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif; background: #f2f3f5; color: #1d1f23; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #1f4e79; color: #fff; }
+header h1 { margin: 0; font-size: 20px; }
+.stato { font-size: 14px; padding: 4px 10px; border-radius: 12px; background: rgba(255,255,255,.2); }
+.stato.ok { background: #1e8e3e; } .stato.ko { background: #d93025; }
+main { padding: 16px; display: flex; justify-content: center; }
+.scheda { width: 100%; max-width: 520px; background: #fff; border-radius: 12px; border-top: 10px solid #999; padding: 16px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+.scheda h2 { margin: 0; font-size: 24px; text-transform: uppercase; }
+.numero { font-size: 110px; font-weight: 800; line-height: 1.1; }
+.coda { color: #555; margin-bottom: 12px; }
+.comandi { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+button { font: inherit; font-size: 18px; padding: 14px 16px; border-radius: 10px; border: 1px solid #c7c9cd; background: #fff; cursor: pointer; }
+button.avanti { width: 100%; font-size: 32px; font-weight: 700; padding: 22px; background: #1f4e79; color: #fff; border-color: #1f4e79; }
+button.pericolo { color: #d93025; border-color: #d93025; }
+.avviso { max-width: 520px; margin: 32px auto; padding: 0 16px; }
+</style>
+</head>
+<body>
+<header><h1>Banco</h1><span id="stato" class="stato">…</span></header>
+<main id="contenuto"></main>
+<p id="avviso" class="avviso" hidden>Questo banco non è collegato. Apri il collegamento creato nel pannello
+(Reparti ed eliminacode → Crea collegamento): la chiave resta salvata su questo dispositivo.</p>
+<script>
+// Pagina del banco servita dal totem. JavaScript volutamente semplice: deve
+// funzionare anche nei browser integrati delle bilance.
+(function () {
+  "use strict";
+  var OGNI = 2000;
+  function memoria(k, v) {
+    try {
+      if (v === undefined) return localStorage.getItem(k);
+      if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v);
+    } catch (e) { return null; }
+  }
+  var trovato = /[#&]chiave=([^&]*)/.exec(location.hash);
+  if (trovato) {
+    memoria("futurapro.banco.chiave", decodeURIComponent(trovato[1]));
+    if (history.replaceState) history.replaceState(null, "", location.pathname);
+  }
+  var chiave = memoria("futurapro.banco.chiave") || (trovato && decodeURIComponent(trovato[1]));
+  var statoEl = document.getElementById("stato");
+  var contenuto = document.getElementById("contenuto");
+  var scheda = null;
+
+  function segnala(ok, testo) { statoEl.textContent = testo; statoEl.className = "stato " + (ok ? "ok" : "ko"); }
+
+  function richiesta(metodo, percorso, dati, fatto) {
+    var xhr = new XMLHttpRequest();
+    xhr.open(metodo, percorso, true);
+    xhr.setRequestHeader("Authorization", "Pulsante " + chiave);
+    xhr.setRequestHeader("Content-Type", "application/json");
+    xhr.timeout = 8000;
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      var corpo = null;
+      try { corpo = JSON.parse(xhr.responseText); } catch (e) { corpo = null; }
+      fatto(xhr.status, corpo);
+    };
+    xhr.send(dati ? JSON.stringify(dati) : null);
+  }
+
+  function pulsante(testo, classe, azione) {
+    var b = document.createElement("button");
+    b.textContent = testo; b.className = classe; b.onclick = azione;
+    return b;
+  }
+
+  function esegui(operazione, dati) {
+    richiesta("POST", "/banco/" + operazione + "/", dati, function (codice, corpo) {
+      if (codice === 200 && corpo) mostra(corpo);
+      else segnala(false, codice === 0 ? "Totem non raggiungibile" : "Operazione non riuscita (" + codice + ")");
+    });
+  }
+
+  function mostra(r) {
+    if (!scheda) {
+      var el = document.createElement("section");
+      el.className = "scheda";
+      var nome = document.createElement("h2");
+      var numero = document.createElement("div"); numero.className = "numero";
+      var coda = document.createElement("div"); coda.className = "coda";
+      var comandi = document.createElement("div"); comandi.className = "comandi";
+      comandi.appendChild(pulsante("AVANTI", "avanti", function () { esegui("avanti"); }));
+      comandi.appendChild(pulsante("Indietro", "", function () { esegui("indietro"); }));
+      comandi.appendChild(pulsante("Ripeti", "", function () { esegui("ripeti"); }));
+      comandi.appendChild(pulsante("Imposta…", "", function () {
+        var n = prompt("Da quale numero ripartire? (da 0 a 99)");
+        if (n !== null && /^\d+$/.test(n)) esegui("imposta", { numero: parseInt(n, 10) });
+      }));
+      comandi.appendChild(pulsante("Azzera", "pericolo", function () {
+        if (confirm("Azzerare la coda?")) esegui("azzera");
+      }));
+      el.appendChild(nome); el.appendChild(numero); el.appendChild(coda); el.appendChild(comandi);
+      contenuto.appendChild(el);
+      scheda = { el: el, nome: nome, numero: numero, coda: coda };
+    }
+    scheda.el.style.borderTopColor = r.colore;
+    scheda.numero.style.color = r.colore;
+    scheda.nome.textContent = r.nome;
+    scheda.numero.textContent = r.numero === null || r.numero === undefined ? "–" : r.numero;
+    scheda.coda.textContent = "Clienti in coda: " + r.in_coda;
+  }
+
+  function aggiorna() {
+    richiesta("GET", "/banco/stato/", null, function (codice, corpo) {
+      if (codice === 200 && corpo) { segnala(true, "Collegato"); mostra(corpo); }
+      else if (codice === 401) { segnala(false, "Non collegato"); document.getElementById("avviso").hidden = false; }
+      else segnala(false, "Totem non raggiungibile");
+    });
+  }
+
+  if (!chiave) { segnala(false, "Non collegato"); document.getElementById("avviso").hidden = false; return; }
+  aggiorna();
+  setInterval(aggiorna, OGNI);
+})();
+</script>
+</body>
+</html>

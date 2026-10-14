@@ -21,3 +21,8 @@ class PagineTest(TestCase):
         self.assertEqual(r.status_code, 302)
         self.assertTrue(r["Location"].startswith("/api/sessione/login/"))
         self.assertEqual(self.client.get("/")["Location"], "/pannello/")
+
+    def test_service_worker(self):
+        r = self.client.get("/player/sw.js")
+        self.assertEqual(r["Content-Type"], "text/javascript; charset=utf-8")
+        self.assertContains(r, "futurapro-app-")

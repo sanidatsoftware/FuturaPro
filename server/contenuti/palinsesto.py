@@ -89,6 +89,36 @@ def _voce(contenuto) -> dict:
     return voce
 
 
+# Il servizio code del totem: HTTPS per monitor e totem, HTTP per le bilance.
+PORTA_CODE_HTTPS = 8443
+PORTA_CODE_HTTP = 8090
+
+
+def code_del_monitor(monitor, layout: dict) -> dict:
+    """Dove sono le code del negozio. Con un totem, il monitor le legge da lì e il
+    totem riceve anche la configurazione dei reparti (con le impronte delle chiavi
+    delle bilance) da passare al suo servizio code."""
+    from eliminacode.models import CredenzialePulsante, Reparto
+
+    totem = monitor.sede.indirizzo_totem
+    if not totem:
+        return {"modo": "server"}
+    code = {"modo": "totem", "indirizzo": f"https://{totem}:{PORTA_CODE_HTTPS}"}
+    if any(z["tipo"] == "prendi_numero" for z in layout["zone"]):
+        chiavi = {}
+        for c in CredenzialePulsante.objects.filter(reparto__sede_id=monitor.sede_id):
+            chiavi.setdefault(str(c.reparto_id), []).append(c.impronta_chiave)
+        code["reparti"] = [
+            {
+                "id": str(r.id), "nome": r.nome, "colore": r.colore, "colore_testo": r.colore_testo,
+                "ordine": r.ordine, "massimo": r.massimo, "attivo": r.attivo,
+                "chiavi": sorted(chiavi.get(str(r.id), [])),
+            }
+            for r in Reparto.objects.filter(sede_id=monitor.sede_id).order_by("ordine", "nome")
+        ]
+    return code
+
+
 def manifest(monitor) -> dict:
     """Tutto ciò che serve al player per andare avanti da solo: layout, file, playlist e regole."""
     pubblicazioni = list(pubblicazioni_del_monitor(monitor))
@@ -131,6 +161,7 @@ def manifest(monitor) -> dict:
         ],
         "playlist": playlist,
         "contenuti": {chiave: _voce(contenuto) for chiave, contenuto in contenuti.items()},
+        "code": code_del_monitor(monitor, layout),
     }
     # La versione dipende solo dal contenuto: se nulla cambia, il player non riscarica.
     corpo["versione"] = sha256(json.dumps(corpo, sort_keys=True).encode()).hexdigest()

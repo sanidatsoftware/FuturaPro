@@ -269,11 +269,17 @@ async function schedaMonitor() {
     );
     // Cosa va in onda adesso: se è vuoto, al monitor non arriva nessuna pubblicazione.
     const inOnda = crea("td", { testo: "…" }, riga);
-    api("GET", `/api/anteprima/${m.id}/`).then(({ sequenza }) => {
+    api("GET", `/api/anteprima/${m.id}/`).then(({ sequenza, aggiornato }) => {
       inOnda.textContent = sequenza.length ? `${sequenza.length} contenut${sequenza.length === 1 ? "o" : "i"}` : "Niente";
       if (!sequenza.length) {
         inOnda.className = "attenzione";
         inOnda.title = "Nessuna pubblicazione valida adesso per questo schermo o per i suoi gruppi.";
+      }
+      // Online ma con un palinsesto vecchio: non ha ancora scaricato le ultime modifiche.
+      if (m.online && aggiornato === false) {
+        inOnda.append(" · non aggiornato");
+        inOnda.className = "attenzione";
+        inOnda.title = "Lo schermo non ha ancora ricevuto (o scaricato) l'ultimo palinsesto.";
       }
     }).catch(() => (inOnda.textContent = "?"));
     const cellaGruppi = crea("td", {}, riga);
@@ -432,7 +438,8 @@ async function schedaReparti() {
     const testo = crea("input", { type: "color", value: r.colore_testo, disabled: !gestione, title: "Testo" }, colori);
     const ordine = crea("input", { type: "number", value: r.ordine, min: 0, disabled: !gestione, classe: "corto" }, crea("td", {}, riga));
     const attivo = crea("input", { type: "checkbox", checked: r.attivo, disabled: !gestione }, crea("td", {}, riga));
-    crea("td", { testo: `${r.numero ?? "–"} · ${r.in_coda} in coda` }, riga);
+    // Con il totem i numeri stanno lì: il server non li conosce.
+    crea("td", { testo: r.totem ? `sul totem ${r.totem}` : `${r.numero ?? "–"} · ${r.in_coda} in coda` }, riga);
     const chiave = crea("td", { classe: "chiave" }, riga);
     if (gestione) {
       crea("button", {
@@ -443,10 +450,19 @@ async function schedaReparti() {
             const { chiave: segreto } = await api("POST", `/api/reparti/${r.id}/chiave/`);
             chiave.replaceChildren();
             crea("p", { classe: "nota", testo: "Copialo ora: non sarà più mostrato. Aprilo sulla bilancia (indirizzo della pagina iniziale del browser)." }, chiave);
-            for (const protocollo of ["https", "http"]) {
-              crea("input", { readOnly: true, value: `${protocollo}://${location.host}/banco/#chiave=${segreto}`, classe: "link", onfocus: (e) => e.target.select() }, chiave);
+            // Con il totem la bilancia parla direttamente con lui, nella rete del negozio.
+            const indirizzi = r.totem
+              ? [`http://${r.totem}:8090`, `https://${r.totem}:8443`]
+              : [`https://${location.host}`, `http://${location.host}`];
+            for (const base of indirizzi) {
+              crea("input", { readOnly: true, value: `${base}/banco/#chiave=${segreto}`, classe: "link", onfocus: (e) => e.target.select() }, chiave);
             }
-            crea("p", { classe: "nota", testo: "La versione http funziona solo dalla rete del negozio, se abilitata all'installazione. Per i pulsanti: deploy/installa/pulsante.py." }, chiave);
+            crea("p", {
+              classe: "nota",
+              testo: r.totem
+                ? "Il totem riceve la chiave entro mezzo minuto. Per le bilance usa il primo (http)."
+                : "La versione http funziona solo dalla rete del negozio, se abilitata all'installazione. Per i pulsanti: deploy/installa/pulsante.py.",
+            }, chiave);
           } catch (errore) {
             avvisa(errore.message);
           }
@@ -472,6 +488,23 @@ async function schedaReparti() {
 
 async function schedaSedi() {
   const [sedi, gruppi] = await Promise.all([elenco("/api/sedi/"), elenco("/api/gruppi/")]);
+
+  const totem = sezione("Totem delle code");
+  crea("p", {
+    classe: "nota",
+    testo: "L'IP fisso del totem che gestisce le code della sede: numeri e biglietti li tiene il totem, che funziona anche senza server centrale. Vuoto: le code le tiene il server.",
+  }, totem);
+  const corpoTotem = tabella(["Sede", "IP del totem", ""], totem);
+  for (const sede of sedi) {
+    const riga = crea("tr", {}, corpoTotem);
+    crea("td", { testo: sede.nome }, riga);
+    const ip = crea("input", { value: sede.indirizzo_totem || "", placeholder: "es. 192.168.1.70" }, crea("td", {}, riga));
+    crea("button", {
+      testo: "Salva", classe: "primario",
+      onclick: () => prova(() => api("PATCH", `/api/sedi/${sede.id}/`, { indirizzo_totem: ip.value.trim() }), "Salvato: monitor e totem lo ricevono entro mezzo minuto."),
+    }, crea("td", {}, riga));
+  }
+
   for (const [titolo, voci, url, segnaposto] of [
     ["Sedi", sedi, "/api/sedi/", "es. Catania via Etnea"],
     ["Gruppi di schermi", gruppi, "/api/gruppi/", "es. Tutti, Casse, Reparto freschi"],

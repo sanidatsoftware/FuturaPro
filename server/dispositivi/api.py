@@ -222,5 +222,6 @@ class HeartbeatView(VistaPlayer):
             Monitor.objects.filter(id=credenziale.monitor_id).update(
                 ultimo_contatto=timezone.now(),
                 versione_player=str(request.data.get("versione", ""))[:40],
+                manifest_ricevuto=str(request.data.get("manifest", ""))[:64],
             )
         return Response(status=status.HTTP_204_NO_CONTENT)

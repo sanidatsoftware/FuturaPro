@@ -6,6 +6,10 @@
     python pulsante.py https://SERVER CHIAVE ripeti
     python pulsante.py https://SERVER CHIAVE imposta 27
 
+Se le code della sede le gestisce il totem, si chiama il totem (nella rete del negozio):
+
+    python pulsante.py http://IP-TOTEM:8090 CHIAVE avanti --totem
+
 La CHIAVE è quella del reparto: nel pannello, Reparti -> «Crea collegamento»; è
 la parte dopo «#chiave=» del collegamento. Se il server usa il certificato
 interno, scaricalo da http://SERVER/futurapro-ca.crt e passalo con --ca.
@@ -27,12 +31,13 @@ def main():
     parser.add_argument("operazione", choices=["avanti", "indietro", "ripeti", "azzera", "imposta"])
     parser.add_argument("numero", nargs="?", type=int, help="solo per imposta")
     parser.add_argument("--ca", help="certificato del server (futurapro-ca.crt) se è interno")
+    parser.add_argument("--totem", action="store_true", help="le code sono sul totem del negozio")
     argomenti = parser.parse_args()
 
     server = argomenti.server if "://" in argomenti.server else f"https://{argomenti.server}"
     corpo = json.dumps({"numero": argomenti.numero} if argomenti.operazione == "imposta" else {}).encode()
     richiesta = urllib.request.Request(
-        f"{server.rstrip('/')}/api/eliminacode/pulsante/{argomenti.operazione}/",
+        f"{server.rstrip('/')}/{'banco' if argomenti.totem else 'api/eliminacode/pulsante'}/{argomenti.operazione}/",
         data=corpo,
         method="POST",
         headers={"Authorization": f"Pulsante {argomenti.chiave}", "Content-Type": "application/json"},

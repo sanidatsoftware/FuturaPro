@@ -64,6 +64,7 @@ urlpatterns = [
     path("", RedirectView.as_view(url="/pannello/", permanent=False)),
     path("pannello/", pannello, name="pannello"),
     path("player/", player.schermo, name="player"),
+    path("player/sw.js", player.service_worker, name="player-sw"),
     path("banco/", eliminacode.banco, name="banco"),
     path("editor/", layout.editor, name="editor"),
     path("editor/<uuid:layout_id>/", layout.editor, name="editor-layout"),

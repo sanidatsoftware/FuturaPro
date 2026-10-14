@@ -28,17 +28,28 @@ class RepartoSerializer(serializers.ModelSerializer):
     in_coda = serializers.IntegerField(read_only=True)
     ultimo_emesso = serializers.IntegerField(read_only=True)
     ha_chiave = serializers.SerializerMethodField()
+    # Se la sede ha un totem, numeri e chiamate stanno lì e non sul server.
+    totem = serializers.CharField(source="sede.indirizzo_totem", read_only=True)
 
     class Meta:
         model = Reparto
         fields = [
             "id", "sede", "nome", "colore", "colore_testo", "ordine", "massimo", "attivo", "azzeramento_automatico",
-            "numero", "in_coda", "ultimo_emesso", "chiamato_il", "ha_chiave",
+            "numero", "in_coda", "ultimo_emesso", "chiamato_il", "ha_chiave", "totem",
         ]
         read_only_fields = ["chiamato_il"]
 
     def get_ha_chiave(self, reparto):
         return hasattr(reparto, "credenziale")
+
+
+def verifica_code_sul_server(reparto):
+    """Con il totem le code stanno lì: il server non deve dare numeri paralleli."""
+    if reparto.sede.indirizzo_totem:
+        raise exceptions.ValidationError(
+            f"Le code di questa sede sono gestite dal totem ({reparto.sede.indirizzo_totem}): "
+            f"usa http://{reparto.sede.indirizzo_totem}:8090/banco/ con il collegamento del reparto."
+        )
 
 
 class RepartiViewSet(ViewSetCliente):
@@ -74,6 +85,7 @@ class RepartiViewSet(ViewSetCliente):
 
     def _esegui(self, operazione, *argomenti):
         reparto = self.get_object()
+        verifica_code_sul_server(reparto)
         try:
             reparto = operazione(reparto.id, *argomenti)
         except servizi.RepartoChiuso:
@@ -94,6 +106,7 @@ class RepartiViewSet(ViewSetCliente):
 
     @action(detail=True, methods=["post"])
     def azzera(self, request, pk=None):
+        verifica_code_sul_server(self.get_object())
         registra(request.user, "coda_azzerata", self.get_object())
         return self._esegui(servizi.azzera)
 
@@ -166,6 +179,7 @@ class PulsanteView(VistaPlayer):
         if operazione not in OPERAZIONI_PULSANTE:
             raise exceptions.NotFound()
         with contesto_cliente(credenziale.cliente_id):
+            verifica_code_sul_server(Reparto.objects.select_related("sede").get(id=credenziale.reparto_id))
             argomenti = []
             if operazione == "imposta":
                 massimo = Reparto.objects.get(id=credenziale.reparto_id).massimo
@@ -210,6 +224,8 @@ class EmettiPlayerView(VistaPlayer):
             reparto_id = str(request.data.get("reparto", ""))
             if reparto_id not in ammessi:
                 raise exceptions.ValidationError({"reparto": "Reparto non disponibile su questo totem."})
+            if monitor.sede.indirizzo_totem:
+                raise exceptions.ValidationError({"reparto": "Le code di questa sede sono gestite dal totem."})
             try:
                 reparto = servizi.emetti(reparto_id)
             except servizi.RepartoChiuso:

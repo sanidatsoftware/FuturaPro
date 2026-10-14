@@ -40,6 +40,9 @@ class Monitor(ModelloCliente):
     gruppi = models.ManyToManyField(GruppoMonitor, blank=True, related_name="monitor")
     piattaforma = models.CharField(max_length=10, choices=Piattaforma.choices)
     versione_player = models.CharField(max_length=40, blank=True)
+    # La versione del manifest che il player dice di avere: se è diversa da quella
+    # attuale, il monitor non ha ancora ricevuto (o scaricato) le ultime modifiche.
+    manifest_ricevuto = models.CharField(max_length=64, blank=True)
     info_dispositivo = models.JSONField(default=dict, blank=True)
     ultimo_contatto = models.DateTimeField(null=True, blank=True)
     abbinato_il = models.DateTimeField(auto_now_add=True)
