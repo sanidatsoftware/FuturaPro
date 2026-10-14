@@ -127,17 +127,14 @@ export function indirizzoSicuro(url) {
   return location.protocol === "https:" && /^http:\/\//i.test(url) ? url.replace(/^http:/i, "https:") : url;
 }
 
-// Avvia la diretta nell'elemento video. Restituisce { pronta, interrotta, chiudi }:
-// «pronta» si risolve in { ok } oppure { ok: false, motivo } quando parte o non parte,
-// «interrotta» se cade dopo. Il motivo serve al pannello per spiegare cosa non va.
-export async function avviaDiretta(video, indirizzo) {
-  const url = indirizzoSicuro(indirizzo);
-  const passatoAHttps = url !== indirizzo;
+// Un tentativo con un solo lettore: «hls» (hls.js, scarica i pezzi del video con richieste
+// che il canale deve consentire, CORS) oppure «nativo» (il lettore del browser, come quando si
+// apre il link nella barra degli indirizzi: nessun permesso richiesto, se il browser sa l'HLS).
+async function tentativo(video, url, modo, nonRaggiungibile) {
   let hls = null;
   let segnalaFine;
   let fallita;
   const interrotta = new Promise((ok) => (segnalaFine = ok));
-  // Un errore certo (es. formato non supportato) fa saltare subito, senza aspettare.
   const errore = new Promise((ok) => (fallita = (motivo) => ok({ ok: false, motivo })));
   const chiudi = () => {
     hls?.destroy();
@@ -146,12 +143,8 @@ export async function avviaDiretta(video, indirizzo) {
     video.load();
   };
   const fallimento = (motivo) => ({ pronta: Promise.resolve({ ok: false, motivo }), interrotta, chiudi });
-  const nonRaggiungibile = passatoAHttps
-    ? "il canale è in http e il player è in https: il browser lo blocca, e la versione https del canale non risponde"
-    : "il canale non risponde, non permette la riproduzione da altri siti (CORS) o è riservato a un paese";
-  const isHls = /m3u8/i.test(url);
   try {
-    if (isHls && !video.canPlayType("application/vnd.apple.mpegurl")) {
+    if (modo === "hls") {
       const Hls = await caricaHls();
       if (!Hls.isSupported()) return fallimento("questo browser non sa riprodurre le dirette HLS");
       hls = new Hls({ lowLatencyMode: false, backBufferLength: 30 });
@@ -181,6 +174,29 @@ export async function avviaDiretta(video, indirizzo) {
   ]);
   video.play().catch(() => {});
   return { pronta, interrotta, chiudi };
+}
+
+// Avvia la diretta nell'elemento video. Restituisce { pronta, interrotta, chiudi }:
+// «pronta» si risolve in { ok } oppure { ok: false, motivo } quando parte o non parte,
+// «interrotta» se cade dopo. Il motivo serve al pannello per spiegare cosa non va.
+// Per l'HLS si provano entrambi i lettori: prima quello che il browser dichiara di avere.
+export async function avviaDiretta(video, indirizzo) {
+  const url = indirizzoSicuro(indirizzo);
+  const nonRaggiungibile = url !== indirizzo
+    ? "il canale è in http e il player è in https: il browser lo blocca, e la versione https del canale non risponde"
+    : "il canale non risponde, non permette la riproduzione dentro una pagina web (CORS) o è riservato a un paese";
+  const modi = !/m3u8/i.test(url) ? ["nativo"]
+    : video.canPlayType("application/vnd.apple.mpegurl") ? ["nativo", "hls"] : ["hls", "nativo"];
+  let ultimo = null;
+  for (const modo of modi) {
+    const prova = await tentativo(video, url, modo, nonRaggiungibile);
+    const esito = await prova.pronta;
+    if (esito.ok) return { ...prova, pronta: Promise.resolve(esito) };
+    prova.chiudi();
+    // Il motivo più utile: quello di hls.js (dice se è il formato), se c'è.
+    if (!ultimo || modo === "hls") ultimo = esito;
+  }
+  return { pronta: Promise.resolve(ultimo), interrotta: new Promise(() => {}), chiudi: () => {} };
 }
 
 class ZonaSlide {

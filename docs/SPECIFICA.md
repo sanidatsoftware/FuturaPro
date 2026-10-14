@@ -185,8 +185,10 @@ al passaggio del mouse (`data-aiuto`, `pannello/static/pannello/aiuto.js`).
   nell'audit; anche metterle in una promozione chiede conferma. In una promozione la diretta
   è una voce con la sua durata in minuti (`durate` della promozione, predefinita 5 minuti):
   da sola resta in onda di continuo, tra le immagini fa da intermezzo. Il server legge solo
-  la lista: lo streaming lo scarica ogni player con la sua connessione a internet. Il player
-  usa hls.js (`player/static/player/vendor`, licenza Apache 2.0) per l'HLS; se il canale non
+  la lista: lo streaming lo scarica ogni player con la sua connessione a internet. Per l'HLS il player
+  prova due lettori: quello del browser (come aprire il link nella barra degli indirizzi: non
+  serve il permesso CORS del canale) e hls.js (`player/static/player/vendor`, licenza Apache
+  2.0), prima quello che il browser dichiara di avere; se il canale non
   parte entro 15 secondi, o dà un errore certo, passa alla voce successiva; se cade durante
   la riproduzione si passa oltre e al giro dopo si riprova. L'audio della diretta è spento di
   serie e si accende voce per voce nella promozione (`audio` della promozione, 🔇/🔊 sulla
