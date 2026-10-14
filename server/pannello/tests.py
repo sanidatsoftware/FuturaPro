@@ -57,3 +57,13 @@ class AspettoTest(Base):
         r = self.client.post("/accesso/", {"username": "admin_a", "password": "sbagliata"})
         self.assertContains(r, "non corretti")
         self.assertRedirects(self.client.get("/pannello/"), "/accesso/?next=/pannello/", fetch_redirect_response=False)
+
+
+class TemaTest(Base):
+    def test_il_tema_si_sceglie_e_arriva_alle_pagine(self):
+        self.come(self.user_a)
+        self.assertEqual(self.client.get("/api/io/").json()["tema"], "auto")
+        self.assertEqual(self.client.patch("/api/io/", {"tema": "viola"}, format="json").status_code, 400)
+        self.assertEqual(self.client.patch("/api/io/", {"tema": "scuro"}, format="json").json()["tema"], "scuro")
+        for pagina in ("/pannello/", "/palinsesto/", "/editor/"):
+            self.assertContains(self.client.get(pagina), 'data-tema="scuro"')

@@ -72,8 +72,18 @@ class IoView(APIView):
                 "cliente": utente.cliente_id,
                 "di_piattaforma": utente.di_piattaforma,
                 "teleassistenza": utente.puo_teleassistenza,
+                "tema": utente.tema,
             }
         )
+
+    def patch(self, request):
+        """Le preferenze personali: per ora l'aspetto delle pagine."""
+        tema = request.data.get("tema")
+        if tema not in ("auto", "chiaro", "scuro"):
+            raise ValidationError({"tema": "Scegli auto, chiaro o scuro."})
+        request.user.tema = tema
+        request.user.save(update_fields=["tema"])
+        return self.get(request)
 
 
 class UtentiClienteViewSet(ViewSetCliente):

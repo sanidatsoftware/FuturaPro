@@ -142,51 +142,61 @@ valuta le regole da solo, quindi continua a seguire il palinsesto anche offline.
 dipende solo dal contenuto: con `If-None-Match` il server risponde 304 se non è cambiato
 nulla. I file si scaricano da `/api/player/file/<id>/`, solo se pubblicati su quel monitor.
 
-### Creazione palinsesto e campagne
+### Creazione palinsesto: campagne e promozioni
 
 La pagina `/palinsesto/` (scheda «Creazione palinsesto» del pannello) affianca «Contenuti e
 pubblicazioni», che resta com'era.
 
-- **Verticali e orizzontali.** Al caricamento il server legge larghezza e altezza delle
-  immagini (tenendo conto della rotazione EXIF); per i video le misura il browser. La
-  libreria mostra a parte le verticali (totem) e le orizzontali (monitor), con miniature
-  JPEG create alla prima richiesta (`/api/contenuti/<id>/miniatura/`).
+- **Campagna** (`/api/campagne/`): raggruppa più promozioni e tiene ciò che hanno in comune:
+  destinatari (insegne, gruppi, singoli monitor e totem), colore, priorità, secondi per
+  immagine, codice. Le sue date sono quelle delle sue promozioni (dalla prima all'ultima).
+- **Promozione** (`/api/promozioni/`): appartiene a una campagna; ha nome, date dal/al
+  (obbligatorie), eventuali orari e giorni, e le sue immagini in ordine. Il server la traduce
+  in una pubblicazione per orientamento: le immagini verticali vanno solo ai totem, le
+  orizzontali solo ai monitor, i contenuti senza misure a tutti. Il player non cambia: riceve
+  pubblicazioni come prima. Senza immagini, o con la campagna senza destinatari, la promozione
+  è una **bozza** e non va in onda. Cambiando i destinatari della campagna si aggiornano tutte
+  le sue promozioni.
+- **Libreria.** Il server legge larghezza e altezza delle immagini (con la rotazione EXIF); per
+  i video le misura il browser. Verticali e orizzontali sono mostrate a parte, con miniature
+  create alla prima richiesta (`/api/contenuti/<id>/miniatura/`). Viste: *da assegnare* (in
+  nessuna promozione: è quella iniziale), *nelle promozioni attive*, *promozioni scadute*, *tutti*.
+- **Pulizia** (`/api/contenuti/pulizia/`: GET stima, POST cancella). Elimina, file compresi, i
+  contenuti usati solo da promozioni concluse; restano quelli di promozioni in corso o future,
+  delle playlist fatte a mano (anche quelle fisse delle zone slide) e dei layout.
 - **Cartelle.** Si trascina o si sceglie un'intera cartella: i file vengono caricati tre alla
-  volta e, se non c'è una campagna aperta, ne viene preparata una con il nome della cartella.
-- **Campagna** (`/api/campagne/`): nome, date dal/al, orari, giorni, priorità, secondi per
-  immagine, colore, destinatari (insegne, gruppi, singoli monitor e totem) e contenuti in
-  ordine. Il server la traduce in una pubblicazione per orientamento: le immagini verticali
-  vanno solo ai totem, le orizzontali solo ai monitor, i contenuti senza misure a tutti. Il
-  player non cambia: riceve pubblicazioni come prima. Senza contenuti o senza destinatari la
-  campagna è una **bozza** e non va in onda.
-- **Insegne** (`/api/insegne/`, facoltative): ogni sede può avere un'insegna; pubblicare su
+  volta e viene proposta una promozione con il nome della cartella (si sceglie la campagna).
+- **Insegne** (`/api/insegne/`, facoltative): ogni sede può avere un'insegna; una campagna su
   un'insegna raggiunge tutti i monitor e totem delle sue sedi.
-- **Calendario**: anno o tre mesi, con le campagne colorate per stato (in onda, programmata,
-  bozza, conclusa).
+- **Calendario**: anno o tre mesi, una fascia per campagna con le sue promozioni colorate per
+  stato (in onda, programmata, bozza, conclusa).
 
 **Importazione CSV** (`POST /api/campagne/importa/`, modello in `GET /api/campagne/modello/`).
-Serve a caricare a inizio anno le campagne con le loro date; i contenuti si aggiungono dopo.
-Separatore `;` (Excel italiano) o `,`; prima riga con i nomi delle colonne; UTF-8 o Windows-1252.
+Serve a caricare a inizio anno campagne e promozioni con le loro date; le immagini si
+aggiungono dopo. Una riga per promozione; separatore `;` (Excel italiano) o `,`; prima riga
+con i nomi delle colonne; UTF-8 o Windows-1252.
 
 | Colonna | | Formato |
 |---|---|---|
-| `nome` | obbligatoria | se esiste già una campagna con questo nome, viene aggiornata |
-| `codice` | | testo, es. numero del volantino |
+| `campagna` | obbligatoria | le righe con lo stesso nome vanno nella stessa campagna |
+| `promozione` | obbligatoria | se la campagna ha già una promozione con questo nome, viene aggiornata |
 | `data_inizio`, `data_fine` | obbligatorie | `gg/mm/aaaa` (anche `aaaa-mm-gg`), fine compresa |
-| `insegne`, `gruppi`, `monitor` | | nomi esistenti separati da `\|` |
+| `insegne`, `gruppi`, `monitor` | della campagna | nomi esistenti separati da `\|`; le righe di una campagna si sommano |
 | `ora_inizio`, `ora_fine` | | `hh:mm` |
 | `giorni` | | `lun\|mar\|mer\|gio\|ven\|sab\|dom`, vuoto = tutti |
-| `priorita` | | da -100 a 100 |
-| `durata` | | secondi per immagine |
-| `colore` | | `#rrggbb` |
-| `note` | | testo |
+| `priorita` | della campagna | da -100 a 100 |
+| `durata` | della campagna | secondi per immagine |
+| `colore`, `codice`, `note` | della campagna | `#rrggbb`; testo; testo |
 
 Con `prova=1` il file viene solo controllato e l'esito torna riga per riga. Tutto o niente: se
-una riga ha un errore non si salva nessuna campagna. È riservata a chi vede tutto il cliente.
+una riga ha un errore non si salva nulla. È riservata a chi vede tutto il cliente.
+
+**Tema delle pagine.** Ogni utente sceglie chiaro, scuro o automatico (segue il sistema) nella
+scheda «Aspetto interfaccia» (`PATCH /api/io/`); vale per pannello, editor e palinsesto.
 
 **Aspetto della piattaforma.** Nome dell'applicazione, frase, colore e logo (PNG, JPEG, GIF o
 WebP; niente SVG) della pagina di accesso `/accesso/` e del pannello. Li cambia solo
-l'Administrator Assoluto, nella scheda «Aspetto» (`/api/piattaforma/aspetto/`).
+l'Administrator Assoluto, nella scheda «Aspetto interfaccia» (`/api/piattaforma/aspetto/`).
 
 ## 6. Layout grafici
 

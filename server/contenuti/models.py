@@ -99,34 +99,27 @@ class Orientamento(models.TextChoices):
 
 
 class Campagna(ModelloCliente):
-    """Un periodo promozionale (es. «Volantino 6-19 ottobre»): date, destinatari e contenuti.
+    """Un insieme di promozioni (es. «Autunno 2026» con i volantini di ottobre e novembre).
 
-    Si può creare vuota, anche da un CSV a inizio anno, e riempire più tardi. I suoi
-    contenuti diventano una pubblicazione per orientamento: le immagini verticali
-    vanno ai totem, quelle orizzontali ai monitor (``contenuti.campagne``).
+    Tiene ciò che le promozioni hanno in comune: destinatari, colore, priorità e
+    secondi per immagine. Le date sono di ogni promozione.
     """
 
     nome = models.CharField(max_length=200)
-    codice = models.CharField(max_length=50, blank=True, help_text="Riferimento interno, es. il numero del volantino.")
+    codice = models.CharField(max_length=50, blank=True, help_text="Riferimento interno.")
     colore = models.CharField(max_length=7, default="#3d6fb6")
     note = models.CharField(max_length=500, blank=True)
-    data_inizio = models.DateField(null=True, blank=True)
-    data_fine = models.DateField(null=True, blank=True)
-    ora_inizio = models.TimeField(null=True, blank=True)
-    ora_fine = models.TimeField(null=True, blank=True)
-    giorni = models.JSONField(default=list, blank=True)
     priorita = models.IntegerField(default=0)
     # Secondi per ogni immagine; i video vanno fino alla fine.
     durata = models.PositiveIntegerField(null=True, blank=True)
     insegne = models.ManyToManyField("clienti.Insegna", blank=True, related_name="campagne")
     gruppi = models.ManyToManyField("dispositivi.GruppoMonitor", blank=True, related_name="campagne")
     monitor = models.ManyToManyField("dispositivi.Monitor", blank=True, related_name="campagne")
-    contenuti = models.ManyToManyField(Contenuto, through="ContenutoCampagna", blank=True, related_name="campagne")
     creata = models.DateTimeField(auto_now_add=True)
     modificata = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["data_inizio", "nome"]
+        ordering = ["nome"]
         verbose_name_plural = "campagne"
         constraints = [models.UniqueConstraint(fields=["cliente", "nome"], name="campagna_nome_unico")]
 
@@ -134,13 +127,40 @@ class Campagna(ModelloCliente):
         return self.nome
 
 
-class ContenutoCampagna(ModelloCliente):
-    campagna = models.ForeignKey(Campagna, on_delete=models.CASCADE, related_name="voci")
+class Promozione(ModelloCliente):
+    """Una promozione di una campagna (es. «Volantino 6-19 ottobre»): le sue date e le sue immagini.
+
+    Diventa una pubblicazione per orientamento: le immagini verticali vanno ai totem,
+    quelle orizzontali ai monitor (``contenuti.campagne``).
+    """
+
+    campagna = models.ForeignKey(Campagna, on_delete=models.CASCADE, related_name="promozioni")
+    nome = models.CharField(max_length=200)
+    data_inizio = models.DateField(null=True, blank=True)
+    data_fine = models.DateField(null=True, blank=True)
+    ora_inizio = models.TimeField(null=True, blank=True)
+    ora_fine = models.TimeField(null=True, blank=True)
+    giorni = models.JSONField(default=list, blank=True)
+    contenuti = models.ManyToManyField(Contenuto, through="ContenutoPromozione", blank=True, related_name="promozioni")
+    creata = models.DateTimeField(auto_now_add=True)
+    modificata = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["data_inizio", "nome"]
+        verbose_name_plural = "promozioni"
+        constraints = [models.UniqueConstraint(fields=["campagna", "nome"], name="promozione_nome_unico")]
+
+    def __str__(self):
+        return self.nome
+
+
+class ContenutoPromozione(ModelloCliente):
+    promozione = models.ForeignKey(Promozione, on_delete=models.CASCADE, related_name="voci")
     contenuto = models.ForeignKey(Contenuto, on_delete=models.CASCADE, related_name="+")
     ordine = models.PositiveIntegerField()
 
     class Meta:
-        ordering = ["campagna", "ordine"]
+        ordering = ["promozione", "ordine"]
 
 
 class Pubblicazione(ModelloCliente):
@@ -159,8 +179,8 @@ class Pubblicazione(ModelloCliente):
     insegne = models.ManyToManyField("clienti.Insegna", blank=True, related_name="pubblicazioni")
     # Vuoto: tutti i destinatari; altrimenti solo i monitor di questo orientamento.
     orientamento = models.CharField(max_length=12, choices=Orientamento.choices, blank=True)
-    # Le pubblicazioni di una campagna le crea e aggiorna la campagna stessa.
-    campagna = models.ForeignKey(Campagna, on_delete=models.CASCADE, null=True, blank=True, related_name="pubblicazioni")
+    # Le pubblicazioni di una promozione le crea e aggiorna la promozione stessa.
+    promozione = models.ForeignKey(Promozione, on_delete=models.CASCADE, null=True, blank=True, related_name="pubblicazioni")
     data_inizio = models.DateField(null=True, blank=True)
     data_fine = models.DateField(null=True, blank=True)
     ora_inizio = models.TimeField(null=True, blank=True)

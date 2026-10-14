@@ -31,6 +31,10 @@ class Utente(AbstractUser):
     )
     # Facoltativo: un UserCliente con sedi assegnate vede solo quelle.
     sedi_consentite = models.ManyToManyField("clienti.Sede", blank=True, related_name="+")
+    # Aspetto delle pagine (pannello, editor, palinsesto): «auto» segue il sistema operativo.
+    tema = models.CharField(
+        max_length=6, choices=[("auto", "Automatico"), ("chiaro", "Chiaro"), ("scuro", "Scuro")], default="auto"
+    )
 
     class Meta:
         constraints = [

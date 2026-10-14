@@ -12,6 +12,7 @@ from contenuti.api import (
     FilePlayerView,
     PalinsestoPlayerView,
     PlaylistViewSet,
+    PromozioniViewSet,
     PubblicaView,
     PubblicazioniViewSet,
 )
@@ -42,6 +43,7 @@ router.register("contenuti", ContenutiViewSet, basename="contenuti")
 router.register("playlist", PlaylistViewSet, basename="playlist")
 router.register("pubblicazioni", PubblicazioniViewSet, basename="pubblicazioni")
 router.register("campagne", CampagneViewSet, basename="campagne")
+router.register("promozioni", PromozioniViewSet, basename="promozioni")
 router.register("layout", LayoutViewSet, basename="layout")
 router.register("reparti", RepartiViewSet, basename="reparti")
 router.register("teleassistenza/sessioni", SessioniViewSet, basename="teleassistenza")

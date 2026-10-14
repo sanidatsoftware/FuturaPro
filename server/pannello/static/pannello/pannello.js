@@ -122,7 +122,7 @@ const SCHEDE = {
   banco: { titolo: "Banco", visibile: () => stato.io.ruolo !== "tecnico", collegamento: () => conCliente("/banco/") },
   sedi: { titolo: "Sedi e gruppi", visibile: ruoloGestione, mostra: schedaSedi },
   utenti: { titolo: "Utenti", visibile: ruoloGestione, mostra: schedaUtenti },
-  aspetto: { titolo: "Aspetto", visibile: () => stato.io.ruolo === "admin_assoluto", serveCliente: false, mostra: schedaAspetto },
+  aspetto: { titolo: "Aspetto interfaccia", visibile: () => true, serveCliente: false, mostra: schedaAspetto },
 };
 
 function disegnaSchede() {
@@ -565,7 +565,42 @@ async function schedaSedi() {
 
 // --- Aspetto della piattaforma ---------------------------------------------------------------------
 
+const TEMI = [
+  ["chiaro", "Chiaro", "Fondo chiaro, come un documento."],
+  ["scuro", "Scuro", "Fondo scuro, riposante e d'effetto."],
+  ["auto", "Automatico", "Segue l'impostazione chiaro/scuro del computer."],
+];
+
 async function schedaAspetto() {
+  const box = sezione("Tema delle pagine");
+  crea("p", { classe: "nota", testo: "Vale per te, su pannello, editor dei layout e creazione palinsesto, da qualunque computer accedi." }, box);
+  const temi = crea("div", { classe: "temi" }, box);
+  for (const [valore, titolo, descrizione] of TEMI) {
+    const scelta = crea("button", {
+      type: "button", classe: `tema${stato.io.tema === valore ? " scelto" : ""}`,
+      onclick: async () => {
+        try {
+          stato.io = await api("PATCH", "/api/io/", { tema: valore });
+          document.documentElement.dataset.tema = valore;
+          avvisa(`Tema ${titolo.toLowerCase()} impostato.`, "ok");
+          await mostra("aspetto");
+        } catch (errore) {
+          avvisa(errore.message);
+        }
+      },
+    }, temi);
+    const provino = crea("div", { classe: `provino ${valore}` }, scelta);
+    crea("div", { classe: "t" }, provino);
+    const corpo = crea("div", { classe: "c" }, provino);
+    crea("i", {}, corpo);
+    crea("i", {}, corpo);
+    crea("strong", { testo: `${stato.io.tema === valore ? "✓ " : ""}${titolo}` }, scelta);
+    crea("span", { testo: descrizione }, scelta);
+  }
+  if (stato.io.ruolo === "admin_assoluto") await sezioneMarchio();
+}
+
+async function sezioneMarchio() {
   const aspetto = await api("GET", "/api/piattaforma/aspetto/");
   const box = sezione("Nome e logo della piattaforma");
   crea("p", { classe: "nota", testo: "Compaiono nella pagina di accesso, nella barra del pannello e nei titoli delle pagine. Valgono per tutti i clienti." }, box);

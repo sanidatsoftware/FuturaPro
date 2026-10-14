@@ -22,7 +22,7 @@ from dispositivi.models import GruppoMonitor, Monitor
 from . import palinsesto
 from .file import crea_miniatura, impronta_e_dimensione, misure_immagine, riconosci
 from . import campagne
-from .models import Campagna, Contenuto, ElementoPlaylist, Playlist, Pubblicazione, Tipo
+from .models import Campagna, Contenuto, ElementoPlaylist, Playlist, Promozione, Pubblicazione, Tipo
 
 MB = 1024 * 1024
 
@@ -112,6 +112,20 @@ class ContenutiViewSet(ViewSetCliente):
     @action(detail=True, methods=["get"])
     def file(self, request, pk=None):
         return _servi(self.get_object())
+
+    @action(detail=False, methods=["get", "post"])
+    def pulizia(self, request):
+        """I contenuti usati solo da promozioni scadute: GET li elenca, POST li cancella (anche i file)."""
+        if sedi_visibili(request.user) is not None:
+            raise exceptions.PermissionDenied("La pulizia è riservata a chi gestisce tutto il cliente.")
+        scaduti = list(campagne.contenuti_scaduti(timezone.localdate()))
+        riepilogo = {"contenuti": len(scaduti), "spazio": sum(c.dimensione for c in scaduti), "id": [c.id for c in scaduti]}
+        if request.method == "GET":
+            return Response(riepilogo)
+        for contenuto in scaduti:
+            contenuto.delete()
+        registra(request.user, "pulizia_contenuti", None, contenuti=riepilogo["contenuti"], spazio=riepilogo["spazio"])
+        return Response(riepilogo)
 
     @action(detail=True, methods=["get"])
     def miniatura(self, request, pk=None):
@@ -256,11 +270,11 @@ class PubblicazioneSerializer(RegoleSerializer, serializers.ModelSerializer):
     class Meta:
         model = Pubblicazione
         fields = [
-            "id", "nome", "playlist", "monitor", "gruppi", "insegne", "orientamento", "campagna",
+            "id", "nome", "playlist", "monitor", "gruppi", "insegne", "orientamento", "promozione",
             "data_inizio", "data_fine", "ora_inizio", "ora_fine", "giorni", "priorita", "attiva", "creata",
         ]
-        # Insegne e orientamento si scelgono dalla campagna, che ne è la proprietaria.
-        read_only_fields = ["creata", "insegne", "orientamento", "campagna"]
+        # Insegne e orientamento si scelgono dalla promozione, che ne è la proprietaria.
+        read_only_fields = ["creata", "insegne", "orientamento", "promozione"]
 
 
 class PubblicazioniViewSet(ViewSetCliente):
@@ -290,42 +304,48 @@ class PubblicazioniViewSet(ViewSetCliente):
         pubblicazione.delete()
 
 
-# --- Campagne -----------------------------------------------------------------
+# --- Campagne e promozioni -------------------------------------------------------
 
 
-class CampagnaSerializer(serializers.ModelSerializer):
-    insegne = RiferimentoCliente(Insegna, many=True, required=False)
-    gruppi = RiferimentoCliente(GruppoMonitor, many=True, required=False)
-    monitor = RiferimentoCliente(Monitor, many=True, required=False)
+def verifica_campagna_modificabile(utente, campagna):
+    """Un utente limitato a certe sedi lavora solo su campagne dei monitor delle sue sedi."""
+    limitate = sedi_visibili(utente)
+    if limitate is None:
+        return
+    if campagna.insegne.exists() or campagna.gruppi.exists() or campagna.monitor.exclude(sede_id__in=limitate).exists():
+        raise exceptions.PermissionDenied("La campagna riguarda anche monitor fuori dalle tue sedi.")
+
+
+class PromozioneSerializer(serializers.ModelSerializer):
+    campagna = RiferimentoCliente(Campagna)
     contenuti = RiferimentoCliente(Contenuto, many=True, required=False)
-    colore = serializers.RegexField(r"^#[0-9a-fA-F]{6}$", required=False)
     giorni = serializers.ListField(child=serializers.IntegerField(min_value=0, max_value=6), required=False)
+    data_inizio = serializers.DateField()
+    data_fine = serializers.DateField()
     stato = serializers.SerializerMethodField()
     pubblicazioni = serializers.SerializerMethodField()
 
     class Meta:
-        model = Campagna
+        model = Promozione
         fields = [
-            "id", "nome", "codice", "colore", "note", "data_inizio", "data_fine", "ora_inizio", "ora_fine",
-            "giorni", "priorita", "durata", "insegne", "gruppi", "monitor", "contenuti", "stato",
-            "pubblicazioni", "creata", "modificata",
+            "id", "campagna", "nome", "data_inizio", "data_fine", "ora_inizio", "ora_fine", "giorni",
+            "contenuti", "stato", "pubblicazioni", "creata", "modificata",
         ]
         read_only_fields = ["creata", "modificata"]
-        extra_kwargs = {"durata": {"min_value": 1, "max_value": 3600}, "priorita": {"min_value": -100, "max_value": 100}}
 
-    def get_stato(self, campagna):
-        return campagne.stato(campagna, timezone.localdate())
+    def get_stato(self, promozione):
+        return campagne.stato(promozione, timezone.localdate())
 
-    def get_pubblicazioni(self, campagna):
+    def get_pubblicazioni(self, promozione):
         return [
-            {"id": p.id, "orientamento": p.orientamento, "contenuti": p.playlist.elementi.count()}
-            for p in campagna.pubblicazioni.select_related("playlist")
+            {"orientamento": p.orientamento, "contenuti": p.playlist.elementi.count()}
+            for p in promozione.pubblicazioni.select_related("playlist")
         ]
 
-    def to_representation(self, campagna):
-        dati = super().to_representation(campagna)
-        # Nell'ordine della campagna, non in quello del database.
-        dati["contenuti"] = [str(v.contenuto_id) for v in campagna.voci.order_by("ordine")]
+    def to_representation(self, promozione):
+        dati = super().to_representation(promozione)
+        # Nell'ordine della promozione, non in quello del database.
+        dati["contenuti"] = [str(v.contenuto_id) for v in promozione.voci.order_by("ordine")]
         return dati
 
     def validate_giorni(self, giorni):
@@ -337,8 +357,78 @@ class CampagnaSerializer(serializers.ModelSerializer):
         def valore(campo):
             return dati[campo] if campo in dati else getattr(corrente, campo, None)
 
-        if valore("data_inizio") and valore("data_fine") and valore("data_fine") < valore("data_inizio"):
+        if valore("data_fine") < valore("data_inizio"):
             raise serializers.ValidationError({"data_fine": "Precede la data di inizio."})
+        campagna = valore("campagna")
+        nome = valore("nome")
+        doppione = Promozione.objects.filter(campagna=campagna, nome__iexact=nome)
+        if corrente is not None:
+            doppione = doppione.exclude(id=corrente.id)
+        if doppione.exists():
+            raise serializers.ValidationError({"nome": "La campagna ha già una promozione con questo nome."})
+        verifica_campagna_modificabile(self.context["request"].user, campagna)
+        return dati
+
+    def _salva(self, promozione, contenuti):
+        if contenuti is not None:
+            campagne.salva_contenuti(promozione, contenuti)
+        campagne.sincronizza(promozione)
+        return promozione
+
+    def create(self, dati):
+        contenuti = dati.pop("contenuti", None)
+        return self._salva(super().create(dati), contenuti)
+
+    def update(self, promozione, dati):
+        contenuti = dati.pop("contenuti", None)
+        vecchia_campagna = promozione.campagna
+        promozione = self._salva(super().update(promozione, dati), contenuti)
+        if vecchia_campagna.id != promozione.campagna_id:
+            verifica_campagna_modificabile(self.context["request"].user, vecchia_campagna)
+        return promozione
+
+
+class CampagnaSerializer(serializers.ModelSerializer):
+    insegne = RiferimentoCliente(Insegna, many=True, required=False)
+    gruppi = RiferimentoCliente(GruppoMonitor, many=True, required=False)
+    monitor = RiferimentoCliente(Monitor, many=True, required=False)
+    colore = serializers.RegexField(r"^#[0-9a-fA-F]{6}$", required=False)
+    promozioni = serializers.SerializerMethodField()
+    stato = serializers.SerializerMethodField()
+    data_inizio = serializers.SerializerMethodField()
+    data_fine = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Campagna
+        fields = [
+            "id", "nome", "codice", "colore", "note", "priorita", "durata", "insegne", "gruppi", "monitor",
+            "stato", "data_inizio", "data_fine", "promozioni", "creata", "modificata",
+        ]
+        read_only_fields = ["creata", "modificata"]
+        extra_kwargs = {"durata": {"min_value": 1, "max_value": 3600}, "priorita": {"min_value": -100, "max_value": 100}}
+
+    def _promozioni(self, campagna):
+        if not hasattr(campagna, "_promo_serializzate"):
+            campagna._promo_serializzate = PromozioneSerializer(
+                campagna.promozioni.order_by("data_inizio", "nome"), many=True, context=self.context
+            ).data
+        return campagna._promo_serializzate
+
+    def get_promozioni(self, campagna):
+        return self._promozioni(campagna)
+
+    def get_stato(self, campagna):
+        return campagne.stato_campagna([p["stato"] for p in self._promozioni(campagna)])
+
+    def get_data_inizio(self, campagna):
+        date = [p["data_inizio"] for p in self._promozioni(campagna) if p["data_inizio"]]
+        return min(date) if date else None
+
+    def get_data_fine(self, campagna):
+        date = [p["data_fine"] for p in self._promozioni(campagna) if p["data_fine"]]
+        return max(date) if date else None
+
+    def validate(self, dati):
         utente = self.context["request"].user
         limitate = sedi_visibili(utente)
         if limitate is not None:
@@ -347,23 +437,15 @@ class CampagnaSerializer(serializers.ModelSerializer):
             verifica_destinatari(utente, dati.get("monitor", []), [])
         return dati
 
-    def _salva(self, campagna, contenuti):
-        if contenuti is not None:
-            campagne.salva_contenuti(campagna, contenuti)
-        campagne.sincronizza(campagna)
-        return campagna
-
-    def create(self, dati):
-        contenuti = dati.pop("contenuti", None)
-        return self._salva(super().create(dati), contenuti)
-
     def update(self, campagna, dati):
-        contenuti = dati.pop("contenuti", None)
-        return self._salva(super().update(campagna, dati), contenuti)
+        campagna = super().update(campagna, dati)
+        # Destinatari, priorità o durata cambiati: le pubblicazioni di tutte le promozioni si allineano.
+        campagne.sincronizza_campagna(campagna)
+        return campagna
 
 
 class CampagneViewSet(ViewSetCliente):
-    """Le campagne promozionali: la pagina «Creazione palinsesto» lavora su queste."""
+    """Le campagne: ognuna raggruppa più promozioni con gli stessi destinatari."""
 
     ruoli_scrittura = CONTENUTI
     serializer_class = CampagnaSerializer
@@ -375,37 +457,33 @@ class CampagneViewSet(ViewSetCliente):
             return campagne_
         return campagne_.filter(monitor__sede_id__in=limitate).distinct()
 
-    def _modificabile(self, campagna):
-        limitate = sedi_visibili(self.request.user)
-        if limitate is not None and (campagna.insegne.exists() or campagna.gruppi.exists()):
-            raise exceptions.PermissionDenied("La campagna riguarda anche monitor fuori dalle tue sedi.")
-
     def perform_create(self, serializer):
         registra(self.request.user, "campagna_creata", serializer.save())
 
     def perform_update(self, serializer):
-        self._modificabile(serializer.instance)
+        verifica_campagna_modificabile(self.request.user, serializer.instance)
         registra(self.request.user, "campagna_modificata", serializer.save())
 
     def perform_destroy(self, campagna):
-        self._modificabile(campagna)
+        verifica_campagna_modificabile(self.request.user, campagna)
         registra(self.request.user, "campagna_eliminata", campagna, nome=campagna.nome)
-        for pubblicazione in campagna.pubblicazioni.select_related("playlist"):
-            pubblicazione.playlist.delete()
+        for promozione in campagna.promozioni.all():
+            campagne.elimina_promozione(promozione)
         campagna.delete()
 
     @action(detail=False, methods=["get"])
     def modello(self, request):
-        """Il tracciato del CSV, con tre righe d'esempio da sostituire."""
+        """Il tracciato del CSV, con righe d'esempio da sostituire."""
         risposta = HttpResponse("\ufeff" + campagne.MODELLO, content_type="text/csv; charset=utf-8")
-        risposta["Content-Disposition"] = 'attachment; filename="campagne-futurapro.csv"'
+        risposta["Content-Disposition"] = 'attachment; filename="promozioni-futurapro.csv"'
         return risposta
 
     @action(detail=False, methods=["post"])
     def importa(self, request):
-        """Carica le campagne di un CSV. Con ``prova=1`` controlla soltanto e mostra l'esito riga per riga.
+        """Carica campagne e promozioni da un CSV (una riga per promozione).
 
-        Tutto o niente: se una riga ha un errore non si salva nessuna campagna.
+        Con ``prova=1`` controlla soltanto e mostra l'esito riga per riga. Tutto o
+        niente: se una riga ha un errore non si salva nulla.
         """
         if sedi_visibili(request.user) is not None:
             raise exceptions.PermissionDenied("L'importazione è riservata a chi gestisce tutto il cliente.")
@@ -425,32 +503,64 @@ class CampagneViewSet(ViewSetCliente):
             raise exceptions.ValidationError({"file": str(errore)})
         except Exception:
             raise exceptions.ValidationError({"file": "Il file non è un CSV leggibile."})
-        esistenti = {c.casefold() for c in Campagna.objects.values_list("nome", flat=True)}
-        esito = [
-            {
-                "riga": r["riga"],
-                "nome": r["nome"],
-                "errori": r["errori"],
-                "azione": "errore" if r["errori"] else ("aggiorna" if r["nome"].casefold() in esistenti else "crea"),
-                **(
-                    {
-                        "data_inizio": r["dati"]["data_inizio"], "data_fine": r["dati"]["data_fine"],
-                        "insegne": [i.nome for i in r["insegne"]], "gruppi": [g.nome for g in r["gruppi"]],
-                        "monitor": [m.nome for m in r["monitor"]],
-                    }
-                    if not r["errori"] else {}
-                ),
-            }
-            for r in righe
-        ]
-        valide = not any(r["errori"] for r in righe) and bool(righe)
-        if request.data.get("prova") in ("1", "true", True) or not valide:
-            return Response({"righe": esito, "valido": valide, "salvate": 0},
-                            status=status.HTTP_200_OK if valide or request.data.get("prova") else status.HTTP_400_BAD_REQUEST)
+        promozioni_esistenti = {
+            (c.casefold(), p.casefold())
+            for c, p in Promozione.objects.values_list("campagna__nome", "nome")
+        }
+        campagne_esistenti = {c.casefold() for c in Campagna.objects.values_list("nome", flat=True)}
+        esito = []
+        for r in righe:
+            voce = {"riga": r["riga"], "campagna": r["campagna"], "promozione": r["promozione"], "errori": r["errori"]}
+            if r["errori"]:
+                voce["azione"] = "errore"
+            else:
+                chiave = (r["campagna"].casefold(), r["promozione"].casefold())
+                voce["azione"] = "aggiorna" if chiave in promozioni_esistenti else "crea"
+                voce["campagna_nuova"] = r["campagna"].casefold() not in campagne_esistenti
+                voce.update(
+                    data_inizio=r["promo"]["data_inizio"], data_fine=r["promo"]["data_fine"],
+                    insegne=[i.nome for i in r["insegne"]], gruppi=[g.nome for g in r["gruppi"]],
+                    monitor=[m.nome for m in r["monitor"]],
+                )
+            esito.append(voce)
+        valido = bool(righe) and not any(r["errori"] for r in righe)
+        prova = request.data.get("prova") in ("1", "true", True)
+        if prova or not valido:
+            codice = status.HTTP_200_OK if valido or prova else status.HTTP_400_BAD_REQUEST
+            return Response({"righe": esito, "valido": valido, "salvate": 0}, status=codice)
         with transaction.atomic():
-            salvate = campagne.importa(righe)
-        registra(request.user, "campagne_importate", None, numero=len(salvate))
-        return Response({"righe": esito, "valido": True, "salvate": len(salvate)}, status=status.HTTP_201_CREATED)
+            numero_campagne, numero_promozioni = campagne.importa(righe)
+        registra(request.user, "promozioni_importate", None, campagne=numero_campagne, promozioni=numero_promozioni)
+        return Response(
+            {"righe": esito, "valido": True, "salvate": numero_promozioni, "campagne": numero_campagne},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class PromozioniViewSet(ViewSetCliente):
+    """Le promozioni: date e immagini. I destinatari sono quelli della loro campagna."""
+
+    ruoli_scrittura = CONTENUTI
+    serializer_class = PromozioneSerializer
+
+    def get_queryset(self):
+        promozioni = Promozione.objects.select_related("campagna")
+        limitate = sedi_visibili(self.request.user)
+        if limitate is None:
+            return promozioni
+        return promozioni.filter(campagna__monitor__sede_id__in=limitate).distinct()
+
+    def perform_create(self, serializer):
+        registra(self.request.user, "promozione_creata", serializer.save())
+
+    def perform_update(self, serializer):
+        verifica_campagna_modificabile(self.request.user, serializer.instance.campagna)
+        registra(self.request.user, "promozione_modificata", serializer.save())
+
+    def perform_destroy(self, promozione):
+        verifica_campagna_modificabile(self.request.user, promozione.campagna)
+        registra(self.request.user, "promozione_eliminata", promozione, nome=promozione.nome)
+        campagne.elimina_promozione(promozione)
 
 
 class PubblicaSerializer(RegoleSerializer):

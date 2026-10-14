@@ -1,12 +1,13 @@
 // «Creazione palinsesto»: libreria divisa tra verticali (totem) e orizzontali (monitor),
-// campagne con date e destinatari, calendario dell'anno e importazione da CSV.
+// campagne che raggruppano promozioni, calendario e importazione da CSV.
 //
-// Lavora sulle API del pannello: /api/contenuti/, /api/campagne/, /api/insegne/…
-// Una campagna diventa sul server una pubblicazione per orientamento: qui si
-// sceglie solo cosa, quando e dove. I testi dei dati passano sempre da textContent.
+// Una campagna tiene i destinatari (insegne, gruppi, monitor e totem); ogni sua
+// promozione ha date e immagini. Sul server ogni promozione diventa una
+// pubblicazione per orientamento: qui si sceglie solo cosa, quando e dove.
+// I testi che arrivano dai dati passano sempre da textContent.
 
 const parametri = new URLSearchParams(location.search);
-let cliente = parametri.get("cliente");
+const cliente = parametri.get("cliente");
 const MESI = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
 const GIORNI = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
 const STATI = {
@@ -16,6 +17,12 @@ const STATI = {
   conclusa: { testo: "Conclusa", classe: "conclusa" },
 };
 const FORMATI_ACCETTATI = /\.(jpe?g|png|gif|webp|mp4|webm|mov)$/i;
+const VISTE_LIBRERIA = {
+  da_assegnare: "Da assegnare",
+  attivi: "Nelle promozioni attive",
+  scaduti: "Promozioni scadute",
+  tutti: "Tutti",
+};
 
 const S = {
   io: null,
@@ -26,13 +33,14 @@ const S = {
   monitor: [],
   sedi: [],
   selezione: new Set(),
-  campagna: null, // quella aperta nell'editor (copia modificabile)
+  campagna: null, // la campagna aperta (copia modificabile)
+  promozione: null, // la promozione aperta, dentro la campagna aperta
   modificata: false,
   anno: new Date().getFullYear(),
   mese: new Date().getMonth(),
   vista: "anno",
+  libreria: "da_assegnare",
   cerca: "",
-  soloLiberi: false,
 };
 
 // --- Strumenti -----------------------------------------------------------------------
@@ -103,15 +111,20 @@ function avvisa(testo, tipo = "errore") {
   box.hidden = !testo;
   box.className = `avviso ${tipo}`;
   box.textContent = testo || "";
-  if (testo && tipo !== "errore") timerAvviso = setTimeout(() => (box.hidden = true), 5000);
+  if (testo && tipo !== "errore") timerAvviso = setTimeout(() => (box.hidden = true), 6000);
 }
 
-const oggi = () => new Date().toISOString().slice(0, 10);
+const isoLocale = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const data = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" }) : "");
 const periodo = (c) => (c.data_inizio || c.data_fine ? `${data(c.data_inizio) || "…"} → ${data(c.data_fine) || "…"}` : "Senza date");
 const peso = (byte) => (byte > 1048576 ? `${(byte / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(byte / 1024))} KB`);
 const perId = (elenco) => new Map(elenco.map((v) => [v.id, v]));
 const orientamentoDi = (c) => c.orientamento || "altro";
+const promozioni = () => S.campagne.flatMap((c) => c.promozioni.map((p) => ({ ...p, campagnaDati: c })));
+
+function confermaAbbandono() {
+  return !S.modificata || confirm("Le modifiche non salvate andranno perse. Continuare?");
+}
 
 // --- Caricamento dei dati ---------------------------------------------------------------
 
@@ -123,11 +136,16 @@ async function caricaTutto() {
   Object.assign(S, { contenuti, campagne, insegne, gruppi, monitor, sedi });
 }
 
+// Dopo un salvataggio: si rilegge tutto e si riaprono campagna e promozione aggiornate.
 async function ricarica() {
   await caricaTutto();
-  if (S.campagna?.id) {
-    const aggiornata = S.campagne.find((c) => c.id === S.campagna.id);
-    if (aggiornata && !S.modificata) S.campagna = structuredClone(aggiornata);
+  if (S.campagna?.id && !S.modificata) {
+    const campagna = S.campagne.find((c) => c.id === S.campagna.id);
+    S.campagna = campagna ? structuredClone(campagna) : null;
+    if (S.promozione?.id) {
+      const promozione = campagna?.promozioni.find((p) => p.id === S.promozione.id);
+      S.promozione = promozione ? structuredClone(promozione) : null;
+    }
   }
   disegna();
 }
@@ -135,9 +153,28 @@ async function ricarica() {
 function disegna() {
   disegnaStatistiche();
   disegnaLibreria();
-  disegnaCampagna();
+  disegnaPannello();
   disegnaCalendario();
   disegnaSelezione();
+}
+
+// --- Uso dei contenuti nelle promozioni ----------------------------------------------------------
+
+function usoContenuti() {
+  const uso = new Map();
+  for (const p of promozioni()) {
+    for (const id of p.contenuti) {
+      if (!uso.has(id)) uso.set(id, []);
+      uso.get(id).push(p);
+    }
+  }
+  return uso;
+}
+
+function categoria(contenuto, uso) {
+  const promo = uso.get(contenuto.id);
+  if (!promo) return "da_assegnare";
+  return promo.every((p) => p.stato === "conclusa") ? "scaduti" : "attivi";
 }
 
 // --- Statistiche --------------------------------------------------------------------------
@@ -145,15 +182,16 @@ function disegna() {
 function disegnaStatistiche() {
   const box = document.getElementById("statistiche");
   box.replaceChildren();
-  const conta = (stato) => S.campagne.filter((c) => c.stato === stato).length;
-  const verticali = S.contenuti.filter((c) => c.orientamento === "verticale").length;
-  const orizzontali = S.contenuti.filter((c) => c.orientamento === "orizzontale").length;
+  const tutte_ = promozioni();
+  const conta = (stato) => tutte_.filter((p) => p.stato === stato).length;
+  const uso = usoContenuti();
+  const daAssegnare = S.contenuti.filter((c) => !uso.has(c.id)).length;
   const totem = S.monitor.filter((m) => m.orientamento === "verticale").length;
   for (const [valore, etichetta, classe] of [
-    [conta("in_onda"), "campagne in onda", "in-onda"],
+    [conta("in_onda"), "promozioni in onda", "in-onda"],
     [conta("programmata"), "programmate", "programmata"],
     [conta("bozza"), "bozze da completare", "bozza"],
-    [`${verticali} · ${orizzontali}`, "contenuti verticali · orizzontali", ""],
+    [daAssegnare, "contenuti da assegnare", ""],
     [`${totem} · ${S.monitor.length - totem}`, "totem · monitor", ""],
   ]) {
     const scheda = crea("div", { classe: `stat ${classe}` }, box);
@@ -163,12 +201,6 @@ function disegnaStatistiche() {
 }
 
 // --- Libreria ---------------------------------------------------------------------------------
-
-function usati() {
-  const insieme = new Set();
-  for (const c of S.campagne) for (const id of c.contenuti) insieme.add(id);
-  return insieme;
-}
 
 function anteprima(contenuto, classe = "") {
   if (contenuto.tipo === "immagine") {
@@ -184,15 +216,61 @@ function anteprima(contenuto, classe = "") {
   return web;
 }
 
+function disegnaSchedeLibreria(uso) {
+  const box = document.getElementById("schede-libreria");
+  box.replaceChildren();
+  const conteggi = { da_assegnare: 0, attivi: 0, scaduti: 0, tutti: S.contenuti.length };
+  for (const c of S.contenuti) conteggi[categoria(c, uso)] += 1;
+  for (const [chiave, titolo] of Object.entries(VISTE_LIBRERIA)) {
+    const b = crea("button", { type: "button", classe: `scheda-libreria${S.libreria === chiave ? " attiva" : ""}` }, box);
+    b.append(titolo);
+    crea("span", { classe: "conteggio", testo: String(conteggi[chiave]) }, b);
+    b.addEventListener("click", () => {
+      S.libreria = chiave;
+      disegnaLibreria();
+    });
+  }
+  if (S.libreria === "scaduti" && conteggi.scaduti) {
+    crea("button", { type: "button", classe: "pericolo", testo: "Libera spazio…", onclick: liberaSpazio }, box);
+  }
+}
+
+async function liberaSpazio() {
+  try {
+    const stima = await api("GET", "/api/contenuti/pulizia/");
+    if (!stima.contenuti) {
+      avvisa("Nessun contenuto da eliminare: quelli delle promozioni scadute sono usati anche altrove.", "info");
+      return;
+    }
+    if (!confirm(`Eliminare definitivamente ${stima.contenuti} contenuti delle promozioni scadute (${peso(stima.spazio)})?\nI file spariscono anche dal server. Restano quelli usati da promozioni in corso o future, dalle playlist fatte a mano e dai layout.`)) return;
+    const esito = await api("POST", "/api/contenuti/pulizia/");
+    avvisa(`Eliminati ${esito.contenuti} contenuti: liberati ${peso(esito.spazio)}.`, "ok");
+    await ricarica();
+  } catch (errore) {
+    avvisa(errore.message);
+  }
+}
+
 function disegnaLibreria() {
+  const uso = usoContenuti();
+  disegnaSchedeLibreria(uso);
   const box = document.getElementById("gallerie");
   box.replaceChildren();
-  const giaUsati = usati();
-  const nellaCampagna = new Set(S.campagna?.contenuti || []);
+  const nellaPromozione = new Set(S.promozione?.contenuti || []);
   const filtro = S.cerca.trim().toLowerCase();
   const visibili = S.contenuti.filter(
-    (c) => (!filtro || c.nome.toLowerCase().includes(filtro)) && (!S.soloLiberi || !giaUsati.has(c.id)),
+    (c) => (!filtro || c.nome.toLowerCase().includes(filtro)) && (S.libreria === "tutti" || categoria(c, uso) === S.libreria),
   );
+  if (!visibili.length) {
+    const vuoto = crea("div", { classe: "galleria vuota" }, box);
+    crea("p", {
+      classe: "vuoto",
+      testo: filtro ? "Nessun contenuto con questo nome."
+        : S.libreria === "da_assegnare" ? "Tutto assegnato. Trascina qui sopra le immagini della prossima promozione."
+          : "Nessun contenuto in questa vista.",
+    }, vuoto);
+    return;
+  }
 
   const gruppi = [
     ["verticale", "Verticali", "per i totem", "▯"],
@@ -201,7 +279,7 @@ function disegnaLibreria() {
   ];
   for (const [chiave, titolo, sottotitolo, simbolo] of gruppi) {
     const elementi = visibili.filter((c) => orientamentoDi(c) === chiave);
-    if (chiave === "altro" && !elementi.length) continue;
+    if (!elementi.length) continue;
     const sezione = crea("section", { classe: `galleria ${chiave}` }, box);
     const testa = crea("header", {}, sezione);
     const titoli = crea("div", { classe: "titoli" }, testa);
@@ -209,9 +287,9 @@ function disegnaLibreria() {
     crea("h2", { testo: titolo }, titoli);
     crea("span", { classe: "conteggio", testo: String(elementi.length) }, titoli);
     crea("span", { classe: "sottotitolo", testo: sottotitolo }, titoli);
-    const tuttiScelti = elementi.length > 0 && elementi.every((c) => S.selezione.has(c.id));
+    const tuttiScelti = elementi.every((c) => S.selezione.has(c.id));
     crea("button", {
-      type: "button", classe: "leggero", testo: tuttiScelti ? "Deseleziona tutti" : "Seleziona tutti", disabled: !elementi.length,
+      type: "button", classe: "leggero", testo: tuttiScelti ? "Deseleziona tutti" : "Seleziona tutti",
       onclick: () => {
         for (const c of elementi) (tuttiScelti ? S.selezione.delete(c.id) : S.selezione.add(c.id));
         disegnaLibreria();
@@ -220,29 +298,24 @@ function disegnaLibreria() {
     }, testa);
 
     const griglia = crea("div", { classe: "griglia" }, sezione);
-    if (!elementi.length) {
-      crea("p", { classe: "vuoto", testo: filtro ? "Nessun contenuto con questo nome." : "Ancora nessun contenuto: trascinali qui sopra." }, griglia);
-    }
     for (const c of elementi) {
+      const usi = uso.get(c.id) || [];
       const scheda = crea("article", {
-        classe: `media${S.selezione.has(c.id) ? " scelta" : ""}${nellaCampagna.has(c.id) ? " in-campagna" : ""}`,
-        tabIndex: 0, title: c.nome,
+        classe: `media${S.selezione.has(c.id) ? " scelta" : ""}${nellaPromozione.has(c.id) ? " in-campagna" : ""}`,
+        tabIndex: 0, title: [c.nome, ...usi.map((p) => `· ${p.campagnaDati.nome} / ${p.nome}`)].join("\n"),
       }, griglia);
       const cornice = crea("div", { classe: "cornice" }, scheda);
       cornice.appendChild(anteprima(c));
       crea("span", { classe: "spunta", testo: "✓" }, cornice);
-      if (nellaCampagna.has(c.id)) crea("span", { classe: "etichetta-campagna", testo: "nella campagna" }, cornice);
-      else if (giaUsati.has(c.id)) crea("span", { classe: "etichetta-usato", testo: "in uso" }, cornice);
+      if (nellaPromozione.has(c.id)) crea("span", { classe: "etichetta-campagna", testo: "nella promozione" }, cornice);
+      else if (usi.length) crea("span", { classe: "etichetta-usato", testo: usi.length === 1 ? usi[0].nome : `${usi.length} promozioni` }, cornice);
       const azioni = crea("div", { classe: "azioni-media" }, cornice);
-      crea("button", {
-        type: "button", title: "Ingrandisci", testo: "⤢",
-        onclick: (e) => { e.stopPropagation(); apriVisore(c); },
-      }, azioni);
-      if (S.campagna) {
+      crea("button", { type: "button", title: "Ingrandisci", testo: "⤢", onclick: (e) => { e.stopPropagation(); apriVisore(c); } }, azioni);
+      if (S.promozione) {
+        const dentro = nellaPromozione.has(c.id);
         crea("button", {
-          type: "button", title: nellaCampagna.has(c.id) ? "Togli dalla campagna" : "Aggiungi alla campagna",
-          testo: nellaCampagna.has(c.id) ? "−" : "+",
-          onclick: (e) => { e.stopPropagation(); nellaCampagna.has(c.id) ? togliDallaCampagna(c.id) : aggiungiAllaCampagna([c.id]); },
+          type: "button", title: dentro ? "Togli dalla promozione" : "Aggiungi alla promozione", testo: dentro ? "−" : "+",
+          onclick: (e) => { e.stopPropagation(); dentro ? togliDallaPromozione(c.id) : aggiungiAllaPromozione([c.id]); },
         }, azioni);
       }
       const didascalia = crea("div", { classe: "didascalia" }, scheda);
@@ -281,30 +354,29 @@ function disegnaSelezione() {
   const scelti = [...S.selezione].filter((id) => S.contenuti.some((c) => c.id === id));
   barra.hidden = !scelti.length;
   if (!scelti.length) return;
-  crea("strong", { testo: `${scelti.length} ${scelti.length === 1 ? "contenuto selezionato" : "contenuti selezionati"}` }, barra);
-  if (S.campagna) {
+  crea("strong", { testo: `${scelti.length} ${scelti.length === 1 ? "immagine selezionata" : "immagini selezionate"}` }, barra);
+  if (S.promozione) {
     crea("button", {
-      type: "button", classe: "primario", testo: `Aggiungi a «${S.campagna.nome || "nuova campagna"}»`,
-      onclick: () => { aggiungiAllaCampagna(scelti); S.selezione.clear(); disegnaLibreria(); disegnaSelezione(); },
+      type: "button", classe: "primario", testo: `Aggiungi a «${S.promozione.nome || "nuova promozione"}»`,
+      onclick: () => { aggiungiAllaPromozione(scelti); S.selezione.clear(); disegnaLibreria(); disegnaSelezione(); },
     }, barra);
   }
   crea("button", {
-    type: "button", classe: S.campagna ? "" : "primario", testo: "Nuova campagna con questi",
-    onclick: () => { nuovaCampagna({ contenuti: scelti }); S.selezione.clear(); disegna(); document.getElementById("nome-campagna")?.focus(); },
+    type: "button", classe: S.promozione ? "" : "primario", testo: "Nuova promozione con queste immagini",
+    onclick: () => chiediNuovaPromozione({ contenuti: scelti }),
   }, barra);
   crea("button", {
     type: "button", classe: "pericolo", testo: "Elimina dalla libreria",
     onclick: async () => {
-      if (!confirm(`Eliminare ${scelti.length} contenuti dalla libreria? Spariranno anche dalle campagne e dalle playlist.`)) return;
+      if (!confirm(`Eliminare ${scelti.length} contenuti dalla libreria? Spariranno anche dalle promozioni e dalle playlist.`)) return;
       try {
         for (const id of scelti) await api("DELETE", `/api/contenuti/${id}/`);
         S.selezione.clear();
         avvisa("Contenuti eliminati.", "ok");
-        await ricarica();
       } catch (errore) {
         avvisa(errore.message);
-        await ricarica();
       }
+      await ricarica();
     },
   }, barra);
   crea("button", { type: "button", classe: "leggero", testo: "Annulla", onclick: () => { S.selezione.clear(); disegnaLibreria(); disegnaSelezione(); } }, barra);
@@ -336,7 +408,7 @@ function misura(file) {
   return Promise.resolve({});
 }
 
-function invia(file, misure, avanzamento) {
+function invia(file, misure) {
   return new Promise((ok, ko) => {
     const dati = new FormData();
     dati.append("file", file);
@@ -349,7 +421,6 @@ function invia(file, misure, avanzamento) {
     xhr.open("POST", "/api/contenuti/");
     xhr.setRequestHeader("X-CSRFToken", cookie("csrftoken"));
     if (cliente) xhr.setRequestHeader("X-Cliente", cliente);
-    xhr.upload.onprogress = (e) => e.lengthComputable && avanzamento(e.loaded / e.total);
     xhr.onload = () => {
       let corpo = null;
       try { corpo = JSON.parse(xhr.responseText); } catch { /* risposta non JSON */ }
@@ -387,7 +458,7 @@ async function caricaFile(file, cartella) {
     while (coda.length) {
       const f = coda.shift();
       try {
-        caricati.push(await invia(f, await misura(f), () => {}));
+        caricati.push(await invia(f, await misura(f)));
       } catch (errore) {
         errori.push(`${f.name}: ${errore.message}`);
       }
@@ -396,18 +467,16 @@ async function caricaFile(file, cartella) {
     }
   }));
   box.hidden = true;
+  S.libreria = "da_assegnare";
   await ricarica();
   for (const c of caricati) S.selezione.add(c.id);
   disegnaLibreria();
   disegnaSelezione();
   if (errori.length) avvisa(`Non caricati: ${errori.join(" · ")}`);
-  else avvisa(`${caricati.length} contenuti caricati${scartati ? ` (${scartati} file ignorati)` : ""}: sono già selezionati.`, "ok");
-  if (cartella && caricati.length && !S.campagna) {
-    // Una cartella è quasi sempre una campagna: la si propone già pronta.
-    nuovaCampagna({ nome: cartella, contenuti: caricati.map((c) => c.id) });
-    S.selezione.clear();
-    disegna();
-    avvisa(`Cartella «${cartella}» caricata: ho preparato la campagna con i suoi ${caricati.length} contenuti. Scegli date e destinatari, poi salva.`, "ok");
+  else avvisa(`${caricati.length} immagini caricate${scartati ? ` (${scartati} file ignorati)` : ""}: sono già selezionate.`, "ok");
+  if (cartella && caricati.length && !S.promozione) {
+    // Una cartella è quasi sempre una promozione: la si propone già pronta.
+    chiediNuovaPromozione({ nome: cartella, contenuti: caricati.map((c) => c.id) });
   }
 }
 
@@ -420,10 +489,10 @@ async function fileDaTrascinamento(trasferimento) {
     if (voce.isFile) voce.file((f) => { file.push(f); ok(); }, ok);
     else if (voce.isDirectory) {
       const lettore = voce.createReader();
-      const tutte_ = [];
+      const figli = [];
       const prossime = () => lettore.readEntries(async (blocco) => {
-        if (!blocco.length) { await Promise.all(tutte_.map(leggi)); ok(); return; }
-        tutte_.push(...blocco);
+        if (!blocco.length) { await Promise.all(figli.map(leggi)); ok(); return; }
+        figli.push(...blocco);
         prossime();
       }, ok);
       prossime();
@@ -458,52 +527,116 @@ function preparaCaricamento() {
   });
 }
 
-// --- Campagna: editor -----------------------------------------------------------------------
+// --- Nuova promozione: in quale campagna? --------------------------------------------------
 
-function nuovaCampagna(valori = {}) {
-  if (S.modificata && !confirm("Le modifiche alla campagna aperta non sono salvate. Continuare?")) return;
+function nuovaCampagnaVuota(nome = "") {
+  return {
+    nome, codice: "", colore: "#ec6a1f", note: "", priorita: 0, durata: 10,
+    insegne: [], gruppi: [], monitor: [], promozioni: [], stato: "bozza",
+  };
+}
+
+function nuovaPromozioneVuota(valori = {}) {
   const inizio = new Date();
   const fine = new Date(inizio.getTime() + 13 * 86400000);
-  S.campagna = {
-    nome: "", codice: "", colore: "#ec6a1f", note: "",
-    data_inizio: inizio.toISOString().slice(0, 10), data_fine: fine.toISOString().slice(0, 10),
-    ora_inizio: null, ora_fine: null, giorni: [], priorita: 0, durata: 10,
-    insegne: [], gruppi: [], monitor: [], contenuti: [], stato: "bozza",
-    ...valori,
+  return {
+    nome: "", data_inizio: isoLocale(inizio), data_fine: isoLocale(fine),
+    ora_inizio: null, ora_fine: null, giorni: [], contenuti: [], stato: "bozza", ...valori,
   };
-  S.modificata = Boolean(valori.contenuti?.length);
+}
+
+// Apre la promozione nuova: nella campagna aperta, oppure chiede quale.
+function chiediNuovaPromozione(valori) {
+  if (S.campagna) {
+    if (!confermaAbbandono()) return;
+    apriNuovaPromozione(valori);
+    return;
+  }
+  const finestra = document.getElementById("scegli-campagna");
+  const corpo = document.getElementById("scegli-campagna-corpo");
+  corpo.replaceChildren();
+  crea("p", { testo: "Una promozione appartiene a una campagna, che ne decide i destinatari (insegne, gruppi, monitor e totem)." }, corpo);
+  const scelta = crea("select", { id: "campagna-scelta" }, corpo);
+  crea("option", { value: "", testo: "+ Nuova campagna…" }, scelta);
+  for (const c of S.campagne) crea("option", { value: c.id, testo: `${c.nome}${c.promozioni.length ? ` · ${c.promozioni.length} promozioni` : ""}` }, scelta);
+  if (S.campagne.length) scelta.value = S.campagne[S.campagne.length - 1].id;
+  const nome = crea("input", { placeholder: "Nome della nuova campagna, es. Autunno 2026", maxLength: 200 }, corpo);
+  const aggiornaNome = () => (nome.hidden = Boolean(scelta.value));
+  scelta.addEventListener("change", aggiornaNome);
+  aggiornaNome();
+  const azioni = crea("div", { classe: "azioni" }, corpo);
+  crea("button", { type: "button", classe: "leggero", testo: "Annulla", onclick: () => finestra.close() }, azioni);
+  crea("button", {
+    type: "button", classe: "primario", testo: "Continua",
+    onclick: () => {
+      if (!scelta.value && !nome.value.trim()) { nome.focus(); return; }
+      finestra.close();
+      S.campagna = scelta.value ? structuredClone(S.campagne.find((c) => c.id === scelta.value)) : nuovaCampagnaVuota(nome.value.trim());
+      apriNuovaPromozione(valori);
+    },
+  }, azioni);
+  finestra.showModal();
+}
+
+function apriNuovaPromozione(valori) {
+  S.promozione = nuovaPromozioneVuota(valori);
+  S.modificata = true;
+  S.selezione.clear();
+  disegna();
+  document.getElementById("nome-promozione")?.focus();
 }
 
 function apriCampagna(id) {
-  if (S.campagna?.id === id) return;
-  if (S.modificata && !confirm("Le modifiche alla campagna aperta non sono salvate. Continuare?")) return;
+  if (S.campagna?.id === id && !S.promozione) return;
+  if (!confermaAbbandono()) return;
   const trovata = S.campagne.find((c) => c.id === id);
   if (!trovata) return;
   S.campagna = structuredClone(trovata);
+  S.promozione = null;
   S.modificata = false;
   disegna();
-  document.getElementById("campagna").scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById("campagna").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function apriPromozione(campagnaId, promozioneId) {
+  if (S.promozione?.id === promozioneId) return;
+  if (!confermaAbbandono()) return;
+  const campagna = S.campagne.find((c) => c.id === campagnaId);
+  const promozione = campagna?.promozioni.find((p) => p.id === promozioneId);
+  if (!promozione) return;
+  S.campagna = structuredClone(campagna);
+  S.promozione = structuredClone(promozione);
+  S.modificata = false;
+  disegna();
+  document.getElementById("campagna").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function chiudi() {
+  if (!confermaAbbandono()) return;
+  S.campagna = null;
+  S.promozione = null;
+  S.modificata = false;
+  disegna();
 }
 
 function segnaModificata() {
   S.modificata = true;
-  document.getElementById("salva-campagna")?.classList.add("pulsa");
+  document.querySelector(".piede-campagna .primario")?.classList.add("pulsa");
 }
 
-function aggiungiAllaCampagna(ids) {
-  if (!S.campagna) nuovaCampagna();
-  const presenti = new Set(S.campagna.contenuti);
-  for (const id of ids) if (!presenti.has(id)) S.campagna.contenuti.push(id);
+function aggiungiAllaPromozione(ids) {
+  const presenti = new Set(S.promozione.contenuti);
+  for (const id of ids) if (!presenti.has(id)) S.promozione.contenuti.push(id);
   segnaModificata();
   disegnaLibreria();
-  disegnaCampagna();
+  disegnaPannello();
 }
 
-function togliDallaCampagna(id) {
-  S.campagna.contenuti = S.campagna.contenuti.filter((c) => c !== id);
+function togliDallaPromozione(id) {
+  S.promozione.contenuti = S.promozione.contenuti.filter((c) => c !== id);
   segnaModificata();
   disegnaLibreria();
-  disegnaCampagna();
+  disegnaPannello();
 }
 
 // Chi riceve davvero la campagna: monitor scelti, quelli dei gruppi e quelli delle sedi delle insegne.
@@ -514,98 +647,103 @@ function destinatari(campagna) {
   return S.monitor.filter((m) => scelti.has(m.id) || m.gruppi.some((g) => gruppi.has(g)) || sediInsegne.has(m.sede));
 }
 
-function disegnaCampagna() {
+// --- Pannello di destra: campagna o promozione -------------------------------------------------
+
+function disegnaPannello() {
   const box = document.getElementById("campagna");
   box.replaceChildren();
 
-  // Scelta della campagna da modificare.
   const testa = crea("div", { classe: "testa-campagna" }, box);
   const scelta = crea("select", { "aria-label": "Campagna" }, testa);
-  crea("option", { value: "", testo: S.campagna && !S.campagna.id ? "Nuova campagna (non salvata)" : "— scegli una campagna —" }, scelta);
-  for (const [stato, info] of Object.entries(STATI)) {
-    const delloStato = S.campagne.filter((c) => c.stato === stato);
-    if (!delloStato.length) continue;
-    const gruppo = crea("optgroup", { label: info.testo }, scelta);
-    for (const c of delloStato) crea("option", { value: c.id, testo: `${c.nome} · ${periodo(c)}`, selected: c.id === S.campagna?.id }, gruppo);
+  crea("option", { value: "", testo: S.campagna && !S.campagna.id ? `${S.campagna.nome || "Nuova campagna"} (non salvata)` : "— scegli una campagna —" }, scelta);
+  for (const c of S.campagne) {
+    crea("option", { value: c.id, testo: `${c.nome} · ${c.promozioni.length} promo · ${STATI[c.stato]?.testo || ""}`, selected: c.id === S.campagna?.id }, scelta);
   }
-  scelta.addEventListener("change", () => scelta.value && apriCampagna(scelta.value));
-  crea("button", { type: "button", classe: "primario", testo: "+ Nuova", onclick: () => { nuovaCampagna(); disegna(); document.getElementById("nome-campagna")?.focus(); } }, testa);
+  scelta.addEventListener("change", () => (scelta.value ? apriCampagna(scelta.value) : null));
+  crea("button", {
+    type: "button", classe: "primario", testo: "+ Campagna",
+    onclick: () => {
+      if (!confermaAbbandono()) return;
+      S.campagna = nuovaCampagnaVuota();
+      S.promozione = null;
+      S.modificata = true;
+      disegna();
+      document.getElementById("nome-campagna")?.focus();
+    },
+  }, testa);
 
   if (!S.campagna) {
     const vuoto = crea("div", { classe: "invito" }, box);
     crea("div", { classe: "illustrazione", testo: "▭ ▯ ▭" }, vuoto);
-    crea("h3", { testo: "Componi una campagna" }, vuoto);
-    crea("p", { testo: "Seleziona i contenuti nella libreria (o trascina una cartella), poi «Nuova campagna con questi». Oppure apri una campagna dal calendario qui sotto." }, vuoto);
+    crea("h3", { testo: "Prepara una promozione" }, vuoto);
+    crea("p", { testo: "Trascina la cartella del volantino nella libreria, oppure seleziona le immagini e scegli «Nuova promozione con queste immagini». Le promozioni si raggruppano in campagne, che decidono dove vanno in onda." }, vuoto);
     return;
   }
-  const c = S.campagna;
+  if (S.promozione) disegnaPromozione(box);
+  else disegnaCampagna(box);
+}
 
+function campoIn(contenitore, etichetta, controllo, classe = "") {
+  const l = crea("label", { classe: `campo ${classe}` }, contenitore);
+  crea("span", { testo: etichetta }, l);
+  l.appendChild(controllo);
+  return controllo;
+}
+
+function disegnaCampagna(box) {
+  const c = S.campagna;
   const stato = STATI[c.stato] || STATI.bozza;
   const intestazione = crea("div", { classe: "intestazione" }, box);
+  crea("span", { classe: "tipo", testo: "Campagna" }, intestazione);
   crea("span", { classe: `stato ${stato.classe}`, testo: c.id ? stato.testo : "Nuova" }, intestazione);
-  crea("span", { classe: "periodo", testo: periodo(c) }, intestazione);
+  if (c.data_inizio) crea("span", { classe: "periodo", testo: periodo(c) }, intestazione);
 
   const campi = crea("div", { classe: "campi" }, box);
-  const campo = (etichetta, controllo, classe = "") => {
-    const l = crea("label", { classe: `campo ${classe}` }, campi);
-    crea("span", { testo: etichetta }, l);
-    l.appendChild(controllo);
-    return controllo;
-  };
-  const nome = campo("Nome della campagna", crea("input", { id: "nome-campagna", value: c.nome, placeholder: "es. Volantino 6-19 ottobre", maxLength: 200 }), "largo");
+  const nome = campoIn(campi, "Nome della campagna", crea("input", { id: "nome-campagna", value: c.nome, placeholder: "es. Autunno 2026", maxLength: 200 }), "largo");
   nome.addEventListener("input", () => { c.nome = nome.value; segnaModificata(); });
-  const dal = campo("Dal", crea("input", { type: "date", value: c.data_inizio || "" }));
-  dal.addEventListener("change", () => { c.data_inizio = dal.value || null; segnaModificata(); });
-  const al = campo("Al", crea("input", { type: "date", value: c.data_fine || "" }));
-  al.addEventListener("change", () => { c.data_fine = al.value || null; segnaModificata(); });
-  const colore = campo("Colore", crea("input", { type: "color", value: c.colore || "#ec6a1f" }), "stretto");
+  const colore = campoIn(campi, "Colore", crea("input", { type: "color", value: c.colore || "#ec6a1f" }), "stretto");
   colore.addEventListener("input", () => { c.colore = colore.value; segnaModificata(); });
-  const durata = campo("Secondi per immagine", crea("input", { type: "number", min: 1, max: 3600, value: c.durata || "", placeholder: "10" }), "stretto");
+  const durata = campoIn(campi, "Secondi per immagine", crea("input", { type: "number", min: 1, max: 3600, value: c.durata || "", placeholder: "10" }));
   durata.addEventListener("change", () => { c.durata = parseInt(durata.value, 10) || null; segnaModificata(); });
-
-  // Opzioni avanzate: fasce orarie, giorni, priorità, codice.
-  const avanzate = crea("details", { classe: "avanzate", open: Boolean(c.ora_inizio || c.ora_fine || c.giorni.length || c.priorita || c.codice) }, box);
-  crea("summary", { testo: "Orari, giorni, priorità e codice" }, avanzate);
-  const griglia = crea("div", { classe: "campi" }, avanzate);
-  const campoA = (etichetta, controllo) => {
-    const l = crea("label", { classe: "campo" }, griglia);
-    crea("span", { testo: etichetta }, l);
-    l.appendChild(controllo);
-    return controllo;
-  };
-  const dalle = campoA("Dalle", crea("input", { type: "time", value: c.ora_inizio?.slice(0, 5) || "" }));
-  dalle.addEventListener("change", () => { c.ora_inizio = dalle.value || null; segnaModificata(); });
-  const alle = campoA("Alle", crea("input", { type: "time", value: c.ora_fine?.slice(0, 5) || "" }));
-  alle.addEventListener("change", () => { c.ora_fine = alle.value || null; segnaModificata(); });
-  const priorita = campoA("Priorità", crea("input", { type: "number", min: -100, max: 100, value: c.priorita || 0, title: "Con priorità più alta, sostituisce le altre campagne nello stesso periodo" }));
+  const priorita = campoIn(campi, "Priorità", crea("input", { type: "number", min: -100, max: 100, value: c.priorita || 0, title: "Più alta: nello stesso periodo sostituisce le altre campagne" }));
   priorita.addEventListener("change", () => { c.priorita = parseInt(priorita.value, 10) || 0; segnaModificata(); });
-  const codice = campoA("Codice", crea("input", { value: c.codice || "", placeholder: "es. V41", maxLength: 50 }));
+  const codice = campoIn(campi, "Codice", crea("input", { value: c.codice || "", placeholder: "es. AUT26", maxLength: 50 }));
   codice.addEventListener("input", () => { c.codice = codice.value; segnaModificata(); });
-  const giorni = crea("div", { classe: "giorni" }, avanzate);
-  crea("span", { testo: "Giorni (nessuno = tutti)" }, giorni);
-  GIORNI.forEach((g, i) => {
-    const attivo = c.giorni.includes(i);
-    crea("button", {
-      type: "button", classe: `chip${attivo ? " attivo" : ""}`, testo: g,
-      onclick: (e) => {
-        c.giorni = attivo ? c.giorni.filter((x) => x !== i) : [...c.giorni, i].sort();
-        segnaModificata();
-        e.currentTarget.classList.toggle("attivo");
-        disegnaCampagna();
-      },
-    }, giorni);
-  });
 
   disegnaDestinatari(box, c);
-  disegnaContenutiCampagna(box, c);
+
+  const sezione = crea("section", { classe: "elenco-promo" }, box);
+  const titolo = crea("div", { classe: "titolo-sezione" }, sezione);
+  crea("h3", { testo: `Promozioni (${c.promozioni.length})` }, titolo);
+  crea("button", {
+    type: "button", classe: "leggero", testo: "+ Nuova promozione",
+    onclick: () => (confermaAbbandono() ? apriNuovaPromozione({}) : null),
+  }, titolo);
+  if (!c.id) crea("p", { classe: "vuoto", testo: "Salva la campagna, poi aggiungi le sue promozioni (o seleziona le immagini nella libreria)." }, sezione);
+  else if (!c.promozioni.length) crea("p", { classe: "vuoto", testo: "Nessuna promozione: seleziona le immagini nella libreria e scegli «Nuova promozione con queste immagini»." }, sezione);
+  const contenuti = perId(S.contenuti);
+  for (const p of c.promozioni) {
+    const info = STATI[p.stato] || STATI.bozza;
+    const scheda = crea("button", { type: "button", classe: `scheda-promo ${info.classe}`, onclick: () => apriPromozione(c.id, p.id) }, sezione);
+    const anteprime = crea("div", { classe: "anteprime" }, scheda);
+    for (const id of p.contenuti.slice(0, 4)) if (contenuti.has(id)) anteprime.appendChild(anteprima(contenuti.get(id)));
+    if (!p.contenuti.length) crea("span", { classe: "senza", testo: "nessuna immagine" }, anteprime);
+    const testo = crea("div", { classe: "testo" }, scheda);
+    crea("strong", { testo: p.nome }, testo);
+    crea("span", { testo: periodo(p) }, testo);
+    const vert = p.contenuti.filter((id) => contenuti.get(id)?.orientamento === "verticale").length;
+    const oriz = p.contenuti.filter((id) => contenuti.get(id)?.orientamento === "orizzontale").length;
+    crea("span", { classe: "numeri", testo: `${vert} totem · ${oriz} monitor` }, testo);
+    crea("span", { classe: `stato ${info.classe}`, testo: info.testo }, scheda);
+  }
 
   const piede = crea("div", { classe: "piede-campagna" }, box);
-  crea("button", { type: "button", id: "salva-campagna", classe: `primario grande${S.modificata ? " pulsa" : ""}`, testo: c.id ? "Salva le modifiche" : "Crea la campagna", onclick: salvaCampagna }, piede);
+  crea("button", { type: "button", classe: `primario grande${S.modificata ? " pulsa" : ""}`, testo: c.id ? "Salva la campagna" : "Crea la campagna", onclick: salvaCampagna }, piede);
   if (c.id) {
     crea("button", {
       type: "button", classe: "pericolo", testo: "Elimina",
       onclick: async () => {
-        if (!confirm(`Eliminare la campagna «${c.nome}»? I contenuti restano nella libreria.`)) return;
+        if (!confirm(`Eliminare la campagna «${c.nome}» con tutte le sue ${c.promozioni.length} promozioni? Le immagini restano nella libreria.`)) return;
         try {
           await api("DELETE", `/api/campagne/${c.id}/`);
           S.campagna = null;
@@ -618,20 +756,12 @@ function disegnaCampagna() {
       },
     }, piede);
   }
-  crea("button", {
-    type: "button", classe: "leggero", testo: "Chiudi",
-    onclick: () => {
-      if (S.modificata && !confirm("Le modifiche non salvate andranno perse. Chiudere?")) return;
-      S.campagna = null;
-      S.modificata = false;
-      disegna();
-    },
-  }, piede);
+  crea("button", { type: "button", classe: "leggero", testo: "Chiudi", onclick: chiudi }, piede);
 }
 
 function disegnaDestinatari(box, c) {
   const sezione = crea("section", { classe: "destinatari" }, box);
-  crea("h3", { testo: "Dove va in onda" }, sezione);
+  crea("h3", { testo: "Dove vanno in onda le sue promozioni" }, sezione);
 
   const chips = (titolo, voci, campo, aiuto) => {
     if (!voci.length) return;
@@ -644,7 +774,7 @@ function disegnaDestinatari(box, c) {
       chip.addEventListener("click", () => {
         c[campo] = attivo ? c[campo].filter((x) => x !== v.id) : [...c[campo], v.id];
         segnaModificata();
-        disegnaCampagna();
+        disegnaPannello();
       });
     }
   };
@@ -655,8 +785,8 @@ function disegnaDestinatari(box, c) {
   for (const [orientamento, titolo] of [["verticale", "Totem"], ["orizzontale", "Monitor"]]) {
     const elenco = S.monitor.filter((m) => m.orientamento === orientamento);
     if (!elenco.length) continue;
-    const blocco = crea("details", { classe: "singoli", open: elenco.some((m) => c.monitor.includes(m.id)) }, sezione);
     const scelti = elenco.filter((m) => c.monitor.includes(m.id)).length;
+    const blocco = crea("details", { classe: "singoli", open: scelti > 0 }, sezione);
     crea("summary", { testo: `${titolo} singoli${scelti ? ` · ${scelti} scelti` : ""}` }, blocco);
     const lista = crea("div", { classe: "lista-schermi" }, blocco);
     for (const m of elenco) {
@@ -666,7 +796,7 @@ function disegnaDestinatari(box, c) {
         onchange: (e) => {
           c.monitor = e.target.checked ? [...c.monitor, m.id] : c.monitor.filter((x) => x !== m.id);
           segnaModificata();
-          disegnaCampagna();
+          disegnaPannello();
         },
       }, voce);
       crea("span", { classe: `led${m.online ? " acceso" : ""}`, title: m.online ? "In linea" : "Non in linea" }, voce);
@@ -675,36 +805,112 @@ function disegnaDestinatari(box, c) {
     }
   }
 
-  // Riepilogo: quanti schermi e quanti contenuti per ciascuno.
   const raggiunti = destinatari(c);
   const totem = raggiunti.filter((m) => m.orientamento === "verticale").length;
-  const monitor = raggiunti.length - totem;
+  const riepilogo = crea("div", { classe: `riepilogo${raggiunti.length ? "" : " attenzione"}` }, sezione);
+  const sceltiQualcosa = c.insegne.length || c.gruppi.length || c.monitor.length;
+  riepilogo.textContent = raggiunti.length
+    ? `Raggiunge ${totem} totem e ${raggiunti.length - totem} monitor.`
+    : sceltiQualcosa
+      ? "Le insegne o i gruppi scelti non comprendono ancora nessuno schermo: assegna sedi e gruppi ai monitor nel pannello."
+      : "Nessuno schermo scelto: le promozioni restano in bozza e non vanno in onda.";
+}
+
+function disegnaPromozione(box) {
+  const c = S.campagna;
+  const p = S.promozione;
+  const torna = crea("button", { type: "button", classe: "torna", onclick: () => { if (confermaAbbandono()) { S.promozione = null; S.modificata = false; disegna(); } } }, box);
+  crea("span", { testo: "←" }, torna);
+  crea("span", { classe: "pallino", style: `background:${c.colore}` }, torna);
+  torna.append(` Campagna «${c.nome || "nuova"}»`);
+
+  const stato = STATI[p.stato] || STATI.bozza;
+  const intestazione = crea("div", { classe: "intestazione" }, box);
+  crea("span", { classe: "tipo", testo: "Promozione" }, intestazione);
+  crea("span", { classe: `stato ${stato.classe}`, testo: p.id ? stato.testo : "Nuova" }, intestazione);
+
+  const campi = crea("div", { classe: "campi" }, box);
+  const nome = campoIn(campi, "Nome della promozione", crea("input", { id: "nome-promozione", value: p.nome, placeholder: "es. Volantino 6-19 ottobre", maxLength: 200 }), "largo");
+  nome.addEventListener("input", () => { p.nome = nome.value; segnaModificata(); });
+  const dal = campoIn(campi, "Dal", crea("input", { type: "date", value: p.data_inizio || "", required: true }));
+  dal.addEventListener("change", () => { p.data_inizio = dal.value || null; segnaModificata(); });
+  const al = campoIn(campi, "Al (compreso)", crea("input", { type: "date", value: p.data_fine || "", required: true }));
+  al.addEventListener("change", () => { p.data_fine = al.value || null; segnaModificata(); });
+
+  const avanzate = crea("details", { classe: "avanzate", open: Boolean(p.ora_inizio || p.ora_fine || p.giorni.length) }, box);
+  crea("summary", { testo: "Solo in certe ore o certi giorni" }, avanzate);
+  const griglia = crea("div", { classe: "campi" }, avanzate);
+  const dalle = campoIn(griglia, "Dalle", crea("input", { type: "time", value: p.ora_inizio?.slice(0, 5) || "" }));
+  dalle.addEventListener("change", () => { p.ora_inizio = dalle.value || null; segnaModificata(); });
+  const alle = campoIn(griglia, "Alle", crea("input", { type: "time", value: p.ora_fine?.slice(0, 5) || "" }));
+  alle.addEventListener("change", () => { p.ora_fine = alle.value || null; segnaModificata(); });
+  const giorni = crea("div", { classe: "giorni" }, avanzate);
+  crea("span", { testo: "Giorni (nessuno = tutti)" }, giorni);
+  GIORNI.forEach((g, i) => {
+    const attivo = p.giorni.includes(i);
+    crea("button", {
+      type: "button", classe: `chip${attivo ? " attivo" : ""}`, testo: g,
+      onclick: () => {
+        p.giorni = attivo ? p.giorni.filter((x) => x !== i) : [...p.giorni, i].sort();
+        segnaModificata();
+        disegnaPannello();
+      },
+    }, giorni);
+  });
+
+  disegnaContenutiPromozione(box, p);
+
+  // Riepilogo: chi riceve cosa, con gli avvisi se manca un formato.
   const contenuti = perId(S.contenuti);
-  const scelti = c.contenuti.map((id) => contenuti.get(id)).filter(Boolean);
+  const scelti = p.contenuti.map((id) => contenuti.get(id)).filter(Boolean);
   const vert = scelti.filter((x) => x.orientamento === "verticale").length;
   const oriz = scelti.filter((x) => x.orientamento === "orizzontale").length;
   const altri = scelti.length - vert - oriz;
-  const riepilogo = crea("div", { classe: `riepilogo${raggiunti.length ? "" : " attenzione"}` }, sezione);
+  const raggiunti = destinatari(c);
+  const totem = raggiunti.filter((m) => m.orientamento === "verticale").length;
+  const monitor = raggiunti.length - totem;
+  const riepilogo = crea("div", { classe: `riepilogo${raggiunti.length ? "" : " attenzione"}` }, box);
   if (!raggiunti.length) {
-    riepilogo.textContent = "Nessuno schermo scelto: la campagna resta in bozza e non va in onda.";
-    return;
+    riepilogo.textContent = c.insegne.length || c.gruppi.length || c.monitor.length
+      ? "Le insegne o i gruppi della campagna non comprendono ancora nessuno schermo."
+      : "La campagna non ha destinatari: torna alla campagna e scegli insegne, gruppi o schermi.";
+  } else {
+    if (totem) crea("div", { testo: `${totem} totem mostrano ${vert + altri} immagini${vert + altri ? "" : " — mancano immagini verticali!"}`, classe: vert + altri ? "" : "manca" }, riepilogo);
+    if (monitor) crea("div", { testo: `${monitor} monitor mostrano ${oriz + altri} immagini${oriz + altri ? "" : " — mancano immagini orizzontali!"}`, classe: oriz + altri ? "" : "manca" }, riepilogo);
   }
-  const righe = [];
-  if (totem) righe.push(`${totem} totem ricevono ${vert + altri} contenuti${vert === 0 && altri === 0 ? " — mancano immagini verticali!" : ""}`);
-  if (monitor) righe.push(`${monitor} monitor ricevono ${oriz + altri} contenuti${oriz === 0 && altri === 0 ? " — mancano immagini orizzontali!" : ""}`);
-  for (const r of righe) crea("div", { testo: r, classe: r.includes("mancano") ? "manca" : "" }, riepilogo);
+
+  const piede = crea("div", { classe: "piede-campagna" }, box);
+  crea("button", { type: "button", classe: `primario grande${S.modificata ? " pulsa" : ""}`, testo: p.id ? "Salva la promozione" : "Crea la promozione", onclick: salvaPromozione }, piede);
+  if (p.id) {
+    crea("button", {
+      type: "button", classe: "pericolo", testo: "Elimina",
+      onclick: async () => {
+        if (!confirm(`Eliminare la promozione «${p.nome}»? Le immagini restano nella libreria.`)) return;
+        try {
+          await api("DELETE", `/api/promozioni/${p.id}/`);
+          S.promozione = null;
+          S.modificata = false;
+          avvisa("Promozione eliminata.", "ok");
+          await ricarica();
+        } catch (errore) {
+          avvisa(errore.message);
+        }
+      },
+    }, piede);
+  }
+  crea("button", { type: "button", classe: "leggero", testo: "Chiudi", onclick: chiudi }, piede);
 }
 
-function disegnaContenutiCampagna(box, c) {
+function disegnaContenutiPromozione(box, p) {
   const sezione = crea("section", { classe: "contenuti-campagna" }, box);
-  crea("h3", { testo: `Contenuti (${c.contenuti.length})` }, sezione);
-  if (!c.contenuti.length) {
-    crea("p", { classe: "vuoto", testo: "Seleziona i contenuti nella libreria e premi «Aggiungi», o usa il + su ogni immagine." }, sezione);
+  crea("h3", { testo: `Immagini (${p.contenuti.length})` }, sezione);
+  if (!p.contenuti.length) {
+    crea("p", { classe: "vuoto", testo: "Seleziona le immagini nella libreria e premi «Aggiungi», o usa il + su ognuna." }, sezione);
     return;
   }
   const contenuti = perId(S.contenuti);
   for (const [chiave, titolo] of [["verticale", "Totem"], ["orizzontale", "Monitor"], ["altro", "Tutti"]]) {
-    const ids = c.contenuti.filter((id) => contenuti.has(id) && orientamentoDi(contenuti.get(id)) === chiave);
+    const ids = p.contenuti.filter((id) => contenuti.has(id) && orientamentoDi(contenuti.get(id)) === chiave);
     if (!ids.length) continue;
     crea("div", { classe: "titolo-striscia", testo: `${titolo} · ${ids.length}` }, sezione);
     const striscia = crea("div", { classe: `striscia ${chiave}` }, sezione);
@@ -713,7 +919,7 @@ function disegnaContenutiCampagna(box, c) {
       const voce = crea("div", { classe: "voce", draggable: true, title: `${x.nome} — trascina per cambiare l'ordine` }, striscia);
       voce.appendChild(anteprima(x));
       crea("span", { classe: "posizione", testo: String(posizione + 1) }, voce);
-      crea("button", { type: "button", classe: "togli", title: "Togli", testo: "✕", onclick: () => togliDallaCampagna(id) }, voce);
+      crea("button", { type: "button", classe: "togli", title: "Togli", testo: "✕", onclick: () => togliDallaPromozione(id) }, voce);
       voce.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/futurapro", id); voce.classList.add("trascinata"); });
       voce.addEventListener("dragend", () => voce.classList.remove("trascinata"));
       voce.addEventListener("dragover", (e) => { e.preventDefault(); voce.classList.add("bersaglio"); });
@@ -722,14 +928,22 @@ function disegnaContenutiCampagna(box, c) {
         e.preventDefault();
         const spostato = e.dataTransfer.getData("text/futurapro");
         if (!spostato || spostato === id) return;
-        const ordine = c.contenuti.filter((v) => v !== spostato);
+        const ordine = p.contenuti.filter((v) => v !== spostato);
         ordine.splice(ordine.indexOf(id), 0, spostato);
-        c.contenuti = ordine;
+        p.contenuti = ordine;
         segnaModificata();
-        disegnaCampagna();
+        disegnaPannello();
       });
     });
   }
+}
+
+function datiCampagna(c) {
+  return {
+    nome: c.nome.trim(), codice: c.codice || "", colore: c.colore, note: c.note || "",
+    priorita: c.priorita || 0, durata: c.durata || null,
+    insegne: c.insegne, gruppi: c.gruppi, monitor: c.monitor,
+  };
 }
 
 async function salvaCampagna() {
@@ -739,22 +953,51 @@ async function salvaCampagna() {
     document.getElementById("nome-campagna")?.focus();
     return;
   }
-  const dati = {
-    nome: c.nome.trim(), codice: c.codice || "", colore: c.colore, note: c.note || "",
-    data_inizio: c.data_inizio || null, data_fine: c.data_fine || null,
-    ora_inizio: c.ora_inizio || null, ora_fine: c.ora_fine || null, giorni: c.giorni,
-    priorita: c.priorita || 0, durata: c.durata || null,
-    insegne: c.insegne, gruppi: c.gruppi, monitor: c.monitor, contenuti: c.contenuti,
-  };
   try {
-    const salvata = c.id ? await api("PATCH", `/api/campagne/${c.id}/`, dati) : await api("POST", "/api/campagne/", dati);
+    const salvata = c.id ? await api("PATCH", `/api/campagne/${c.id}/`, datiCampagna(c)) : await api("POST", "/api/campagne/", datiCampagna(c));
     S.campagna = structuredClone(salvata);
+    S.modificata = false;
+    avvisa(c.id ? "Campagna salvata: le sue promozioni seguono i nuovi destinatari entro un minuto." : "Campagna creata: ora aggiungi le sue promozioni.", "ok");
+    await ricarica();
+  } catch (errore) {
+    avvisa(errore.message);
+  }
+}
+
+async function salvaPromozione() {
+  const c = S.campagna;
+  const p = S.promozione;
+  if (!p.nome.trim()) {
+    avvisa("Dai un nome alla promozione.");
+    document.getElementById("nome-promozione")?.focus();
+    return;
+  }
+  if (!p.data_inizio || !p.data_fine) {
+    avvisa("Indica le date di inizio e di fine della promozione.");
+    return;
+  }
+  try {
+    // Una campagna nuova si salva insieme alla sua prima promozione.
+    if (!c.id) {
+      if (!c.nome.trim()) {
+        avvisa("Dai un nome alla campagna.");
+        return;
+      }
+      const creata = await api("POST", "/api/campagne/", datiCampagna(c));
+      c.id = creata.id;
+    }
+    const dati = {
+      campagna: c.id, nome: p.nome.trim(), data_inizio: p.data_inizio, data_fine: p.data_fine,
+      ora_inizio: p.ora_inizio || null, ora_fine: p.ora_fine || null, giorni: p.giorni, contenuti: p.contenuti,
+    };
+    const salvata = p.id ? await api("PATCH", `/api/promozioni/${p.id}/`, dati) : await api("POST", "/api/promozioni/", dati);
+    S.promozione = structuredClone(salvata);
     S.modificata = false;
     const info = STATI[salvata.stato];
     avvisa(
       salvata.stato === "bozza"
-        ? "Campagna salvata come bozza: aggiungi contenuti e destinatari per mandarla in onda."
-        : `Campagna salvata · ${info.testo.toLowerCase()}. Gli schermi la ricevono entro un minuto.`,
+        ? "Promozione salvata come bozza: servono immagini e destinatari nella campagna per mandarla in onda."
+        : `Promozione salvata · ${info.testo.toLowerCase()}. Gli schermi la ricevono entro un minuto.`,
       "ok",
     );
     await ricarica();
@@ -785,12 +1028,14 @@ function sposta(passo) {
   disegnaCalendario();
 }
 
+const ALTEZZA_CORSIA = 40;
+
 function disegnaCalendario() {
   const box = document.getElementById("calendario");
   box.replaceChildren();
   const { inizio, fine, mesi, titolo } = intervalloCalendario();
   const testa = crea("header", {}, box);
-  crea("h2", { testo: "Calendario delle campagne" }, testa);
+  crea("h2", { testo: "Calendario delle promozioni" }, testa);
   const comandi = crea("div", { classe: "anno" }, testa);
   const viste = crea("div", { classe: "viste" }, comandi);
   for (const [vista, etichetta] of [["anno", "Anno"], ["trimestre", "3 mesi"]]) {
@@ -813,91 +1058,86 @@ function disegnaCalendario() {
 
   const giorni = (fine - inizio) / 86400000;
   const posizione = (d) => Math.min(100, Math.max(0, ((d - inizio) / 86400000 / giorni) * 100));
+  const inizioDi = (p) => (p.data_inizio ? new Date(`${p.data_inizio}T00:00:00`) : inizio);
+  const fineDi = (p) => (p.data_fine ? new Date(new Date(`${p.data_fine}T00:00:00`).getTime() + 86400000) : fine);
 
   const tela = crea("div", { classe: `tela vista-${S.vista}` }, box);
   const intestazioneMesi = crea("div", { classe: "mesi" }, tela);
   intestazioneMesi.style.gridTemplateColumns = `repeat(${mesi.length}, 1fr)`;
   for (const m of mesi) crea("span", { testo: S.vista === "trimestre" ? m.toLocaleDateString("it-IT", { month: "long", year: "numeric" }) : MESI[m.getMonth()] }, intestazioneMesi);
 
-  const visibili = S.campagne
-    .filter((c) => c.data_inizio || c.data_fine)
-    .filter((c) => {
-      const i = c.data_inizio ? new Date(`${c.data_inizio}T00:00:00`) : inizio;
-      const f = c.data_fine ? new Date(`${c.data_fine}T23:59:59`) : fine;
-      return i < fine && f >= inizio;
-    })
-    .sort((a, b) => (a.data_inizio || "").localeCompare(b.data_inizio || ""));
-
-  const righe = crea("div", { classe: "righe" }, tela);
-  righe.style.backgroundSize = `calc(100% / ${mesi.length}) 100%`;
-  if (!visibili.length) crea("p", { classe: "vuoto", testo: `Nessuna campagna in questo periodo. Creane una, o importale tutte da CSV.` }, righe);
-  // Le campagne si dispongono su corsie: una nuova corsia solo se si sovrappongono.
-  // Le barre strette hanno il nome accanto, che occupa spazio anche lui.
-  const spazioNome = (giorni * 0.16) * 86400000;
-  const corsie = [];
-  for (const c of visibili) {
-    const i = c.data_inizio ? new Date(`${c.data_inizio}T00:00:00`) : inizio;
-    const f = c.data_fine ? new Date(new Date(`${c.data_fine}T00:00:00`).getTime() + 86400000) : fine;
-    const sinistra = posizione(i);
-    const larghezza = Math.max(0.6, posizione(f) - sinistra);
-    const stretta = larghezza < 12;
-    const occupa = stretta ? new Date(Math.max(f, i.getTime() + spazioNome)) : f;
-    let corsia = corsie.findIndex((termine) => termine <= i);
-    if (corsia === -1) { corsia = corsie.length; corsie.push(occupa); } else corsie[corsia] = occupa;
-    const barra = crea("button", {
-      type: "button", classe: `barra-campagna ${STATI[c.stato]?.classe || ""}${S.campagna?.id === c.id ? " aperta" : ""}`,
-      title: `${c.nome}\n${periodo(c)}\n${STATI[c.stato]?.testo || ""} · ${c.contenuti.length} contenuti`,
-      onclick: () => apriCampagna(c.id),
-    }, righe);
-    Object.assign(barra.style, { left: `${sinistra}%`, width: `${larghezza}%`, top: `${corsia * 40}px` });
-    barra.style.setProperty("--colore", c.colore);
-    if (stretta) {
-      crea("span", { classe: "numeri", testo: `${c.contenuti.length}` }, barra);
-      const etichetta = crea("button", { type: "button", classe: "nome-accanto", testo: c.nome, onclick: () => apriCampagna(c.id) }, righe);
-      // Verso il bordo destro il nome va a sinistra della barra, per non uscire dal calendario.
-      if (sinistra + larghezza > 78) {
-        Object.assign(etichetta.style, { right: `calc(${100 - sinistra}% + 6px)`, top: `${corsia * 40}px`, textAlign: "right" });
+  // Una fascia per campagna; dentro, le sue promozioni su corsie se si sovrappongono.
+  const spazioNome = giorni * 0.16 * 86400000;
+  let fasce = 0;
+  for (const campagna of S.campagne) {
+    const visibili = campagna.promozioni
+      .filter((p) => inizioDi(p) < fine && fineDi(p) > inizio)
+      .sort((a, b) => (a.data_inizio || "").localeCompare(b.data_inizio || ""));
+    if (!visibili.length) continue;
+    fasce += 1;
+    const fascia = crea("div", { classe: `fascia${S.campagna?.id === campagna.id ? " aperta" : ""}` }, tela);
+    const etichetta = crea("button", { type: "button", classe: "etichetta-fascia", onclick: () => apriCampagna(campagna.id) }, fascia);
+    crea("span", { classe: "pallino", style: `background:${campagna.colore}` }, etichetta);
+    crea("span", { testo: campagna.nome }, etichetta);
+    const righe = crea("div", { classe: "righe" }, fascia);
+    righe.style.backgroundSize = `calc(100% / ${mesi.length}) 100%`;
+    const corsie = [];
+    for (const p of visibili) {
+      const i = inizioDi(p);
+      const f = fineDi(p);
+      const sinistra = posizione(i);
+      const larghezza = Math.max(0.6, posizione(f) - sinistra);
+      const stretta = larghezza < 12;
+      const occupa = stretta ? new Date(Math.max(f, i.getTime() + spazioNome)) : f;
+      let corsia = corsie.findIndex((termine) => termine <= i);
+      if (corsia === -1) { corsia = corsie.length; corsie.push(occupa); } else corsie[corsia] = occupa;
+      const barra = crea("button", {
+        type: "button", classe: `barra-campagna ${STATI[p.stato]?.classe || ""}${S.promozione?.id === p.id ? " aperta" : ""}`,
+        title: `${campagna.nome} · ${p.nome}\n${periodo(p)}\n${STATI[p.stato]?.testo || ""} · ${p.contenuti.length} immagini`,
+        onclick: () => apriPromozione(campagna.id, p.id),
+      }, righe);
+      Object.assign(barra.style, { left: `${sinistra}%`, width: `${larghezza}%`, top: `${corsia * ALTEZZA_CORSIA}px` });
+      barra.style.setProperty("--colore", campagna.colore);
+      if (stretta) {
+        crea("span", { classe: "numeri", testo: String(p.contenuti.length) }, barra);
+        const nome = crea("button", { type: "button", classe: "nome-accanto", testo: p.nome, onclick: () => apriPromozione(campagna.id, p.id) }, righe);
+        // Verso il bordo destro il nome va a sinistra della barra, per non uscire dal calendario.
+        if (sinistra + larghezza > 78) Object.assign(nome.style, { right: `calc(${100 - sinistra}% + 6px)`, top: `${corsia * ALTEZZA_CORSIA}px`, textAlign: "right" });
+        else Object.assign(nome.style, { left: `calc(${sinistra + larghezza}% + 6px)`, top: `${corsia * ALTEZZA_CORSIA}px` });
       } else {
-        Object.assign(etichetta.style, { left: `calc(${sinistra + larghezza}% + 6px)`, top: `${corsia * 40}px` });
+        crea("span", { classe: "nome", testo: p.nome }, barra);
+        crea("span", { classe: "numeri", testo: String(p.contenuti.length) }, barra);
       }
-    } else {
-      crea("span", { classe: "nome", testo: c.nome }, barra);
-      crea("span", { classe: "numeri", testo: `${c.contenuti.length}` }, barra);
     }
+    righe.style.height = `${corsie.length * ALTEZZA_CORSIA + 4}px`;
   }
-  righe.style.height = `${Math.max(1, corsie.length) * 40 + 8}px`;
+  if (!fasce) crea("p", { classe: "vuoto vuoto-calendario", testo: "Nessuna promozione in questo periodo. Creane una, o importale tutte da CSV." }, tela);
 
   const adesso = new Date();
   if (adesso >= inizio && adesso < fine) {
     const linea = crea("div", { classe: "oggi", title: "Oggi" }, tela);
-    linea.style.left = `${posizione(adesso)}%`;
-  }
-
-  const senzaDate = S.campagne.filter((c) => !c.data_inizio && !c.data_fine);
-  if (senzaDate.length) {
-    const altre = crea("div", { classe: "senza-date" }, box);
-    crea("span", { testo: "Senza date:" }, altre);
-    for (const c of senzaDate) crea("button", { type: "button", classe: "chip", testo: c.nome, onclick: () => apriCampagna(c.id) }, altre);
+    linea.style.left = `calc(var(--colonna-nomi) + (100% - var(--colonna-nomi)) * ${posizione(adesso) / 100})`;
   }
 }
 
 // --- Importazione CSV ----------------------------------------------------------------------------
 
 const TRACCIATO = [
-  ["nome", "obbligatoria", "Nome della campagna: se esiste già, viene aggiornata"],
-  ["codice", "", "Riferimento interno, es. numero del volantino"],
+  ["campagna", "obbligatoria", "Nome della campagna: le righe con lo stesso nome finiscono nella stessa campagna"],
+  ["promozione", "obbligatoria", "Nome della promozione: se esiste già nella campagna, viene aggiornata"],
   ["data_inizio", "obbligatoria", "gg/mm/aaaa"],
   ["data_fine", "obbligatoria", "gg/mm/aaaa (compresa)"],
-  ["insegne", "", "Nomi delle insegne separati da | (es. Tocal|Tocal Express)"],
-  ["gruppi", "", "Nomi dei gruppi di schermi separati da |"],
-  ["monitor", "", "Nomi di singoli monitor o totem separati da |"],
-  ["ora_inizio", "", "hh:mm, se va in onda solo in una fascia"],
+  ["insegne", "", "Della campagna: nomi delle insegne separati da | (es. Tocal|Tocal Express)"],
+  ["gruppi", "", "Della campagna: nomi dei gruppi di schermi separati da |"],
+  ["monitor", "", "Della campagna: nomi di singoli monitor o totem separati da |"],
+  ["ora_inizio", "", "hh:mm, se la promozione va in onda solo in una fascia"],
   ["ora_fine", "", "hh:mm"],
   ["giorni", "", "lun|mar|mer|gio|ven|sab|dom — vuoto: tutti"],
-  ["priorita", "", "Numero da -100 a 100: la più alta vince sulle altre nello stesso periodo"],
-  ["durata", "", "Secondi per immagine (vuoto: 10)"],
-  ["colore", "", "Colore nel calendario, es. #ec6a1f"],
-  ["note", "", "Testo libero"],
+  ["priorita", "", "Della campagna: da -100 a 100, la più alta vince sulle altre nello stesso periodo"],
+  ["durata", "", "Della campagna: secondi per immagine (vuoto: 10)"],
+  ["colore", "", "Della campagna: colore nel calendario, es. #ec6a1f"],
+  ["codice", "", "Della campagna: riferimento interno"],
+  ["note", "", "Della campagna: testo libero"],
 ];
 
 function preparaImportazione() {
@@ -913,17 +1153,18 @@ function preparaImportazione() {
     crea("td", { testo: obbligo }, r);
     crea("td", { testo: spiegazione }, r);
   }
-  crea("p", { classe: "nota", testo: "Separatore: punto e virgola (Excel italiano) o virgola. Prima riga: i nomi delle colonne. Insegne, gruppi e monitor devono esistere già." }, tracciato);
+  crea("p", { classe: "nota", testo: "Una riga per promozione. Separatore: punto e virgola (Excel italiano) o virgola. Prima riga: i nomi delle colonne. Insegne, gruppi e monitor devono esistere già; quelli delle righe di una stessa campagna si sommano." }, tracciato);
 
   document.getElementById("apri-importa").addEventListener("click", () => {
     fileCsv.value = "";
     esito.replaceChildren();
     conferma.disabled = true;
+    conferma.textContent = "Importa";
     finestra.showModal();
   });
   document.getElementById("scarica-modello").href = conCliente("/api/campagne/modello/");
 
-  const invia = async (prova) => {
+  const invia_ = async (prova) => {
     const dati = new FormData();
     dati.append("file", fileCsv.files[0]);
     if (prova) dati.append("prova", "1");
@@ -940,12 +1181,12 @@ function preparaImportazione() {
     conferma.disabled = true;
     if (!fileCsv.files[0]) return;
     try {
-      const risposta = await invia(true);
+      const risposta = await invia_(true);
       mostraEsito(esito, risposta);
       const nuove = risposta.righe.filter((r) => r.azione === "crea").length;
       const aggiornate = risposta.righe.filter((r) => r.azione === "aggiorna").length;
       conferma.disabled = !risposta.valido;
-      conferma.textContent = risposta.valido ? `Importa: ${nuove} nuove, ${aggiornate} aggiornate` : "Correggi gli errori e riprova";
+      conferma.textContent = risposta.valido ? `Importa: ${nuove} promozioni nuove, ${aggiornate} aggiornate` : "Correggi gli errori e riprova";
     } catch (errore) {
       crea("p", { classe: "errore", testo: errore.message }, esito);
     }
@@ -954,9 +1195,9 @@ function preparaImportazione() {
   conferma.addEventListener("click", async () => {
     conferma.disabled = true;
     try {
-      const risposta = await invia(false);
+      const risposta = await invia_(false);
       finestra.close();
-      avvisa(`${risposta.salvate} campagne importate. Ora aggiungi i contenuti a ciascuna, quando sono pronti.`, "ok");
+      avvisa(`${risposta.salvate} promozioni importate in ${risposta.campagne} campagne. Ora aggiungi le immagini a ciascuna, quando sono pronte.`, "ok");
       await ricarica();
     } catch (errore) {
       crea("p", { classe: "errore", testo: errore.message }, esito);
@@ -969,18 +1210,19 @@ function mostraEsito(box, risposta) {
   const errori = risposta.righe.filter((r) => r.errori.length).length;
   crea("p", {
     classe: errori ? "errore" : "ok",
-    testo: errori ? `${errori} righe con errori: nessuna campagna verrà salvata finché non le correggi.` : `${risposta.righe.length} righe corrette.`,
+    testo: errori ? `${errori} righe con errori: non verrà salvato nulla finché non le correggi.` : `${risposta.righe.length} righe corrette.`,
   }, box);
   const t = crea("table", { classe: "esito" }, box);
   const testa = crea("tr", {}, crea("thead", {}, t));
-  for (const h of ["Riga", "Campagna", "Periodo", "Destinatari", "Esito"]) crea("th", { testo: h }, testa);
+  for (const h of ["Riga", "Campagna", "Promozione", "Periodo", "Destinatari", "Esito"]) crea("th", { testo: h }, testa);
   const corpo = crea("tbody", {}, t);
   for (const r of risposta.righe) {
     const tr = crea("tr", { classe: r.errori.length ? "con-errori" : "" }, corpo);
     crea("td", { testo: String(r.riga) }, tr);
-    crea("td", { testo: r.nome }, tr);
+    crea("td", { testo: `${r.campagna}${r.campagna_nuova ? " (nuova)" : ""}` }, tr);
+    crea("td", { testo: r.promozione }, tr);
     crea("td", { testo: r.data_inizio ? `${data(r.data_inizio)} → ${data(r.data_fine)}` : "" }, tr);
-    crea("td", { testo: [...(r.insegne || []), ...(r.gruppi || []), ...(r.monitor || [])].join(", ") || (r.errori.length ? "" : "— (bozza)") }, tr);
+    crea("td", { testo: [...(r.insegne || []), ...(r.gruppi || []), ...(r.monitor || [])].join(", ") }, tr);
     crea("td", { testo: r.errori.length ? r.errori.join("; ") : r.azione === "crea" ? "Nuova" : "Aggiorna" }, tr);
   }
 }
@@ -1018,7 +1260,6 @@ async function avvia() {
   preparaCaricamento();
   preparaImportazione();
   document.getElementById("cerca").addEventListener("input", (e) => { S.cerca = e.target.value; disegnaLibreria(); });
-  document.getElementById("solo-liberi").addEventListener("change", (e) => { S.soloLiberi = e.target.checked; disegnaLibreria(); });
   window.addEventListener("beforeunload", (e) => { if (S.modificata) e.preventDefault(); });
   try {
     await caricaTutto();

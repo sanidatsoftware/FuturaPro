@@ -1,5 +1,9 @@
 [hidden] { display: none !important; }
-:root { --fondo: #eef1f5; --carta: #fff; --testo: #1d2330; --tenue: #5d6675; --linea: #d3d8e0; --primario: #1f4e79; --errore: #c62828; --ok: #1e8e3e; }
+:root { --fondo: #eef1f5; --carta: #fff; --testo: #1d2330; --tenue: #5d6675; --linea: #d3d8e0; --primario: #1f4e79; --errore: #c62828; --ok: #1e8e3e; --campo: #fff; --errore-tenue: #fdecea; --ok-tenue: #e6f4ea; color-scheme: light; }
+/* Tema scuro: scelto nella pagina «Aspetto interfaccia», oppure automatico con il sistema in modalità scura */
+:root[data-tema="scuro"] { --fondo: #0f1524; --carta: #182033; --testo: #e6eaf2; --tenue: #9aa5b8; --linea: #2b3448; --primario: #4c8dff; --errore: #ff8a80; --ok: #5fd38d; --campo: #0f1524; --errore-tenue: rgba(239, 83, 80, .14); --ok-tenue: rgba(47, 191, 113, .14); color-scheme: dark; }
+@media (prefers-color-scheme: dark) { :root[data-tema="auto"] { --fondo: #0f1524; --carta: #182033; --testo: #e6eaf2; --tenue: #9aa5b8; --linea: #2b3448; --primario: #4c8dff; --errore: #ff8a80; --ok: #5fd38d; --campo: #0f1524; --errore-tenue: rgba(239, 83, 80, .14); --ok-tenue: rgba(47, 191, 113, .14); color-scheme: dark; } }
+
 * { box-sizing: border-box; }
 body { margin: 0; font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif; background: var(--fondo); color: var(--testo); font-size: 15px; }
 button, input, select, textarea { font: inherit; }
@@ -7,7 +11,7 @@ button { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--linea); 
 button.primario { background: var(--primario); border-color: var(--primario); color: #fff; }
 button.pericolo { color: var(--errore); border-color: var(--errore); }
 button.piccolo { padding: 2px 8px; font-size: 12px; }
-input, select { padding: 6px 8px; border: 1px solid var(--linea); border-radius: 6px; background: #fff; }
+input, select { padding: 6px 8px; border: 1px solid var(--linea); border-radius: 6px; background: var(--campo); color: var(--testo); }
 input[type="color"] { width: 40px; height: 32px; padding: 2px; }
 input.corto { width: 70px; }
 input.link { width: 100%; font-size: 12px; margin: 2px 0; }
@@ -25,8 +29,8 @@ input.link { width: 100%; font-size: 12px; margin: 2px 0; }
 .schede .scheda.attiva { border-bottom-color: var(--primario); font-weight: 600; }
 
 .messaggio { margin: 12px 16px 0; padding: 10px 12px; border-radius: 8px; }
-.messaggio.errore { background: #fdecea; color: var(--errore); }
-.messaggio.ok { background: #e6f4ea; color: var(--ok); }
+.messaggio.errore { background: var(--errore-tenue); color: var(--errore); }
+.messaggio.ok { background: var(--ok-tenue); color: var(--ok); }
 
 .contenuto { padding: 16px; display: flex; flex-direction: column; gap: 16px; max-width: 1400px; }
 .riquadro { background: var(--carta); border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0, 0, 0, .08); overflow-x: auto; }
@@ -59,3 +63,17 @@ td.attenzione { color: var(--errore); font-weight: 600; cursor: help; }
 
 .pallino { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; }
 .anteprima-logo { max-height: 70px; max-width: 220px; object-fit: contain; margin: 0 16px 10px 0; padding: 6px; border: 1px solid var(--linea); border-radius: 8px; background: #fff; }
+
+/* Aspetto interfaccia: le tre scelte del tema */
+.temi { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-top: 8px; }
+.tema { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; border: 2px solid var(--linea); background: var(--carta); text-align: left; margin: 0; }
+.tema.scelto { border-color: var(--primario); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primario) 25%, transparent); }
+.tema strong { font-size: 15px; color: var(--testo); }
+.tema span { font-size: 12.5px; color: var(--tenue); }
+.provino { height: 90px; border-radius: 8px; overflow: hidden; display: grid; grid-template-rows: 18px 1fr; border: 1px solid var(--linea); }
+.provino .t { background: #1f4e79; }
+.provino .c { display: grid; grid-template-columns: 2fr 1fr; gap: 6px; padding: 6px; }
+.provino .c i { border-radius: 4px; }
+.provino.chiaro .c { background: #eef1f5; } .provino.chiaro .c i { background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+.provino.scuro .c { background: #0f1524; } .provino.scuro .c i { background: #222c42; }
+.provino.auto .c { background: linear-gradient(90deg, #eef1f5 50%, #0f1524 50%); } .provino.auto .c i:first-child { background: #fff; } .provino.auto .c i:last-child { background: #222c42; }
