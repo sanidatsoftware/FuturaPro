@@ -76,7 +76,12 @@
       <label class="pulsante">oppure scegli un file .m3u<input type="file" id="file-m3u" accept=".m3u,.m3u8,audio/x-mpegurl,application/vnd.apple.mpegurl" hidden></label>
       <button type="button" id="leggi-m3u" class="primario">Leggi la lista</button>
     </div>
-    <p class="nota">Una raccolta pubblica di canali che si trasmettono liberamente su internet è il progetto iptv-org (es. per l'Italia <code>https://iptv-org.github.io/iptv/countries/it.m3u</code>): gli indirizzi cambiano spesso, rileggi la lista quando un canale smette di funzionare.</p>
+    <div class="suggerimenti-liste">
+      <span class="nota">Liste pubbliche di canali trasmessi liberamente su internet (un clic per usarle):</span>
+      <button type="button" class="chip suggerimento" data-url="https://iptv-org.github.io/iptv/countries/it.m3u" data-aiuto="Progetto iptv-org: i canali italiani.">iptv-org · Italia</button>
+      <button type="button" class="chip suggerimento" data-url="https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8" data-aiuto="Progetto Free-TV: canali gratuiti di molti paesi, divisi per categoria.">Free-TV · tutti i paesi</button>
+    </div>
+    <p class="nota">Gli indirizzi dei canali cambiano spesso: rileggi la lista quando un canale smette di funzionare.</p>
     <details class="manuale-diretta"><summary>Oppure aggiungi un solo canale a mano</summary>
       <div class="campi">
         <label class="campo">Nome<input id="nome-diretta" placeholder="es. Canale aziendale"></label>

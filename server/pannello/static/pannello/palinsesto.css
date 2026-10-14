@@ -463,3 +463,4 @@ code { background: var(--carta-forte); padding: 1px 6px; border-radius: 5px; }
 .testi-canale small { font-size: 11px; color: var(--tenue); }
 .conferma-legale { display: flex; gap: 8px; align-items: flex-start; margin-top: 14px; font-size: 14px; font-weight: 600; }
 @media (max-width: 700px) { .schede-dirette { grid-template-columns: 1fr; } }
+.suggerimenti-liste { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }

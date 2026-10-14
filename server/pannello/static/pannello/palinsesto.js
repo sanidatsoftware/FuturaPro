@@ -1647,6 +1647,12 @@ function preparaDirette() {
       elenco.replaceChildren(crea("p", { classe: "errore", testo: errore.message }));
     }
   };
+  for (const suggerimento of document.querySelectorAll(".suggerimento")) {
+    suggerimento.addEventListener("click", () => {
+      document.getElementById("url-m3u").value = suggerimento.dataset.url;
+      leggi({ url: suggerimento.dataset.url });
+    });
+  }
   document.getElementById("leggi-m3u").addEventListener("click", () => {
     const url = document.getElementById("url-m3u").value.trim();
     if (!url) { document.getElementById("url-m3u").focus(); return; }
