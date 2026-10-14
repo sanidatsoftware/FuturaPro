@@ -160,3 +160,75 @@ function disegnaListino(l) {
     }, "Listino eliminato."),
   }, fine);
 }
+
+// --- Messa in onda -----------------------------------------------------------------------------
+
+const RAGGRUPPA = [["campagna", "Campagna"], ["promozione", "Promozione"], ["fornitore", "Fornitore"], ["contenuto", "Contenuto (immagine o video)"], ["sede", "Negozio"], ["monitor", "Schermo"], ["giorno", "Giorno"]];
+const ore = (secondi) => (secondi >= 3600 ? `${Math.floor(secondi / 3600)} h ${Math.round((secondi % 3600) / 60)} min` : `${Math.round(secondi / 60)} min`);
+const isoData = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+export async function schedaMessaInOnda() {
+  const { crea, sezione, api } = H;
+  const f = H.stato.filtroOnda || (H.stato.filtroOnda = {
+    dal: isoData(new Date(Date.now() - 29 * 86400000)), al: isoData(new Date()), raggruppa: "campagna", campagna: "", fornitore: "", sede: "",
+  });
+  const query = new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
+  const [dati, sedi] = await Promise.all([api("GET", `/api/messa-in-onda/?${query}`), H.tutteLePagine("/api/sedi/")]);
+
+  const filtri = sezione("Messa in onda");
+  filtri.classList.add("non-stampare");
+  crea("p", {
+    classe: "nota",
+    testo: "Cosa è andato davvero sugli schermi, non solo cosa era programmato: ogni player annota ogni passaggio (anche senza rete, e lo manda appena può). "
+      + "Utile per i fornitori che pagano lo spazio: scegli il periodo e il fornitore, poi stampa o scarica il rapporto.",
+  }, filtri);
+  const riga = crea("div", { classe: "riga" }, filtri);
+  const dal = H.campo("Dal", crea("input", { type: "date", value: f.dal }), riga);
+  const al = H.campo("Al", crea("input", { type: "date", value: f.al }), riga);
+  const raggruppa = H.campo("Raggruppa per", H.scelta(RAGGRUPPA, f.raggruppa), riga);
+  const campagna = H.campo("Campagna", H.scelta([["", "Tutte"], ...dati.scelte.campagne.map((c) => [c.id, c.nome])], f.campagna), riga);
+  const fornitore = H.campo("Fornitore", H.scelta([["", "Tutti"], ...dati.scelte.fornitori.map((x) => [x, x])], f.fornitore), riga);
+  const sede = H.campo("Negozio", H.scelta([["", "Tutti"], ...sedi.map((x) => [x.id, x.nome])], f.sede), riga);
+  for (const [campo, controllo] of Object.entries({ dal, al, raggruppa, campagna, fornitore, sede })) {
+    controllo.addEventListener("change", () => { f[campo] = controllo.value; H.mostra("messa_in_onda"); });
+  }
+  const azioni = crea("div", { classe: "riga" }, filtri);
+  crea("a", { classe: "pulsante", testo: "Scarica per Excel (CSV)", href: H.conCliente(`/api/messa-in-onda/?${query}&formato=csv`) }, azioni);
+  crea("button", { testo: "🖨 Stampa o salva in PDF", onclick: () => window.print() }, azioni);
+
+  const rapporto = sezione("");
+  rapporto.classList.add("rapporto-stampa");
+  const intestazione = crea("div", { classe: "intestazione-rapporto" }, rapporto);
+  crea("h2", { testo: "Rapporto di messa in onda" }, intestazione);
+  const descrizione = [`Dal ${new Date(`${dati.dal}T00:00`).toLocaleDateString("it-IT")} al ${new Date(`${dati.al}T00:00`).toLocaleDateString("it-IT")}`];
+  if (f.fornitore) descrizione.push(`fornitore ${f.fornitore}`);
+  if (f.campagna) descrizione.push(`campagna ${dati.scelte.campagne.find((c) => c.id === f.campagna)?.nome || ""}`);
+  if (f.sede) descrizione.push(`negozio ${sedi.find((x) => x.id === f.sede)?.nome || ""}`);
+  crea("p", { classe: "tenue", testo: descrizione.join(" · ") }, intestazione);
+
+  const t = dati.totale;
+  const tessere = crea("div", { classe: "tessere-stato" }, rapporto);
+  for (const [valore, testo] of [[t.passaggi.toLocaleString("it-IT"), "passaggi"], [ore(t.secondi), "in onda in totale"], [String(t.negozi), "negozi"], [String(t.schermi), "schermi"], [String(t.giorni), "giorni"]]) {
+    const el = crea("div", { classe: "tessera ok" }, tessere);
+    crea("strong", { testo: valore }, el);
+    crea("span", { testo }, el);
+  }
+  if (!dati.righe.length) {
+    crea("p", { classe: "vuoto", testo: "Nessun passaggio nel periodo. Il registro parte dall'aggiornamento dei player: i giorni precedenti non ci sono." }, rapporto);
+    return;
+  }
+  const massimo = Math.max(...dati.righe.map((r) => r.secondi), 1);
+  const corpo = H.tabella([RAGGRUPPA.find(([k]) => k === dati.raggruppa)[1], "Passaggi", "In onda", "", "Negozi", "Schermi", "Giorni"], rapporto);
+  for (const r of dati.righe) {
+    const tr = crea("tr", {}, corpo);
+    crea("td", { testo: dati.raggruppa === "giorno" ? new Date(`${r.nome}T00:00`).toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" }) : r.nome }, tr);
+    crea("td", { testo: r.passaggi.toLocaleString("it-IT") }, tr);
+    crea("td", { testo: ore(r.secondi) }, tr);
+    const barra = crea("span", { classe: "barra-onda" }, crea("td", { classe: "cella-barra" }, tr));
+    barra.style.width = `${(r.secondi / massimo) * 100}%`;
+    crea("td", { testo: String(r.negozi) }, tr);
+    crea("td", { testo: String(r.schermi) }, tr);
+    crea("td", { testo: String(r.giorni) }, tr);
+  }
+  crea("p", { classe: "tenue", testo: `Generato il ${new Date().toLocaleString("it-IT")} da ${document.title.split("·").pop().trim() || "FuturaPro"}: dati registrati dagli schermi durante la messa in onda.` }, rapporto);
+}

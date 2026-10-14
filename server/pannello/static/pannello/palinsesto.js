@@ -687,7 +687,7 @@ function annoInCorso() {
 
 function nuovaCampagnaVuota(valori = {}) {
   return {
-    nome: "", ...annoInCorso(), codice: "", colore: "#ec6a1f", note: "", priorita: 0, durata: 10,
+    nome: "", ...annoInCorso(), codice: "", fornitore: "", colore: "#ec6a1f", note: "", priorita: 0, durata: 10,
     insegne: [], gruppi: [], monitor: [], promozioni: [], stato: "bozza", ...valori,
   };
 }
@@ -964,6 +964,8 @@ function disegnaCampagna(box) {
   priorita.addEventListener("change", () => { c.priorita = parseInt(priorita.value, 10) || 0; segnaModificata(); });
   const codice = campoIn(campi, "Codice", crea("input", { value: c.codice || "", placeholder: "es. V26", maxLength: 50 }), "", "Un riferimento interno libero.");
   codice.addEventListener("input", () => { c.codice = codice.value; segnaModificata(); });
+  const fornitore = campoIn(campi, "Fornitore / sponsor", crea("input", { value: c.fornitore || "", placeholder: "es. il marchio che paga lo spazio", maxLength: 120 }), "", "Facoltativo: chi paga lo spazio della campagna. I rapporti di messa in onda si possono fare per fornitore.");
+  fornitore.addEventListener("input", () => { c.fornitore = fornitore.value; segnaModificata(); });
   disegnaDestinatari(impostazioni, c);
   const piede = crea("div", { classe: "piede-campagna" }, impostazioni);
   pulsanteSalva(piede, c.id ? "Salva la campagna" : "Crea la campagna", salvaCampagna);
@@ -1217,7 +1219,7 @@ function disegnaContenutiPromozione(box, p) {
 function datiCampagna(c) {
   return {
     nome: c.nome.trim(), data_inizio: c.data_inizio || null, data_fine: c.data_fine || null,
-    codice: c.codice || "", colore: c.colore, note: c.note || "",
+    codice: c.codice || "", fornitore: c.fornitore || "", colore: c.colore, note: c.note || "",
     priorita: c.priorita || 0, durata: c.durata || null,
     insegne: c.insegne, gruppi: c.gruppi, monitor: c.monitor,
   };

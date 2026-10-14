@@ -248,6 +248,44 @@ async function inviaConfigCode(manifest, scarica) {
   await copiaAnnunciSulTotem(annunci, scarica);
 }
 
+// --- Registro di messa in onda ---------------------------------------------------------
+// Ogni passaggio si annota qui e resta in memoria anche se il player si riavvia; parte verso il
+// server a pacchetti. Senza rete si accumula (fino a 20.000 passaggi, poi si tengono i più recenti).
+
+const CHIAVE_PASSAGGI = "futurapro.passaggi";
+const MASSIMO_IN_CODA = 20000;
+let passaggi = (() => {
+  try {
+    return JSON.parse(memoria(CHIAVE_PASSAGGI) || "[]");
+  } catch {
+    return [];
+  }
+})();
+let salvataggio = null;
+
+function annota(passaggio) {
+  passaggi.push(passaggio);
+  if (passaggi.length > MASSIMO_IN_CODA) passaggi = passaggi.slice(-MASSIMO_IN_CODA);
+  clearTimeout(salvataggio);
+  salvataggio = setTimeout(() => memoria(CHIAVE_PASSAGGI, JSON.stringify(passaggi)), 2000);
+}
+
+async function inviaPassaggi(intestazioni) {
+  while (passaggi.length) {
+    const pacchetto = passaggi.slice(0, 2000);
+    try {
+      const risposta = await conLimite("/api/player/passaggi/", {
+        method: "POST", headers: { ...intestazioni, "Content-Type": "application/json" }, body: JSON.stringify({ passaggi: pacchetto }),
+      }, 30000);
+      if (!risposta.ok) return;
+    } catch {
+      return; // senza rete: restano in coda
+    }
+    passaggi = passaggi.slice(pacchetto.length);
+    memoria(CHIAVE_PASSAGGI, JSON.stringify(passaggi));
+  }
+}
+
 // Il registro del servizio code (biglietti e chiamate) va al server: tempi d'attesa e coda
 // sul telefono. Se il server non risponde si riprova: il servizio code tiene gli eventi.
 let inoltroInCorso = false;
@@ -367,6 +405,7 @@ async function avviaPlayer() {
   const motore = new Motore(radice, {
     file: (id, voce) => (voce ? fileConCache(id, voce, () => scaricaFile(voce)) : Promise.resolve(null)),
     annuncio: (voce) => fileConCache(voce.id, voce, () => scaricaAnnuncio(voce)),
+    annota,
     dati: (zonaId) =>
       conRiserva(zonaId, async () => {
         const zona = zonaDelManifest(motore.manifest, zonaId);
@@ -462,6 +501,7 @@ async function avviaPlayer() {
   setInterval(aggiorna, OGNI_MANIFEST);
   battito();
   setInterval(battito, OGNI_HEARTBEAT);
+  setInterval(() => inviaPassaggi(intestazioni), 2 * 60_000);
 
   // Fotografia dello schermo su richiesta del pannello.
   let scatto = false;

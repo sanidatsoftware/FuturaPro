@@ -4,7 +4,7 @@
 import { attivaAiuti } from "./aiuto.js";
 import { VOCI, clienteRicordato, disegnaMenu, ricordaCliente } from "./menu.js";
 import { preparaSchedeCode, schedaAttese, schedaTelefono } from "./schede-code.js";
-import { preparaSchedeContenuti, schedaListini } from "./schede-contenuti.js";
+import { preparaSchedeContenuti, schedaListini, schedaMessaInOnda } from "./schede-contenuti.js";
 import { preparaSchedeSchermi, schedaAccensione, schedaDownload, schedaStato } from "./schede-schermi.js";
 
 const stato = { io: null, cliente: null, clienti: [], scheda: null };
@@ -137,6 +137,7 @@ const SCHEDE = {
   stato: schedaStato,
   download: schedaDownload,
   listini: schedaListini,
+  messa_in_onda: schedaMessaInOnda,
   attese: schedaAttese,
   telefono: schedaTelefono,
   reparti: schedaReparti,

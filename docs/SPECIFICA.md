@@ -291,6 +291,17 @@ l'Administrator Assoluto, nella scheda «Aspetto interfaccia» (`/api/piattaform
   straordinari delle prossime 24 ore e tutti per due ore dopo «Scarica adesso». La velocità si
   rispetta leggendo i file a pezzi.
 
+### Registro di messa in onda
+
+Ogni zona slide annota cosa è rimasto sullo schermo e per quanto (contenuto, playlist o evento
+o riserva, inizio, secondi). Il player tiene i passaggi in memoria anche dopo un riavvio (fino a
+20.000) e li manda ogni 2 minuti a `POST /api/player/passaggi/`; il server li riassume per
+giorno, schermo, contenuto e promozione (`MessaInOnda`), risalendo da playlist a promozione,
+campagna e fornitore (campo «Fornitore / sponsor» della campagna) e conservando i nomi anche se
+poi vengono cancellati. `/api/messa-in-onda/` dà i rapporti per periodo, raggruppati per
+campagna, promozione, fornitore, contenuto, negozio, schermo o giorno, con filtri e
+`?formato=csv`; nel pannello si stampano o salvano in PDF.
+
 ### Listini prezzi (facoltativi)
 
 `/api/listini/`: tabelle di prodotti (prodotto, prezzo, unità, nota, evidenza, visibile) mostrate

@@ -200,3 +200,14 @@ a.pulsante { display: inline-block; padding: 6px 12px; border-radius: 8px; borde
 .andamento-attese { display: flex; align-items: flex-end; gap: 2px; height: 120px; padding: 6px 0; border-bottom: 1px solid var(--linea); }
 .andamento-attese .colonna { flex: 1; height: 100%; display: flex; align-items: flex-end; }
 .andamento-attese .colonna span { display: block; width: 100%; min-height: 2px; border-radius: 3px 3px 0 0; }
+
+/* Messa in onda */
+.cella-barra { width: 22%; }
+.barra-onda { display: block; height: 10px; border-radius: 99px; background: var(--primario); min-width: 2px; }
+.intestazione-rapporto h2 { margin-bottom: 2px; }
+@media print {
+  .barra, .schede, .messaggio, .non-stampare, #messaggio { display: none !important; }
+  body { background: #fff !important; }
+  .riquadro { box-shadow: none !important; border: 0 !important; }
+  .rapporto-stampa .tessera { break-inside: avoid; }
+}

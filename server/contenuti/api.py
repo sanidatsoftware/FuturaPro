@@ -23,8 +23,8 @@ from layout import fonti
 
 from . import palinsesto
 from .file import crea_miniatura, impronta_e_dimensione, misure_immagine, riconosci
-from . import campagne, dirette, listini
-from .models import Campagna, Contenuto, ElementoPlaylist, EventoStraordinario, Listino, Playlist, Promozione, Pubblicazione, Tipo, Uso
+from . import campagne, dirette, listini, messa_in_onda
+from .models import Campagna, Contenuto, ElementoPlaylist, EventoStraordinario, Listino, MessaInOnda, Playlist, Promozione, Pubblicazione, Tipo, Uso
 
 MB = 1024 * 1024
 
@@ -492,7 +492,7 @@ class CampagnaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Campagna
         fields = [
-            "id", "nome", "data_inizio", "data_fine", "codice", "colore", "note", "priorita", "durata",
+            "id", "nome", "data_inizio", "data_fine", "codice", "fornitore", "colore", "note", "priorita", "durata",
             "insegne", "gruppi", "monitor", "stato", "promozioni", "creata", "modificata",
         ]
         read_only_fields = ["creata", "modificata"]
@@ -1027,3 +1027,69 @@ class CaricaListinoView(APIView):
             listino.errore_fonte = ""
             listino.save(update_fields=["righe", "aggiornato_il", "errore_fonte", "modificato"])
         return Response({"righe": len(righe), "avvisi": avvisi})
+
+
+# --- Messa in onda ------------------------------------------------------------------
+
+
+class PassaggiPlayerView(VistaPlayer):
+    """Il player manda i passaggi (cosa ha mostrato, da quando e per quanto)."""
+
+    def post(self, request):
+        credenziale = credenziale_dalla_richiesta(request)
+        passaggi = request.data.get("passaggi")
+        if not isinstance(passaggi, list):
+            raise exceptions.ValidationError({"passaggi": "Elenco mancante."})
+        with contesto_cliente(credenziale.cliente_id):
+            monitor = Monitor.objects.select_related("sede").get(id=credenziale.monitor_id)
+            registrati = messa_in_onda.registra(monitor, passaggi)
+        return Response({"registrati": registrati})
+
+
+def righe_messa_in_onda(request):
+    """Le righe del registro secondo i filtri della richiesta (periodo, campagna, fornitore, negozio)."""
+    from datetime import date, timedelta
+
+    parametri = request.query_params if hasattr(request, "query_params") else request.GET
+    try:
+        al = date.fromisoformat(parametri.get("al") or timezone.localdate().isoformat())
+        dal = date.fromisoformat(parametri.get("dal") or (al - timedelta(days=29)).isoformat())
+    except ValueError:
+        raise exceptions.ValidationError("Date non valide.")
+    if dal > al or (al - dal).days > 400:
+        raise exceptions.ValidationError("Periodo non valido.")
+    righe = MessaInOnda.objects.filter(giorno__gte=dal, giorno__lte=al)
+    limitate = sedi_visibili(request.user)
+    if limitate is not None:
+        righe = righe.filter(sede_id__in=limitate)
+    for campo in ("campagna", "promozione", "sede", "monitor"):
+        if parametri.get(campo):
+            righe = righe.filter(**{f"{campo}_id": parametri[campo]})
+    if parametri.get("fornitore"):
+        righe = righe.filter(fornitore=parametri["fornitore"])
+    if parametri.get("origine"):
+        righe = righe.filter(origine=parametri["origine"])
+    raggruppa = parametri.get("raggruppa") or "campagna"
+    if raggruppa not in messa_in_onda.RAGGRUPPAMENTI:
+        raise exceptions.ValidationError("Raggruppamento non valido.")
+    return righe, dal, al, raggruppa
+
+
+class MessaInOndaView(VistaConContesto, APIView):
+    """I rapporti di messa in onda; ?formato=csv per Excel."""
+
+    def get(self, request):
+        righe, dal, al, raggruppa = righe_messa_in_onda(request)
+        dati = messa_in_onda.rapporto(righe, raggruppa)
+        if request.query_params.get("formato") == "csv":
+            risposta = HttpResponse(messa_in_onda.csv_del_rapporto(dati, raggruppa), content_type="text/csv; charset=utf-8")
+            risposta["Content-Disposition"] = f'attachment; filename="messa-in-onda-{dal}-{al}.csv"'
+            return risposta
+        tutte = MessaInOnda.objects.filter(giorno__gte=dal, giorno__lte=al)
+        return Response({
+            "dal": dal, "al": al, "raggruppa": raggruppa, **dati,
+            "scelte": {
+                "campagne": [{"id": str(c.id), "nome": c.nome} for c in Campagna.objects.order_by("nome")],
+                "fornitori": sorted(set(tutte.exclude(fornitore="").values_list("fornitore", flat=True)) | set(Campagna.objects.exclude(fornitore="").values_list("fornitore", flat=True))),
+            },
+        })

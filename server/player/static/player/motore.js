@@ -282,6 +282,16 @@ class ZonaSlide {
     this.prepara();
   }
 
+  // Il registro di messa in onda: cosa è rimasto sullo schermo e per quanto.
+  annota(elemento, inizio) {
+    const secondi = (Date.now() - inizio) / 1000;
+    if (secondi < 1 || !this.attivo) return;
+    this.motore.fonte.annota?.({
+      contenuto: elemento.contenuto, playlist: elemento.playlist || null, evento: elemento.evento || null,
+      riserva: Boolean(elemento.riserva), inizio: new Date(inizio).toISOString(), secondi: Math.round(secondi),
+    });
+  }
+
   // Un evento straordinario che inizia o finisce interrompe l'attesa in corso.
   prepara() {
     this.segnale = new Promise((ok) => (this.sveglia = ok));
@@ -318,13 +328,15 @@ class ZonaSlide {
       return [{ contenuto: evento.contenuto, durata: resto, audio: evento.audio, volume: evento.volume, evento: evento.id }];
     }
     if (this.config.sorgente && this.config.sorgente !== "palinsesto") {
-      return m.playlist[this.config.sorgente] || [];
+      return (m.playlist[this.config.sorgente] || []).map((e) => ({ ...e, playlist: this.config.sorgente }));
     }
-    const inSequenza = inOnda(m.pubblicazioni, istanteNelFuso(m.fuso_orario)).flatMap((p) => m.playlist[p.playlist] || []);
+    // Ogni voce porta la sua playlist: il registro di messa in onda risale alla promozione.
+    const inSequenza = inOnda(m.pubblicazioni, istanteNelFuso(m.fuso_orario))
+      .flatMap((p) => (m.playlist[p.playlist] || []).map((e) => ({ ...e, playlist: p.playlist })));
     // Niente in onda: la riserva dello schermo (es. il logo o un video istituzionale), se c'è.
     // Un video va fino alla fine e poi ricomincia.
     if (!inSequenza.length && m.riserva && m.contenuti[m.riserva]) {
-      return [{ contenuto: m.riserva, durata: m.contenuti[m.riserva].tipo === "video" ? null : 30 }];
+      return [{ contenuto: m.riserva, durata: m.contenuti[m.riserva].tipo === "video" ? null : 30, riserva: true }];
     }
     return inSequenza;
   }
@@ -342,8 +354,10 @@ class ZonaSlide {
       const elemento = sequenza[indice++];
       const voce = this.motore.manifest.contenuti[elemento.contenuto];
       // Un'immagine sola resta ferma: niente transizione su se stessa.
+      const inizio = Date.now();
       if (sequenza.length === 1 && this.corrente === elemento.contenuto && voce.tipo !== "video") {
         await this.aspetta(attendi((elemento.durata || 10) * 1000));
+        this.annota(elemento, inizio);
         if (elemento.evento && !this.motore.evento) indice = 0; // finito l'evento, la playlist riparte da capo
         continue;
       }
@@ -357,6 +371,7 @@ class ZonaSlide {
           new Promise((ok) => video.addEventListener("error", ok, { once: true })),
           attendi((elemento.durata || 3600) * 1000),
         ]));
+        this.annota(elemento, inizio);
         if (elemento.evento && !this.motore.evento) indice = 0;
         continue;
       }
@@ -365,7 +380,9 @@ class ZonaSlide {
         await attendi(1000); // file non ancora disponibile: si passa al successivo
         continue;
       }
+      const inOndaDa = Date.now();
       await this.aspetta(mostrato.fine);
+      this.annota(elemento, inOndaDa);
       if (elemento.evento) indice = 0; // dopo un evento straordinario la playlist riparte da capo
       if (voce.tipo === "diretta" && this.strato === mostrato.strato && this.attivo) {
         // Minuti finiti: la diretta si ferma subito (non resta in onda mentre arriva

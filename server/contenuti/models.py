@@ -128,6 +128,8 @@ class Campagna(ModelloCliente):
     data_inizio = models.DateField(null=True, blank=True)
     data_fine = models.DateField(null=True, blank=True)
     codice = models.CharField(max_length=50, blank=True, help_text="Riferimento interno.")
+    # Chi paga lo spazio (co-marketing): i rapporti di messa in onda si raggruppano anche così.
+    fornitore = models.CharField(max_length=120, blank=True)
     colore = models.CharField(max_length=7, default="#3d6fb6")
     note = models.CharField(max_length=500, blank=True)
     priorita = models.IntegerField(default=0)
@@ -290,3 +292,39 @@ class Listino(ModelloCliente):
 
     def __str__(self):
         return self.nome
+
+
+class MessaInOnda(ModelloCliente):
+    """Il registro di messa in onda, riassunto per giorno: quante volte e per quanti secondi un
+    contenuto è andato davvero in onda su uno schermo, e per quale promozione.
+
+    Lo scrivono i player (``POST /api/player/passaggi/``), che annotano ogni passaggio e lo
+    inviano a pacchetti anche dopo giorni senza rete. I nomi restano anche se promozione o
+    contenuto vengono cancellati.
+    """
+
+    class Origine(models.TextChoices):
+        PROMOZIONE = "promozione", "Promozione"
+        EVENTO = "evento", "Evento straordinario"
+        RISERVA = "riserva", "Riserva dello schermo"
+        PLAYLIST = "playlist", "Playlist fissa"
+
+    chiave = models.CharField(max_length=200, unique=True)
+    giorno = models.DateField()
+    monitor = models.ForeignKey("dispositivi.Monitor", on_delete=models.CASCADE, related_name="messa_in_onda")
+    sede = models.ForeignKey("clienti.Sede", on_delete=models.SET_NULL, null=True, related_name="+")
+    origine = models.CharField(max_length=12, choices=Origine.choices)
+    contenuto = models.ForeignKey(Contenuto, on_delete=models.SET_NULL, null=True, related_name="+")
+    nome_contenuto = models.CharField(max_length=200)
+    promozione = models.ForeignKey(Promozione, on_delete=models.SET_NULL, null=True, related_name="+")
+    nome_promozione = models.CharField(max_length=200, blank=True)
+    campagna = models.ForeignKey(Campagna, on_delete=models.SET_NULL, null=True, related_name="+")
+    nome_campagna = models.CharField(max_length=200, blank=True)
+    fornitore = models.CharField(max_length=120, blank=True)
+    passaggi = models.PositiveIntegerField(default=0)
+    secondi = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["giorno"]
+        verbose_name_plural = "messa in onda"
+        indexes = [models.Index(fields=["giorno"]), models.Index(fields=["campagna", "giorno"])]
