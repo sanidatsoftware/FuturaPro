@@ -228,6 +228,7 @@ def salva_elementi(playlist, elementi):
             playlist=playlist,
             contenuto=elemento["contenuto"],
             durata=elemento.get("durata"),
+            audio=bool(elemento.get("audio")),
             ordine=posizione,
         )
         for posizione, elemento in enumerate(elementi)
@@ -377,6 +378,8 @@ class PromozioneSerializer(serializers.ModelSerializer):
     contenuti = RiferimentoCliente(Contenuto, many=True, required=False)
     # Durata propria di alcune voci, in secondi (es. {"<id diretta>": 300}).
     durate = serializers.DictField(child=serializers.IntegerField(min_value=1, max_value=86400), required=False)
+    # Le dirette da mandare con l'audio acceso (id dei contenuti).
+    audio = serializers.ListField(child=serializers.UUIDField(), required=False)
     giorni = serializers.ListField(child=serializers.IntegerField(min_value=0, max_value=6), required=False)
     data_inizio = serializers.DateField()
     data_fine = serializers.DateField()
@@ -387,7 +390,7 @@ class PromozioneSerializer(serializers.ModelSerializer):
         model = Promozione
         fields = [
             "id", "campagna", "nome", "data_inizio", "data_fine", "ora_inizio", "ora_fine", "giorni",
-            "contenuti", "durate", "stato", "pubblicazioni", "creata", "modificata",
+            "contenuti", "durate", "audio", "stato", "pubblicazioni", "creata", "modificata",
         ]
         read_only_fields = ["creata", "modificata"]
 
@@ -406,6 +409,7 @@ class PromozioneSerializer(serializers.ModelSerializer):
         voci = list(promozione.voci.order_by("ordine"))
         dati["contenuti"] = [str(v.contenuto_id) for v in voci]
         dati["durate"] = {str(v.contenuto_id): v.durata for v in voci if v.durata}
+        dati["audio"] = [str(v.contenuto_id) for v in voci if v.audio]
         return dati
 
     def validate_giorni(self, giorni):
@@ -438,24 +442,27 @@ class PromozioneSerializer(serializers.ModelSerializer):
         verifica_campagna_modificabile(self.context["request"].user, campagna)
         return dati
 
-    def _salva(self, promozione, contenuti, durate):
-        if contenuti is not None or durate is not None:
+    def _salva(self, promozione, contenuti, durate, audio):
+        if contenuti is not None or durate is not None or audio is not None:
+            voci = list(promozione.voci.select_related("contenuto").order_by("ordine"))
             if contenuti is None:
-                contenuti = [v.contenuto for v in promozione.voci.select_related("contenuto").order_by("ordine")]
+                contenuti = [v.contenuto for v in voci]
             if durate is None:
-                durate = {str(v.contenuto_id): v.durata for v in promozione.voci.all() if v.durata}
-            campagne.salva_contenuti(promozione, contenuti, durate)
+                durate = {str(v.contenuto_id): v.durata for v in voci if v.durata}
+            if audio is None:
+                audio = [v.contenuto_id for v in voci if v.audio]
+            campagne.salva_contenuti(promozione, contenuti, durate, audio)
         campagne.sincronizza(promozione)
         return promozione
 
     def create(self, dati):
-        contenuti, durate = dati.pop("contenuti", None), dati.pop("durate", None)
-        return self._salva(super().create(dati), contenuti, durate)
+        contenuti, durate, audio = dati.pop("contenuti", None), dati.pop("durate", None), dati.pop("audio", None)
+        return self._salva(super().create(dati), contenuti, durate, audio)
 
     def update(self, promozione, dati):
-        contenuti, durate = dati.pop("contenuti", None), dati.pop("durate", None)
+        contenuti, durate, audio = dati.pop("contenuti", None), dati.pop("durate", None), dati.pop("audio", None)
         vecchia_campagna = promozione.campagna
-        promozione = self._salva(super().update(promozione, dati), contenuti, durate)
+        promozione = self._salva(super().update(promozione, dati), contenuti, durate, audio)
         if vecchia_campagna.id != promozione.campagna_id:
             verifica_campagna_modificabile(self.context["request"].user, vecchia_campagna)
         return promozione

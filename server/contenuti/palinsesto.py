@@ -141,9 +141,10 @@ def manifest(monitor) -> dict:
     riserva = str(monitor.immagine_riserva_id) if monitor.immagine_riserva_id else None
     contenuti = {str(c.id): c for c in Contenuto.objects.filter(id__in=immagini_layout | ({riserva} if riserva else set()))}
     for elemento in elementi:
-        playlist.setdefault(str(elemento.playlist_id), []).append(
-            {"contenuto": str(elemento.contenuto_id), "durata": durata_effettiva(elemento)}
-        )
+        voce = {"contenuto": str(elemento.contenuto_id), "durata": durata_effettiva(elemento)}
+        if elemento.audio:
+            voce["audio"] = True
+        playlist.setdefault(str(elemento.playlist_id), []).append(voce)
         contenuti[str(elemento.contenuto_id)] = elemento.contenuto
 
     corpo = {

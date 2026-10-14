@@ -19,13 +19,16 @@ from .models import Campagna, Contenuto, ContenutoPromozione, Orientamento, Play
 ETICHETTE = {Orientamento.VERTICALE: "totem", Orientamento.ORIZZONTALE: "monitor", "": "tutti"}
 
 
-def salva_contenuti(promozione, contenuti, durate=None):
-    """Le voci della promozione in ordine; ``durate`` (id → secondi) per quelle con una durata propria."""
+def salva_contenuti(promozione, contenuti, durate=None, audio=None):
+    """Le voci della promozione in ordine; ``durate`` (id → secondi) per quelle con una durata
+    propria, ``audio`` (id) per le dirette da mandare con l'audio acceso."""
     durate = durate or {}
+    audio = {str(i) for i in (audio or [])}
     ContenutoPromozione.objects.filter(promozione=promozione).delete()
     ContenutoPromozione.objects.bulk_create(
         ContenutoPromozione(
-            cliente_id=promozione.cliente_id, promozione=promozione, contenuto=c, ordine=i, durata=durate.get(str(c.id))
+            cliente_id=promozione.cliente_id, promozione=promozione, contenuto=c, ordine=i,
+            durata=durate.get(str(c.id)), audio=str(c.id) in audio
         )
         for i, c in enumerate(contenuti)
     )
@@ -56,6 +59,7 @@ def sincronizza(promozione):
     voci = list(promozione.voci.select_related("contenuto").order_by("ordine"))
     contenuti = [v.contenuto for v in voci]
     durate = {v.contenuto_id: v.durata for v in voci}
+    audio = {v.contenuto_id for v in voci if v.audio}
     gruppi = gruppi_per_orientamento(contenuti)
     # Senza destinatari la promozione è una bozza: nessuna pubblicazione.
     if not ha_destinatari(campagna):
@@ -83,7 +87,10 @@ def sincronizza(promozione):
         pubblicazione.insegne.set(campagna.insegne.all())
         pubblicazione.gruppi.set(campagna.gruppi.all())
         pubblicazione.monitor.set(campagna.monitor.all())
-        salva_elementi(pubblicazione.playlist, [{"contenuto": c, "durata": durata_voce(c, durate.get(c.id), campagna)} for c in elenco])
+        salva_elementi(pubblicazione.playlist, [
+            {"contenuto": c, "durata": durata_voce(c, durate.get(c.id), campagna), "audio": c.id in audio}
+            for c in elenco
+        ])
 
 
 def durata_voce(contenuto, propria, campagna):

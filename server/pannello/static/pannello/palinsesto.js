@@ -688,7 +688,7 @@ function nuovaPromozioneVuota(campagna, valori = {}) {
   if (campagna.data_fine && fine > campagna.data_fine) fine = campagna.data_fine;
   return {
     nome: "", data_inizio: inizio, data_fine: fine,
-    ora_inizio: null, ora_fine: null, giorni: [], contenuti: [], durate: {}, stato: "bozza", ...valori,
+    ora_inizio: null, ora_fine: null, giorni: [], contenuti: [], durate: {}, audio: [], stato: "bozza", ...valori,
   };
 }
 
@@ -1174,6 +1174,21 @@ function disegnaContenutiPromozione(box, p) {
           p.durate[id] = valore * 60;
           segnaModificata();
         });
+        // Audio della sola diretta: spento non tocca gli altri suoni del monitor (es. il din-don dei numeri).
+        p.audio ??= [];
+        const conAudio = p.audio.includes(id);
+        crea("button", {
+          type: "button", classe: `audio-diretta${conAudio ? " acceso" : ""}`, testo: conAudio ? "🔊" : "🔇",
+          "data-aiuto": conAudio
+            ? "Audio della diretta acceso. Clic per spegnerlo: gli altri suoni del monitor (es. il din-don dei numeri) restano attivi."
+            : "Audio della diretta spento: gli altri suoni del monitor (es. il din-don dei numeri) restano attivi. Clic per accenderlo.",
+          onclick: (e) => {
+            e.stopPropagation();
+            p.audio = conAudio ? p.audio.filter((x) => x !== id) : [...p.audio, id];
+            segnaModificata();
+            disegnaPannello();
+          },
+        }, voce);
       }
       voce.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/futurapro", id); voce.classList.add("trascinata"); });
       voce.addEventListener("dragend", () => voce.classList.remove("trascinata"));
@@ -1248,6 +1263,7 @@ async function salvaPromozione() {
       ora_inizio: p.ora_inizio || null, ora_fine: p.ora_fine || null, giorni: p.giorni, contenuti: p.contenuti,
       // Solo per le voci ancora nella promozione.
       durate: Object.fromEntries(Object.entries(p.durate || {}).filter(([id]) => p.contenuti.includes(id))),
+      audio: (p.audio || []).filter((id) => p.contenuti.includes(id)),
     };
     const salvata = p.id ? await api("PATCH", `/api/promozioni/${p.id}/`, dati) : await api("POST", "/api/promozioni/", dati);
     S.promozione = structuredClone(salvata);

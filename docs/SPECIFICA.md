@@ -188,7 +188,10 @@ al passaggio del mouse (`data-aiuto`, `pannello/static/pannello/aiuto.js`).
   la lista: lo streaming lo scarica ogni player con la sua connessione a internet. Il player
   usa hls.js (`player/static/player/vendor`, licenza Apache 2.0) per l'HLS; se il canale non
   parte entro 15 secondi, o dà un errore certo, passa alla voce successiva; se cade durante
-  la riproduzione si passa oltre e al giro dopo si riprova. L'audio resta disattivato. Le
+  la riproduzione si passa oltre e al giro dopo si riprova. L'audio della diretta è spento di
+  serie e si accende voce per voce nella promozione (`audio` della promozione, 🔇/🔊 sulla
+  miniatura); spento riguarda solo lo streaming: gli altri suoni del monitor (din-don dei
+  numeri) restano attivi. Le
   dirette vanno ai monitor orizzontali e la pulizia non le cancella. Se il player è in https e il canale
   in http, il player prova lo stesso indirizzo in https (il browser blocca l'http). Il motivo di
   una diretta che non parte arriva al server con il segnale periodico e compare nella scheda

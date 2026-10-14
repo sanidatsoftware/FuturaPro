@@ -270,7 +270,12 @@ class ZonaSlide {
       strato.chiudi = diretta.chiudi; // via dallo schermo: si smette anche di scaricare
       this.entra(strato);
       this.corrente = elemento.contenuto;
-      media.play().catch(() => {});
+      // L'audio solo se la promozione lo chiede; se il browser non lo consente, resta muta.
+      if (elemento.audio) media.muted = false;
+      media.play().catch(() => {
+        media.muted = true;
+        media.play().catch(() => {});
+      });
       // Se la diretta cade, al giro dopo si riprova (anche quando è l'unica voce in onda).
       diretta.interrotta.then(() => { if (this.strato === strato) this.corrente = null; });
       const fine = Promise.race([diretta.interrotta, attendi((elemento.durata || 300) * 1000)]);

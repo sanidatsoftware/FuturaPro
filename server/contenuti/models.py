@@ -96,6 +96,8 @@ class ElementoPlaylist(ModelloCliente):
     ordine = models.PositiveIntegerField()
     # Vuota: vale la durata del contenuto.
     durata = models.PositiveIntegerField(null=True, blank=True)
+    # Le dirette partono senza audio, se non è chiesto qui.
+    audio = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["playlist", "ordine"]
@@ -171,6 +173,8 @@ class ContenutoPromozione(ModelloCliente):
     ordine = models.PositiveIntegerField()
     # Secondi in onda di questa voce (es. 5 minuti di diretta); vuota: quella della campagna.
     durata = models.PositiveIntegerField(null=True, blank=True)
+    # Solo per le dirette: con l'audio acceso. Spento, gli altri suoni del monitor restano.
+    audio = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["promozione", "ordine"]

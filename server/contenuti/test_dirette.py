@@ -81,3 +81,11 @@ class DiretteTest(ConFile):
         self.assertEqual([(e["contenuto"], e["durata"]) for e in sequenza], [(foto, 8), (diretta, 420)])
         self.assertEqual(corpo["contenuti"][diretta]["tipo"], "diretta")
         self.assertEqual(corpo["contenuti"][diretta]["url"], "https://flussi.esempio.it/uno.m3u8")
+        # Audio: spento di serie; acceso solo per la diretta indicata.
+        self.assertNotIn("audio", sequenza[1])
+        r = self.client.patch(f"/api/promozioni/{r.json()['id']}/", {"audio": [diretta]}, format="json")
+        self.assertEqual((r.json()["audio"], r.json()["durate"]), ([diretta], {diretta: 420}))
+        with contesto_cliente(self.a.id):
+            corpo = palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))
+        sequenza = next(iter(corpo["playlist"].values()))
+        self.assertEqual([e.get("audio", False) for e in sequenza], [False, True])
