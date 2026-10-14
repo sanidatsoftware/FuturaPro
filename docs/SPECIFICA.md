@@ -191,6 +191,18 @@ al passaggio del mouse (`data-aiuto`, `pannello/static/pannello/aiuto.js`).
   5 minuti per le dirette. L'anteprima riproduce la corsia come lo schermo (stesse durate, poi
   da capo; dirette comprese), si può accelerare (2×, 4×, 10× per le immagini) e da lì si
   conferma il salvataggio.
+- **Eventi straordinari** (pulsante «⚡ Eventi straordinari» della pagina palinsesto,
+  `/api/eventi/`). Un evento ha nome, inizio (giorno e ora), durata, cosa va in onda (una
+  diretta, un video o un'immagine), audio sì/no con il suo volume, destinatari (insegne,
+  gruppi, schermi; un utente di sede solo i suoi schermi) e può essere sospeso. Ha la
+  precedenza su tutte le promozioni: il manifest elenca gli eventi non finiti dei prossimi
+  120 giorni (`eventi`, con inizio e fine assoluti) e il player li controlla ogni secondo,
+  anche senza rete. All'inizio interrompe la slide in corso nella zona slide principale (la più
+  grande con il palinsesto) o, se scelto, la allarga a tutto lo schermo; un video più corto
+  ricomincia finché dura l'evento; alla fine la playlist riparte da capo. Il video dell'evento
+  arriva al player in anticipo e la pulizia non lo cancella. I numeri delle code continuano, con
+  il loro volume (`volume_annunci` della zona code, a parte da quello dell'evento). Nel
+  calendario gli eventi hanno una fascia propria.
 - **Dirette in streaming** (facoltative; tipo di contenuto `diretta`). Si aggiungono dal
   pulsante «📡 Dirette»: da una lista M3U/M3U8 (indirizzo o file; `POST /api/contenuti/m3u/`
   la legge e restituisce i canali senza salvarli) o da un singolo indirizzo `.m3u8`/video.

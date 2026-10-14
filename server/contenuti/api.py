@@ -22,7 +22,7 @@ from dispositivi.models import GruppoMonitor, Monitor
 from . import palinsesto
 from .file import crea_miniatura, impronta_e_dimensione, misure_immagine, riconosci
 from . import campagne, dirette
-from .models import Campagna, Contenuto, ElementoPlaylist, Playlist, Promozione, Pubblicazione, Tipo, Uso
+from .models import Campagna, Contenuto, ElementoPlaylist, EventoStraordinario, Playlist, Promozione, Pubblicazione, Tipo, Uso
 
 MB = 1024 * 1024
 
@@ -551,6 +551,73 @@ class CampagnaSerializer(serializers.ModelSerializer):
         # Destinatari, priorità o durata cambiati: le pubblicazioni di tutte le promozioni si allineano.
         campagne.sincronizza_campagna(campagna)
         return campagna
+
+
+class EventoSerializer(serializers.ModelSerializer):
+    contenuto = RiferimentoCliente(Contenuto)
+    insegne = RiferimentoCliente(Insegna, many=True, required=False)
+    gruppi = RiferimentoCliente(GruppoMonitor, many=True, required=False)
+    monitor = RiferimentoCliente(Monitor, many=True, required=False)
+    stato = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EventoStraordinario
+        fields = [
+            "id", "nome", "inizio", "durata", "fine", "contenuto", "audio", "volume", "schermo_intero", "attivo",
+            "insegne", "gruppi", "monitor", "note", "stato", "creato_da", "creato",
+        ]
+        read_only_fields = ["fine", "creato_da", "creato"]
+        extra_kwargs = {"durata": {"min_value": 10, "max_value": 24 * 3600}, "volume": {"min_value": 0, "max_value": 100}}
+
+    def get_stato(self, evento):
+        adesso = timezone.now()
+        if not evento.attivo:
+            return "sospeso"
+        if evento.fine <= adesso:
+            return "concluso"
+        return "in_onda" if evento.inizio <= adesso else "programmato"
+
+    def validate_contenuto(self, contenuto):
+        if contenuto.tipo not in (Tipo.VIDEO, Tipo.DIRETTA, Tipo.IMMAGINE):
+            raise serializers.ValidationError("Scegli un video, una diretta o un'immagine.")
+        return contenuto
+
+    def validate(self, dati):
+        def valore(campo):
+            return dati[campo] if campo in dati else (getattr(self.instance, campo).all() if self.instance and campo in ("insegne", "gruppi", "monitor") else getattr(self.instance, campo, None))
+
+        if not any(valore(c) for c in ("insegne", "gruppi", "monitor")):
+            raise serializers.ValidationError("Scegli dove va in onda: insegne, gruppi o singoli schermi.")
+        limitate = sedi_visibili(self.context["request"].user)
+        if limitate is not None:
+            if valore("insegne") or valore("gruppi") or any(m.sede_id not in limitate for m in valore("monitor")):
+                raise exceptions.PermissionDenied("Puoi programmare eventi solo sugli schermi delle tue sedi.")
+        return dati
+
+
+class EventiViewSet(ViewSetCliente):
+    """Gli eventi straordinari: a data e ora fissa, con la precedenza su tutte le promozioni."""
+
+    ruoli_scrittura = CONTENUTI
+    serializer_class = EventoSerializer
+
+    def get_queryset(self):
+        eventi = EventoStraordinario.objects.select_related("contenuto").prefetch_related("insegne", "gruppi", "monitor")
+        limitate = sedi_visibili(self.request.user)
+        return eventi if limitate is None else eventi.filter(monitor__sede_id__in=limitate).distinct()
+
+    def perform_create(self, serializer):
+        evento = serializer.save(creato_da=self.request.user.username)
+        registra(self.request.user, "evento_creato", evento, nome=evento.nome, inizio=evento.inizio.isoformat())
+
+    def perform_update(self, serializer):
+        verifica_campagna_modificabile(self.request.user, serializer.instance)
+        registra(self.request.user, "evento_modificato", serializer.save())
+
+    def perform_destroy(self, evento):
+        verifica_campagna_modificabile(self.request.user, evento)
+        registra(self.request.user, "evento_eliminato", evento, nome=evento.nome)
+        evento.delete()
 
 
 class CampagneViewSet(ViewSetCliente):

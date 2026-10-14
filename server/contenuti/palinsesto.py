@@ -12,7 +12,7 @@ docs/SPECIFICA.md, «Palinsesto»): se cambiano qui, cambiano anche lì.
    altro sugli stessi monitor lo aggiunge alla rotazione.
 """
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from hashlib import sha256
 import json
 
@@ -22,7 +22,7 @@ from django.urls import reverse
 
 from layout.manifest import descrivi, layout_del_monitor, riferimenti
 
-from .models import DURATA_IMMAGINE, Contenuto, ElementoPlaylist, Pubblicazione, Tipo
+from .models import DURATA_IMMAGINE, Contenuto, ElementoPlaylist, EventoStraordinario, Pubblicazione, Tipo
 
 
 def _nell_orario(ora: time, inizio: time | None, fine: time | None) -> bool:
@@ -58,6 +58,20 @@ def pubblicazioni_del_monitor(monitor):
         .filter(Q(orientamento="") | Q(orientamento=monitor.orientamento))
         .distinct()
         .order_by("-priorita", "creata")
+    )
+
+
+def eventi_del_monitor(monitor):
+    """Gli eventi straordinari non ancora finiti per questo schermo (al massimo i prossimi 120 giorni)."""
+    from django.utils import timezone
+
+    destinatari = Q(monitor=monitor) | Q(gruppi__monitor=monitor)
+    if monitor.sede.insegna_id:
+        destinatari |= Q(insegne=monitor.sede.insegna_id)
+    adesso = timezone.now()
+    return (
+        EventoStraordinario.objects.filter(destinatari, attivo=True, fine__gt=adesso, inizio__lt=adesso + timedelta(days=120))
+        .select_related("contenuto").distinct().order_by("inizio")
     )
 
 
@@ -144,8 +158,11 @@ def manifest(monitor) -> dict:
     )
 
     playlist = {}
+    eventi = list(eventi_del_monitor(monitor))
     riserva = str(monitor.immagine_riserva_id) if monitor.immagine_riserva_id else None
     contenuti = {str(c.id): c for c in Contenuto.objects.filter(id__in=immagini_layout | ({riserva} if riserva else set()))}
+    for evento in eventi:
+        contenuti[str(evento.contenuto_id)] = evento.contenuto
     for elemento in elementi:
         voce = {"contenuto": str(elemento.contenuto_id), "durata": durata_effettiva(elemento)}
         if elemento.audio:
@@ -176,6 +193,15 @@ def manifest(monitor) -> dict:
         "playlist": playlist,
         # Quando non c'è nulla in onda le slide mostrano questa immagine, invece del nero.
         "riserva": riserva,
+        # Precedenza su tutto, dall'inizio alla fine (istanti assoluti, con il fuso).
+        "eventi": [
+            {
+                "id": str(e.id), "nome": e.nome, "contenuto": str(e.contenuto_id),
+                "inizio": e.inizio.isoformat(), "fine": e.fine.isoformat(),
+                "audio": e.audio, "volume": e.volume, "schermo_intero": e.schermo_intero,
+            }
+            for e in eventi
+        ],
         "contenuti": {chiave: _voce(contenuto) for chiave, contenuto in contenuti.items()},
         "code": code_del_monitor(monitor, layout),
         # I file audio dei numeri chiamati, per i reparti della sede che li hanno.

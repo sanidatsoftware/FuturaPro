@@ -222,3 +222,43 @@ class Pubblicazione(ModelloCliente):
 
     def __str__(self):
         return self.nome
+
+
+class EventoStraordinario(ModelloCliente):
+    """Un evento a data e ora fissa (es. la diretta di una partita, lo spot di un'inaugurazione).
+
+    Per tutta la sua durata ha la precedenza su qualunque promozione: il player interrompe la
+    playlist, manda l'evento e poi riprende da capo. I numeri delle code restano sullo schermo e
+    si sentono con il loro volume; l'evento ha audio e volume suoi.
+    """
+
+    nome = models.CharField(max_length=200)
+    inizio = models.DateTimeField()
+    durata = models.PositiveIntegerField(help_text="Secondi.")
+    # Calcolata: inizio + durata. Serve a trovare in fretta gli eventi non ancora finiti.
+    fine = models.DateTimeField(editable=False)
+    contenuto = models.ForeignKey(Contenuto, on_delete=models.PROTECT, related_name="eventi")
+    audio = models.BooleanField(default=True)
+    volume = models.PositiveSmallIntegerField(default=80)
+    # Tutto lo schermo, sopra ogni zona; altrimenti nella zona slide principale.
+    schermo_intero = models.BooleanField(default=False)
+    attivo = models.BooleanField(default=True)
+    insegne = models.ManyToManyField("clienti.Insegna", blank=True, related_name="eventi")
+    gruppi = models.ManyToManyField("dispositivi.GruppoMonitor", blank=True, related_name="eventi")
+    monitor = models.ManyToManyField("dispositivi.Monitor", blank=True, related_name="eventi")
+    note = models.CharField(max_length=500, blank=True)
+    creato_da = models.CharField(max_length=150, blank=True)
+    creato = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["inizio"]
+        verbose_name_plural = "eventi straordinari"
+
+    def __str__(self):
+        return self.nome
+
+    def save(self, *args, **kwargs):
+        from datetime import timedelta
+
+        self.fine = self.inizio + timedelta(seconds=self.durata)
+        super().save(*args, **kwargs)

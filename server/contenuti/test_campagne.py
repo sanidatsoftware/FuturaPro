@@ -269,3 +269,52 @@ class CampagneTest(ConFile):
         self.assertEqual(r.status_code, 400)
         campagna = self.campagna(nome="Z", monitor=[str(self.mon_a_milano.id)])
         self.assertEqual(self.promozione(campagna).status_code, 201)
+
+
+class EventiTest(ConFile):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        with contesto_cliente(cls.a.id):
+            cls.totem_milano = Monitor.objects.create(
+                cliente=cls.a, sede=cls.a_milano, nome="Totem", piattaforma="windows", orientamento="verticale"
+            )
+            cls.tutti = GruppoMonitor.objects.create(cliente=cls.a, nome="Tutti")
+
+    def carica(self, file=None, **campi):
+        return super().carica(file, **campi).json()
+
+    def test_evento_straordinario_nel_manifest(self):
+        from datetime import datetime, timezone as tz
+
+        self.come(self.admin_a)
+        video = self.carica(SimpleUploadedFile("partita.mp4", MP4, content_type="video/mp4"), larghezza=1920, altezza=1080)["id"]
+        inizio = datetime(2026, 12, 20, 20, 45, tzinfo=tz.utc)
+        dati = {"nome": "Finale", "inizio": inizio.isoformat(), "durata": 7200, "contenuto": video, "audio": True, "volume": 60}
+        # Senza destinatari non si programma.
+        self.assertEqual(self.client.post("/api/eventi/", dati, format="json").status_code, 400)
+        r = self.client.post("/api/eventi/", {**dati, "monitor": [str(self.mon_a_milano.id)]}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        evento = r.json()
+        self.assertEqual(evento["stato"], "programmato")
+        self.assertEqual(datetime.fromisoformat(evento["fine"]), datetime(2026, 12, 20, 22, 45, tzinfo=tz.utc))
+        with contesto_cliente(self.a.id):
+            corpo = palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))
+            altro = palinsesto.manifest(Monitor.objects.get(id=self.totem_milano.id))
+        self.assertEqual([(e["nome"], e["volume"], e["audio"]) for e in corpo["eventi"]], [("Finale", 60, True)])
+        # Il video dell'evento arriva al player in anticipo (va in cache).
+        self.assertIn(video, corpo["contenuti"])
+        self.assertEqual(altro["eventi"], [])
+        # Sospeso non va in onda; e la pulizia non tocca il suo video.
+        self.client.patch(f"/api/eventi/{evento['id']}/", {"attivo": False}, format="json")
+        with contesto_cliente(self.a.id):
+            self.assertEqual(palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))["eventi"], [])
+        self.assertNotIn(video, [str(i) for i in self.client.get("/api/contenuti/pulizia/").json()["id"]])
+
+    def test_un_utente_di_sede_solo_sui_suoi_schermi(self):
+        self.come(self.admin_a)
+        foto = self.carica(immagine(192, 108))["id"]
+        self.come(self.user_a_milano)
+        dati = {"nome": "Inaugurazione", "inizio": "2026-12-01T10:00:00Z", "durata": 600, "contenuto": foto}
+        self.assertEqual(self.client.post("/api/eventi/", {**dati, "gruppi": [str(self.tutti.id)]}, format="json").status_code, 403)
+        self.assertEqual(self.client.post("/api/eventi/", {**dati, "monitor": [str(self.mon_a_milano.id)]}, format="json").status_code, 201)

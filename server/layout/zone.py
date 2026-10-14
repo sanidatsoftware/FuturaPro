@@ -159,6 +159,8 @@ class Coda(serializers.Serializer):
     bordo = serializers.BooleanField(required=False, default=True)
     # Solo un monitor per negozio dovrebbe annunciare, per non sentire l'eco.
     annuncio = serializers.ChoiceField(ANNUNCI, required=False, default="suono")
+    # Il volume degli annunci dei numeri: a parte da quello di video e dirette.
+    volume_annunci = serializers.IntegerField(min_value=0, max_value=100, required=False, default=100)
 
 
 STAMPE = ["nessuna", "browser", "epson"]

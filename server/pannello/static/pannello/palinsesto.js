@@ -9,6 +9,7 @@
 import { avviaDiretta } from "../player/motore.js";
 import { attivaAiuti } from "./aiuto.js";
 import { clienteRicordato, disegnaMenu, ricordaCliente } from "./menu.js";
+import { apriEventi, caricaEventi, eventiCaricati, preparaEventi } from "./eventi.js";
 import { FORMATO_LIBRERIA, apriAnteprima, disegnaSequenza, preparaSequenza } from "./sequenza.js";
 
 const cliente = clienteRicordato();
@@ -138,7 +139,7 @@ function confermaAbbandono() {
 async function caricaTutto() {
   const [contenuti, campagne, insegne, gruppi, monitor, sedi] = await Promise.all([
     tutte("/api/contenuti/?uso=libreria"), tutte("/api/campagne/"), tutte("/api/insegne/"),
-    tutte("/api/gruppi/"), tutte("/api/monitor/"), tutte("/api/sedi/"),
+    tutte("/api/gruppi/"), tutte("/api/monitor/"), tutte("/api/sedi/"), caricaEventi().catch(() => []),
   ]);
   Object.assign(S, { contenuti, campagne, insegne, gruppi, monitor, sedi });
 }
@@ -1014,9 +1015,11 @@ function disegnaCampagna(box) {
   crea("button", { type: "button", classe: "leggero chiudi-campagna", testo: "Chiudi la campagna", onclick: chiudi }, box);
 }
 
-function disegnaDestinatari(box, c) {
+// Anche gli eventi straordinari la usano: «opzioni» cambia titolo e cosa fare a ogni scelta.
+function disegnaDestinatari(box, c, opzioni = {}) {
+  const { titolo: titoloSezione = "Dove vanno in onda le sue promozioni", modificata = segnaModificata, ridisegna = disegnaPannello } = opzioni;
   const sezione = crea("section", { classe: "destinatari" }, box);
-  crea("h3", { testo: "Dove vanno in onda le sue promozioni", "data-aiuto": "Gli schermi che ricevono tutte le promozioni della campagna: per insegna, per gruppo o uno per uno. Le immagini verticali vanno ai totem, le orizzontali ai monitor." }, sezione);
+  crea("h3", { testo: titoloSezione, "data-aiuto": "Gli schermi che ricevono tutte le promozioni della campagna: per insegna, per gruppo o uno per uno. Le immagini verticali vanno ai totem, le orizzontali ai monitor." }, sezione);
 
   const chips = (titolo, voci, campo, aiuto) => {
     if (!voci.length) return;
@@ -1028,8 +1031,8 @@ function disegnaDestinatari(box, c) {
       if (v.colore) chip.style.setProperty("--chip", v.colore);
       chip.addEventListener("click", () => {
         c[campo] = attivo ? c[campo].filter((x) => x !== v.id) : [...c[campo], v.id];
-        segnaModificata();
-        disegnaPannello();
+        modificata();
+        ridisegna();
       });
     }
   };
@@ -1050,8 +1053,8 @@ function disegnaDestinatari(box, c) {
         type: "checkbox", checked: c.monitor.includes(m.id),
         onchange: (e) => {
           c.monitor = e.target.checked ? [...c.monitor, m.id] : c.monitor.filter((x) => x !== m.id);
-          segnaModificata();
-          disegnaPannello();
+          modificata();
+          ridisegna();
         },
       }, voce);
       crea("span", { classe: `led${m.online ? " acceso" : ""}`, title: m.online ? "In linea" : "Non in linea" }, voce);
@@ -1068,7 +1071,7 @@ function disegnaDestinatari(box, c) {
     ? `Raggiunge ${totem} totem e ${raggiunti.length - totem} monitor.`
     : sceltiQualcosa
       ? "Le insegne o i gruppi scelti non comprendono ancora nessuno schermo: assegna sedi e gruppi ai monitor nel pannello."
-      : "Nessuno schermo scelto: le promozioni restano in bozza e non vanno in onda.";
+      : opzioni.vuoto || "Nessuno schermo scelto: le promozioni restano in bozza e non vanno in onda.";
 }
 
 function disegnaPromozione(box) {
@@ -1393,9 +1396,31 @@ function disegnaCalendario() {
   intestazione.style.gridTemplateColumns = `repeat(${colonne.length}, 1fr)`;
   for (const c of colonne) crea("span", { testo: c.testo, classe: c.festivo ? "festivo" : "" }, intestazione);
 
+  // Gli eventi straordinari, sopra le campagne: hanno la precedenza su tutto.
+  const eventi = eventiCaricati().filter((e) => new Date(e.inizio) < fine && new Date(e.fine) > inizio);
+  let fasce = 0;
+  if (eventi.length) {
+    fasce += 1;
+    const fascia = crea("div", { classe: "fascia fascia-eventi" }, tela);
+    const etichetta = crea("button", { type: "button", classe: "etichetta-fascia", onclick: apriEventi, "data-aiuto": "Eventi straordinari: in quei momenti interrompono tutte le promozioni." }, fascia);
+    crea("span", { testo: "⚡ Eventi straordinari" }, etichetta);
+    const righe = crea("div", { classe: "righe" }, fascia);
+    righe.style.backgroundSize = `calc(100% / ${colonne.length}) 100%`;
+    righe.style.height = `${ALTEZZA_CORSIA + 4}px`;
+    for (const e of eventi) {
+      const i = new Date(e.inizio);
+      const sinistra = posizione(i);
+      const segno = crea("button", {
+        type: "button", classe: `segno-evento ${e.stato}`, onclick: apriEventi,
+        title: `${e.nome} · ${i.toLocaleString("it-IT", { dateStyle: "medium", timeStyle: "short" })} · ${Math.round(e.durata / 60)} min`,
+      }, righe);
+      Object.assign(segno.style, { left: `${sinistra}%`, width: `${Math.max(0.5, posizione(new Date(e.fine)) - sinistra)}%` });
+      crea("span", { testo: `⚡ ${e.nome}` }, segno);
+    }
+  }
+
   // Una fascia per campagna; dentro, le sue promozioni su corsie se si sovrappongono.
   const spazioNome = durata * 0.16;
-  let fasce = 0;
   for (const campagna of S.campagne) {
     const visibili = campagna.promozioni
       .filter((p) => inizioDi(p) < fine && fineDi(p) > inizio)
@@ -1793,6 +1818,16 @@ async function avvia() {
     segnaModificata,
     aggiorna: () => { disegnaLibreria(); disegnaPannello(); },
     salva: salvaPromozione,
+  });
+  preparaEventi({
+    S, crea, perId, api, tutte, avvisa, destinatari, confermaDirette, disegnaDestinatari,
+    aggiorna: () => disegnaCalendario(),
+    caricaFile: async (file) => {
+      const nuovo = await invia(file, await misura(file));
+      S.contenuti.unshift(nuovo);
+      disegnaLibreria();
+      return nuovo;
+    },
   });
   document.getElementById("cerca").addEventListener("input", (e) => { S.cerca = e.target.value; disegnaLibreria(); });
   window.addEventListener("beforeunload", (e) => { if (S.modificata) e.preventDefault(); });

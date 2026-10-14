@@ -170,6 +170,8 @@ def contenuti_scaduti(oggi: date):
         .exclude(id__in=ancora_validi)
         .exclude(id__in=in_playlist_manuali)
         .exclude(id__in=[str(i) for i in nei_layout])
+        # Quelli degli eventi straordinari restano finché c'è l'evento.
+        .exclude(eventi__isnull=False)
     )
 
 

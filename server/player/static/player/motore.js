@@ -31,7 +31,30 @@ export class Motore {
     this.fonte = fonte;
     this.zone = [];
     this.manifest = null;
+    this.evento = null;
     window.addEventListener("resize", () => this.adatta());
+    // Gli eventi straordinari partono al secondo, anche a metà di una slide.
+    setInterval(() => this.controllaEvento(), 1000);
+  }
+
+  // L'evento straordinario in corso adesso (se più d'uno, quello iniziato per ultimo), o null.
+  eventoInCorso() {
+    const adesso = Date.now();
+    const attivi = (this.manifest?.eventi || []).filter((e) => Date.parse(e.inizio) <= adesso && adesso < Date.parse(e.fine) && this.manifest.contenuti[e.contenuto]);
+    return attivi.sort((a, b) => Date.parse(b.inizio) - Date.parse(a.inizio))[0] || null;
+  }
+
+  controllaEvento() {
+    const evento = this.eventoInCorso();
+    const firma = evento ? `${evento.id}:${evento.fine}:${evento.audio}:${evento.volume}:${evento.schermo_intero}` : null;
+    if (firma === this.firmaEvento) return;
+    this.firmaEvento = firma;
+    this.evento = evento;
+    const zona = this.principale;
+    if (!zona) return;
+    // A tutto schermo: la zona slide principale copre le altre finché dura l'evento.
+    zona.el.classList.toggle("evento-schermo-intero", Boolean(evento?.schermo_intero));
+    zona.interrompi();
   }
 
   // Un manifest nuovo: se il layout è lo stesso le zone continuano (cambia solo il
@@ -71,6 +94,13 @@ export class Motore {
       istanza.avvia();
       return istanza;
     });
+    // La zona slide più grande, con il palinsesto: lì vanno gli eventi straordinari.
+    const area = (z) => z.zona.larghezza * z.zona.altezza;
+    this.principale = this.zone
+      .filter((z) => z instanceof ZonaSlide && (!z.config.sorgente || z.config.sorgente === "palinsesto"))
+      .sort((a, b) => area(b) - area(a))[0] || null;
+    this.firmaEvento = undefined;
+    this.controllaEvento();
     this.adatta();
   }
 
@@ -205,6 +235,21 @@ class ZonaSlide {
     this.attivo = false;
     this.strato = null;
     this.corrente = null;
+    this.prepara();
+  }
+
+  // Un evento straordinario che inizia o finisce interrompe l'attesa in corso.
+  prepara() {
+    this.segnale = new Promise((ok) => (this.sveglia = ok));
+  }
+
+  interrompi() {
+    this.sveglia?.();
+    this.prepara();
+  }
+
+  aspetta(promessa) {
+    return Promise.race([promessa, this.segnale]);
   }
 
   avvia() {
@@ -222,6 +267,12 @@ class ZonaSlide {
   // subito, senza interrompere la slide in corso.
   sequenza() {
     const m = this.motore.manifest;
+    // Un evento straordinario ha la precedenza su tutto, fino alla sua fine.
+    const evento = this === this.motore.principale ? this.motore.evento : null;
+    if (evento && Date.now() < Date.parse(evento.fine)) {
+      const resto = Math.max(1, Math.ceil((Date.parse(evento.fine) - Date.now()) / 1000));
+      return [{ contenuto: evento.contenuto, durata: resto, audio: evento.audio, volume: evento.volume, evento: evento.id }];
+    }
     if (this.config.sorgente && this.config.sorgente !== "palinsesto") {
       return m.playlist[this.config.sorgente] || [];
     }
@@ -240,7 +291,7 @@ class ZonaSlide {
       const sequenza = this.sequenza();
       if (!sequenza.length) {
         this.svuota();
-        await attendi(ATTESA_SE_VUOTO);
+        await this.aspetta(attendi(ATTESA_SE_VUOTO));
         continue;
       }
       indice %= sequenza.length;
@@ -248,7 +299,8 @@ class ZonaSlide {
       const voce = this.motore.manifest.contenuti[elemento.contenuto];
       // Un'immagine sola resta ferma: niente transizione su se stessa.
       if (sequenza.length === 1 && this.corrente === elemento.contenuto && voce.tipo !== "video") {
-        await attendi((elemento.durata || 10) * 1000);
+        await this.aspetta(attendi((elemento.durata || 10) * 1000));
+        if (elemento.evento && !this.motore.evento) indice = 0; // finito l'evento, la playlist riparte da capo
         continue;
       }
       // Un video solo ricomincia da capo dove si trova, senza transizione su se stesso.
@@ -256,11 +308,12 @@ class ZonaSlide {
       if (sequenza.length === 1 && this.corrente === elemento.contenuto && voce.tipo === "video" && video) {
         video.currentTime = 0;
         video.play().catch(() => {});
-        await Promise.race([
+        await this.aspetta(Promise.race([
           new Promise((ok) => video.addEventListener("ended", ok, { once: true })),
           new Promise((ok) => video.addEventListener("error", ok, { once: true })),
           attendi((elemento.durata || 3600) * 1000),
-        ]);
+        ]));
+        if (elemento.evento && !this.motore.evento) indice = 0;
         continue;
       }
       const mostrato = voce && (await this.mostraElemento(elemento, voce));
@@ -268,7 +321,8 @@ class ZonaSlide {
         await attendi(1000); // file non ancora disponibile: si passa al successivo
         continue;
       }
-      await mostrato.fine;
+      await this.aspetta(mostrato.fine);
+      if (elemento.evento) indice = 0; // dopo un evento straordinario la playlist riparte da capo
       if (voce.tipo === "diretta" && this.strato === mostrato.strato && this.attivo) {
         // Minuti finiti: la diretta si ferma subito (non resta in onda mentre arriva
         // l'immagine dopo) e la playlist riparte da capo. Se la sequenza è solo la
@@ -313,6 +367,7 @@ class ZonaSlide {
       this.corrente = elemento.contenuto;
       // L'audio solo se la promozione lo chiede; se il browser non lo consente, resta muta.
       if (elemento.audio) media.muted = false;
+      if (elemento.volume !== undefined) media.volume = elemento.volume / 100;
       media.play().catch(() => {
         media.muted = true;
         media.play().catch(() => {});
@@ -348,7 +403,15 @@ class ZonaSlide {
 
     if (voce.tipo === "video") {
       media.currentTime = 0;
-      media.play().catch(() => {});
+      // Un evento straordinario può avere l'audio, con il suo volume (gli annunci hanno il loro).
+      if (elemento.evento && elemento.audio) {
+        media.muted = false;
+        media.volume = (elemento.volume ?? 100) / 100;
+      }
+      media.play().catch(() => {
+        media.muted = true;
+        media.play().catch(() => {});
+      });
       const fine = Promise.race([
         new Promise((ok) => media.addEventListener("ended", ok, { once: true })),
         new Promise((ok) => media.addEventListener("error", ok, { once: true })),
@@ -589,7 +652,7 @@ const OGNI_CODA = 2000;
 
 // Il «din-don» degli eliminacode, sintetizzato: nessun file audio da distribuire.
 let audio = null;
-function dinDon() {
+function dinDon(livello = 1) {
   try {
     audio = audio || new AudioContext();
     const adesso = audio.currentTime;
@@ -598,7 +661,7 @@ function dinDon() {
       const volume = audio.createGain();
       oscillatore.frequency.value = frequenza;
       volume.gain.setValueAtTime(0.0001, adesso + ritardo);
-      volume.gain.exponentialRampToValueAtTime(0.5, adesso + ritardo + 0.02);
+      volume.gain.exponentialRampToValueAtTime(Math.max(0.0002, 0.5 * livello), adesso + ritardo + 0.02);
       volume.gain.exponentialRampToValueAtTime(0.0001, adesso + ritardo + 1.2);
       oscillatore.connect(volume).connect(audio.destination);
       oscillatore.start(adesso + ritardo);
@@ -620,9 +683,10 @@ function fileDelNumero(manifest, repartoId, numero) {
 // Gli annunci uno dopo l'altro: due banchi che chiamano insieme non si sovrappongono.
 let ultimoAnnuncio = Promise.resolve();
 
-function suona(url) {
+function suona(url, livello = 1) {
   return new Promise((ok) => {
     const audio = new Audio(url);
+    audio.volume = Math.max(0, Math.min(1, livello));
     const fine = (riuscito) => ok(riuscito);
     audio.addEventListener("ended", () => fine(true), { once: true });
     audio.addEventListener("error", () => fine(false), { once: true });
@@ -633,25 +697,26 @@ function suona(url) {
 
 // Alla chiamata: il file registrato del numero, se il reparto ce l'ha; altrimenti il din-don
 // (e la voce del sistema, se scelta nel layout).
-function annuncia(tipo, coda, motore) {
+function annuncia(tipo, coda, motore, volume = 100) {
   if (tipo === "nessuno") return;
+  const livello = (volume ?? 100) / 100;
   ultimoAnnuncio = ultimoAnnuncio.then(async () => {
     const voce = fileDelNumero(motore.manifest, coda.id, coda.numero);
     const url = voce && motore.fonte.annuncio ? await motore.fonte.annuncio(voce).catch(() => null) : null;
-    if (url && (await suona(url))) return;
-    sintetizza(tipo, coda.nome, coda.numero);
+    if (url && (await suona(url, livello))) return;
+    sintetizza(tipo, coda.nome, coda.numero, livello);
     await attendi(tipo === "voce" ? 4000 : 1500);
   });
 }
 
 // «Salumeria, numero 27» con la voce italiana del sistema, se c'è (Windows e Android ne hanno una).
-function sintetizza(tipo, nome, numero) {
-  dinDon();
+function sintetizza(tipo, nome, numero, livello) {
+  dinDon(livello);
   if (tipo !== "voce" || !("speechSynthesis" in window)) return;
   const voce = speechSynthesis.getVoices().find((v) => v.lang?.toLowerCase().startsWith("it"));
   if (!voce) return;
   const frase = new SpeechSynthesisUtterance(`${nome}, numero ${numero}`);
-  Object.assign(frase, { voice: voce, lang: voce.lang, rate: 0.95 });
+  Object.assign(frase, { voice: voce, lang: voce.lang, rate: 0.95, volume: livello ?? 1 });
   setTimeout(() => speechSynthesis.speak(frase), 1300);
 }
 
@@ -701,7 +766,7 @@ class ZonaCoda {
         riquadro.el.classList.remove("chiamata");
         riquadro.el.getBoundingClientRect();
         riquadro.el.classList.add("chiamata");
-        annuncia(this.config.annuncio, coda, this.motore);
+        annuncia(this.config.annuncio, coda, this.motore, this.config.volume_annunci);
       }
       this.chiamate.set(coda.id, coda.chiamato_il);
     }

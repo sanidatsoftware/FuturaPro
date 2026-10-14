@@ -16,6 +16,7 @@
     <h1>Creazione palinsesto</h1>
     <label id="scelta-cliente" class="cliente" hidden>Cliente <select id="cliente"></select></label>
     <span class="spazio"></span>
+    <button type="button" id="apri-eventi" class="vetro" data-aiuto="Eventi a data e ora fissa (es. la diretta di una partita): all'ora esatta interrompono la playlist sugli schermi scelti, per la durata indicata.">⚡ Eventi straordinari</button>
     <button type="button" id="apri-importa" class="vetro" data-aiuto="Carica da un file Excel/CSV tutte le campagne e promozioni dell'anno con le loro date: le immagini si aggiungono dopo.">Importa promozioni da CSV</button>
     <span class="utente" id="utente"></span>
   </header>
@@ -95,6 +96,11 @@
     <div class="azioni"><button type="button" id="aggiungi-dirette" class="primario" disabled>Aggiungi alla libreria</button></div>
   </dialog>
 
+  <dialog id="eventi" class="finestra">
+    <form method="dialog" class="chiudi"><button aria-label="Chiudi">✕</button></form>
+    <h2>⚡ Eventi straordinari</h2>
+    <div id="eventi-corpo"></div>
+  </dialog>
   <dialog id="scegli-campagna" class="finestra piccola">
     <form method="dialog" class="chiudi"><button aria-label="Chiudi">✕</button></form>
     <h2>Nuova promozione: in quale campagna?</h2>

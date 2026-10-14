@@ -601,3 +601,32 @@ body.trascina-libreria .pista { outline: 2px dashed color-mix(in srgb, var(--acc
 .piede-anteprima .spazio { flex: 0; }
 @media (max-width: 700px) { .testa-corsia { width: 92px; padding: 0 8px; } .testa-corsia .simbolo { display: none; } }
 .campagna { max-height: calc(100vh - 92px - var(--altezza-dock, 0px)); }
+
+/* --- Eventi straordinari --- */
+.testa-eventi { display: flex; gap: 14px; align-items: flex-start; justify-content: space-between; }
+.testa-eventi .nota { margin: 0; }
+.elenco-eventi { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; max-height: 55vh; overflow-y: auto; }
+.evento { display: grid; grid-template-columns: 110px 1fr auto; gap: 14px; align-items: center; padding: 10px 14px; border-radius: 12px; background: var(--carta); border: 1px solid var(--linea); border-left: 4px solid var(--rosso); }
+.evento.concluso, .evento.sospeso { opacity: .6; border-left-color: var(--linea); }
+.evento.in_onda { box-shadow: 0 0 0 2px color-mix(in srgb, var(--rosso) 35%, transparent); }
+.quando-evento { display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+.quando-evento span { color: var(--tenue); font-size: 13px; }
+.testi-evento { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.testi-evento > div { display: flex; gap: 8px; align-items: center; }
+.testi-evento small { color: var(--tenue); }
+.azioni-evento { display: flex; gap: 6px; }
+.campi-evento { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.campi-evento .largo { grid-column: span 2; }
+.durata-evento { display: flex; align-items: center; gap: 6px; }
+.durata-evento input { width: 64px; }
+.audio-evento { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; margin: 16px 0 8px; padding: 12px 14px; border-radius: 12px; background: var(--carta-forte); border: 1px solid var(--linea); }
+.spunta-evento, .volume-evento { display: flex; gap: 8px; align-items: center; }
+.volume-evento input { width: 160px; }
+.volume-evento output { min-width: 40px; font-variant-numeric: tabular-nums; font-weight: 700; }
+.fascia-eventi .etichetta-fascia { color: var(--rosso); font-weight: 700; }
+.segno-evento { position: absolute; top: 4px; height: 32px; min-width: 10px; padding: 0 8px; border: 0; border-radius: 8px; color: #fff; font-size: 12px; font-weight: 700; text-align: left; white-space: nowrap; overflow: visible;
+  background: repeating-linear-gradient(135deg, #c62828 0 8px, #e53935 8px 16px); box-shadow: 0 4px 12px rgba(198, 40, 40, .35); }
+.segno-evento span { position: relative; z-index: 1; text-shadow: 0 1px 2px rgba(0, 0, 0, .5); }
+.segno-evento.concluso, .segno-evento.sospeso { filter: grayscale(.8); opacity: .6; }
+@media (max-width: 700px) { .campi-evento { grid-template-columns: 1fr; } .campi-evento .largo { grid-column: auto; } .evento { grid-template-columns: 1fr; } }
+.testa-eventi > button { white-space: nowrap; flex: none; }
