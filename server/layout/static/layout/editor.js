@@ -11,6 +11,8 @@ const suffisso = cliente ? `?cliente=${encodeURIComponent(cliente)}` : "";
 const PASSO = 0.5; // griglia di aggancio, in % dello schermo
 const MINIMO = 2;
 const RISOLUZIONE = { orizzontale: [1920, 1080], verticale: [1080, 1920] };
+// Formato immagini proposto se il layout non ne ha uno: A4 a 300 dpi per i totem, Full HD per i monitor.
+const FORMATO_PREDEFINITO = { orizzontale: [1920, 1080], verticale: [2480, 3508] };
 
 // --- API -----------------------------------------------------------------------
 
@@ -337,6 +339,46 @@ function aggiornaGeometria(zona) {
     const [w, h] = RISOLUZIONE[stato.layout.orientamento];
     pixel.textContent = `Immagini ideali: ${Math.round((w * zona.larghezza) / 100)} × ${Math.round((h * zona.altezza) / 100)} pixel`;
   }
+  const confronto = pannello.querySelector(".confronto-formato");
+  if (confronto) confronto.textContent = confrontaFormato(zona);
+}
+
+function formato() {
+  const l = parseInt(document.getElementById("formato_larghezza").value, 10);
+  const a = parseInt(document.getElementById("formato_altezza").value, 10);
+  return l > 0 && a > 0 ? [l, a] : FORMATO_PREDEFINITO[stato.layout.orientamento];
+}
+
+// Quanto un'immagine del formato standard lascia di bande (con «Adatta») o perde (con «Riempi»).
+function confrontaFormato(zona) {
+  const [W, H] = RISOLUZIONE[stato.layout.orientamento];
+  const [fl, fa] = formato();
+  const zonaRapporto = (W * zona.larghezza) / (H * zona.altezza);
+  const rapporto = fl / fa;
+  const scarto = Math.round(Math.abs(1 - Math.min(zonaRapporto, rapporto) / Math.max(zonaRapporto, rapporto)) * 100);
+  if (scarto < 2) return `Formato ${fl}×${fa}: la zona ha già le stesse proporzioni.`;
+  const lati = zonaRapporto > rapporto ? "ai lati" : "sopra e sotto";
+  const tagli = zonaRapporto > rapporto ? "sopra e sotto" : "ai lati";
+  return `Formato ${fl}×${fa}: con «Adatta» resta vuoto il ${scarto}% ${lati}; con «Riempi» si taglia il ${scarto}% ${tagli}.`;
+}
+
+// Cambia la zona perché abbia le proporzioni del formato standard: tiene la larghezza
+// e cambia l'altezza; se non c'è spazio in basso, tiene l'altezza e restringe la larghezza.
+function proporzioniDelFormato(zona) {
+  const [W, H] = RISOLUZIONE[stato.layout.orientamento];
+  const [fl, fa] = formato();
+  let larghezza = zona.larghezza;
+  let altezza = (((W * larghezza) / 100) * (fa / fl) / H) * 100;
+  let x = zona.x;
+  if (altezza > 100 - zona.y) {
+    altezza = 100 - zona.y;
+    larghezza = (((H * altezza) / 100) * (fl / fa) / W) * 100;
+    x = zona.x + (zona.larghezza - larghezza) / 2;
+  }
+  Object.assign(zona, { x: arrotonda(x), larghezza: arrotonda(larghezza), altezza: arrotonda(altezza) });
+  segnaModificato();
+  disegna();
+  aggiornaGeometria(zona);
 }
 
 function cambia(zona, nome, valore) {
@@ -484,6 +526,11 @@ function mostraProprieta() {
     });
   }
   crea("p", { classe: "nota pixel" }, geometria);
+  if (zona.tipo === "slide" || zona.tipo === "immagine") {
+    crea("p", { classe: "nota confronto-formato" }, geometria);
+    crea("button", { type: "button", classe: "formato", testo: "Proporzioni del formato immagini" }, geometria)
+      .addEventListener("click", () => proporzioniDelFormato(zona));
+  }
   aggiornaGeometria(zona);
 
   const azioni = crea("div", { classe: "azioni" }, pannello);
@@ -615,6 +662,9 @@ function caricaLayout(layout) {
   document.getElementById("nome").value = layout.nome;
   document.getElementById("sfondo").value = layout.sfondo;
   document.getElementById("predefinito").checked = layout.predefinito;
+  const [fl, fa] = FORMATO_PREDEFINITO[layout.orientamento];
+  document.getElementById("formato_larghezza").value = layout.formato_larghezza ?? fl;
+  document.getElementById("formato_altezza").value = layout.formato_altezza ?? fa;
   document.getElementById("orientamento").textContent =
     layout.orientamento === "verticale" ? "Verticale · totem 1080×1920" : "Orizzontale · monitor 1920×1080";
   adattaPalco();
@@ -653,6 +703,8 @@ async function salva() {
     nome: document.getElementById("nome").value.trim() || stato.layout.nome,
     sfondo: document.getElementById("sfondo").value,
     predefinito: document.getElementById("predefinito").checked,
+    formato_larghezza: parseInt(document.getElementById("formato_larghezza").value, 10) || null,
+    formato_altezza: parseInt(document.getElementById("formato_altezza").value, 10) || null,
     zone: inviate.map(({ tipo, nome, x, y, larghezza, altezza, livello, configurazione }) => ({
       tipo, nome, x, y, larghezza, altezza, livello, configurazione,
     })),
@@ -680,10 +732,14 @@ async function avviaEditor(id) {
     b.style.borderLeftColor = info.colore;
     b.addEventListener("click", () => aggiungi(tipo));
   }
-  for (const id of ["nome", "sfondo", "predefinito"]) {
+  for (const id of ["nome", "sfondo", "predefinito", "formato_larghezza", "formato_altezza"]) {
     document.getElementById(id).addEventListener("input", () => {
       segnaModificato();
       if (id === "sfondo") palco.style.background = document.getElementById("sfondo").value;
+      if (id.startsWith("formato")) {
+        const zona = stato.zone.find((z) => z._chiave === stato.selezionata);
+        if (zona) aggiornaGeometria(zona);
+      }
     });
   }
   document.getElementById("salva").addEventListener("click", salva);

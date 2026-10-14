@@ -130,6 +130,7 @@ https://$FP_INDIRIZZO {
 	$tls
 	encode zstd gzip
 	handle /static/* {
+		header Cache-Control "no-cache"
 		root * /srv
 		file_server
 	}

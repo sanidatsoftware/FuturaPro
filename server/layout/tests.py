@@ -47,6 +47,17 @@ class LayoutTest(ConFile):
         self.assertEqual(self.crea(zone=[zona("slide"), zona("slide")]).status_code, 400)
         self.assertEqual(self.crea(zone=[zona("notizie", feed=["ftp://x.it/feed"])]).status_code, 400)
 
+    def test_formato_immagini_e_adattamenti(self):
+        self.come(self.admin_a)
+        r = self.crea(formato_larghezza=2480, formato_altezza=3508, zone=[zona("slide", adattamento="sfondo")])
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual((r.json()["formato_larghezza"], r.json()["formato_altezza"]), (2480, 3508))
+        r = self.client.patch(f"/api/layout/{r.json()['id']}/", {"formato_larghezza": None}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.crea(formato_larghezza=10, formato_altezza=10).status_code, 400)
+        self.assertEqual(self.crea(zone=[zona("slide", adattamento="allunga")]).status_code, 201)
+        self.assertEqual(self.crea(zone=[zona("slide", adattamento="esplodi")]).status_code, 400)
+
     def test_non_usa_contenuti_e_playlist_di_altri_clienti(self):
         self.come(self.admin_b)
         immagine_b = self.carica().json()["id"]

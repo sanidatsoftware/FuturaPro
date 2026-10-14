@@ -24,6 +24,10 @@ class Layout(ModelloCliente):
         "contenuti.Contenuto", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
     carattere = models.CharField(max_length=40, default="sans-serif")
+    # Formato in pixel delle immagini che il cliente prepara di solito (es. volantini
+    # A4 a 300 dpi: 2480×3508). L'editor lo usa per dare alle zone le stesse proporzioni.
+    formato_larghezza = models.PositiveIntegerField(null=True, blank=True)
+    formato_altezza = models.PositiveIntegerField(null=True, blank=True)
     predefinito = models.BooleanField(default=False)
     creato = models.DateTimeField(auto_now_add=True)
     modificato = models.DateTimeField(auto_now=True)

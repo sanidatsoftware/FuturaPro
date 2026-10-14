@@ -53,9 +53,20 @@ class LayoutSerializer(serializers.ModelSerializer):
         model = Layout
         fields = [
             "id", "nome", "orientamento", "sfondo", "immagine_sfondo", "carattere",
-            "predefinito", "zone", "creato", "modificato",
+            "formato_larghezza", "formato_altezza", "predefinito", "zone", "creato", "modificato",
         ]
         read_only_fields = ["creato", "modificato"]
+        extra_kwargs = {
+            "formato_larghezza": {"min_value": 100, "max_value": 20000},
+            "formato_altezza": {"min_value": 100, "max_value": 20000},
+        }
+
+    def validate(self, dati):
+        larghezza = dati.get("formato_larghezza", getattr(self.instance, "formato_larghezza", None))
+        altezza = dati.get("formato_altezza", getattr(self.instance, "formato_altezza", None))
+        if (larghezza is None) != (altezza is None):
+            raise serializers.ValidationError("Formato delle immagini: indica sia la larghezza sia l'altezza, o nessuna delle due.")
+        return dati
 
     def validate_immagine_sfondo(self, contenuto):
         if contenuto is not None and contenuto.tipo != Tipo.IMMAGINE:
