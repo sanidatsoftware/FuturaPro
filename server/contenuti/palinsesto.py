@@ -61,6 +61,12 @@ def pubblicazioni_del_monitor(monitor):
     )
 
 
+def download_del_monitor(monitor):
+    from dispositivi.api import download_del_monitor as calcola
+
+    return calcola(monitor)
+
+
 def accensione_del_monitor(monitor):
     from dispositivi.models import orario_del_monitor
 
@@ -204,6 +210,8 @@ def manifest(monitor) -> dict:
         "riserva": riserva,
         # Quando lo schermo è acceso (fasce per giorno, chiusure); null: sempre.
         "accensione": accensione_del_monitor(monitor),
+        # Quando scaricare i file nuovi e a che velocità; null: sempre, senza limiti.
+        "download": download_del_monitor(monitor),
         # Precedenza su tutto, dall'inizio alla fine (istanti assoluti, con il fuso).
         "eventi": [
             {

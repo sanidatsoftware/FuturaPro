@@ -234,3 +234,24 @@ class ImpostazioniAllarmi(ModelloCliente):
     class Meta:
         verbose_name_plural = "impostazioni allarmi"
         constraints = [models.UniqueConstraint(fields=["cliente"], name="allarmi_uno_per_cliente")]
+
+
+class ImpostazioniDownload(ModelloCliente):
+    """Quando e quanto in fretta gli schermi scaricano i file nuovi (facoltativo).
+
+    Fuori fascia restano in onda le promozioni già scaricate; quelle nuove partono quando i loro
+    file sono arrivati. Uno schermo nuovo, i file degli eventi straordinari vicini e il pulsante
+    «Scarica adesso» saltano la fascia.
+    """
+
+    attivo = models.BooleanField(default=False)
+    dalle = models.TimeField(default="22:00")
+    alle = models.TimeField(default="06:00")
+    # Kilobyte al secondo per schermo; 0 = senza limite.
+    kbps = models.PositiveIntegerField(default=0)
+    # «Scarica adesso»: fino a quest'ora la fascia non vale.
+    subito_fino = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name_plural = "impostazioni download"
+        constraints = [models.UniqueConstraint(fields=["cliente"], name="download_uno_per_cliente")]

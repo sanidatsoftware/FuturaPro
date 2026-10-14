@@ -2,6 +2,7 @@
 // come anteprima nel pannello (dati letti con la sessione dell'utente).
 
 import { Motore } from "./motore.js";
+import { istanteNelFuso } from "./regole.js";
 
 const VERSIONE = "web-0.2";
 const OGNI_MANIFEST = 30_000;
@@ -108,7 +109,8 @@ async function pulisciCache(manifest) {
 // Scarica in cache tutti i file di un manifest, prima di mostrarlo: così non manca
 // mai una slide, e se la rete cade dopo, il monitor ha già tutto. Restituisce
 // false se qualcosa non è arrivato (si riprova al giro successivo).
-async function preparaFile(manifest, scarica, voci = Object.values(manifest.contenuti)) {
+// Fuori dalla fascia di download (soloCache) non si scarica nulla: si guarda solo se c'è già tutto.
+async function preparaFile(manifest, scarica, voci = Object.values(manifest.contenuti), soloCache = false) {
   let cache;
   try {
     cache = await caches.open(CACHE_FILE);
@@ -120,6 +122,10 @@ async function preparaFile(manifest, scarica, voci = Object.values(manifest.cont
     if (!voce.sha256) continue;
     const chiave = `/file/${voce.sha256}`;
     if (await cache.match(chiave)) continue;
+    if (soloCache) {
+      completo = false;
+      continue;
+    }
     try {
       const risposta = await scarica(voce);
       if (!risposta.ok) throw new Error(risposta.status);
@@ -129,6 +135,43 @@ async function preparaFile(manifest, scarica, voci = Object.values(manifest.cont
     }
   }
   return completo;
+}
+
+// --- Fasce di download --------------------------------------------------------------
+
+// Si possono scaricare file adesso? Senza fascia sempre; «Scarica adesso» la scavalca.
+function scaricaLibero(manifest) {
+  const fascia = manifest.download;
+  if (!fascia) return true;
+  if (fascia.subito_fino && Date.now() < Date.parse(fascia.subito_fino)) return true;
+  const ora = istanteNelFuso(manifest.fuso_orario).ora.slice(0, 5);
+  return fascia.dalle < fascia.alle ? fascia.dalle <= ora && ora < fascia.alle : ora >= fascia.dalle || ora < fascia.alle;
+}
+
+// I file degli eventi straordinari delle prossime 24 ore: si scaricano anche fuori fascia.
+function fileUrgenti(manifest) {
+  const entro = Date.now() + 24 * 3600_000;
+  const ids = new Set((manifest.eventi || []).filter((e) => Date.parse(e.inizio) < entro).map((e) => e.contenuto));
+  return [...ids].map((id) => manifest.contenuti[id]).filter(Boolean);
+}
+
+// Legge la risposta senza superare i kilobyte al secondo indicati (0: senza limite).
+async function conVelocita(risposta, kbps) {
+  if (!kbps || !risposta.ok || !risposta.body) return risposta;
+  const lettore = risposta.body.getReader();
+  const pezzi = [];
+  let letti = 0;
+  const inizio = performance.now();
+  for (;;) {
+    const { done, value } = await lettore.read();
+    if (done) break;
+    pezzi.push(value);
+    letti += value.length;
+    const atteso = (letti / (kbps * 1024)) * 1000;
+    const trascorso = performance.now() - inizio;
+    if (atteso > trascorso) await attendi(atteso - trascorso);
+  }
+  return new Response(new Blob(pezzi), { status: risposta.status, headers: risposta.headers });
 }
 
 // Una richiesta che non resta appesa: il servizio code o il server potrebbero non rispondere.
@@ -283,7 +326,8 @@ async function avviaPlayer() {
   const salvato = memoria("futurapro.manifest");
   const token = memoria("futurapro.token") && salvato ? memoria("futurapro.token") : await abbina();
   const intestazioni = { Authorization: `Device ${token}` };
-  const scaricaFile = (voce) => conLimite(voce.url, { headers: intestazioni }, 120_000);
+  let limiteKbps = 0; // dalla fascia di download dell'ultimo manifest
+  const scaricaFile = async (voce) => conVelocita(await conLimite(voce.url, { headers: intestazioni }, 120_000), limiteKbps);
   // Gli annunci dei numeri: prima dal totem del negozio (rete locale), poi dal server.
   const scaricaAnnuncio = async (voce) => {
     const totem = serviziCode(motore.manifest);
@@ -330,12 +374,15 @@ async function avviaPlayer() {
 
   let etichetta = null;
   let inCorso = false;
+  let inAttesa = null; // { manifest, etichetta, fascia }: un palinsesto nuovo con file ancora da scaricare
   const aggiorna = async () => {
     if (inCorso) return; // un download lungo non si sovrappone al successivo
     inCorso = true;
     try {
+      // Un palinsesto in attesa della fascia di download non si riscarica: si chiede solo se è cambiato.
+      const versione = inAttesa?.etichetta || etichetta;
       const risposta = await conLimite("/api/player/palinsesto/", {
-        headers: { ...intestazioni, ...(etichetta ? { "If-None-Match": etichetta } : {}) },
+        headers: { ...intestazioni, ...(versione ? { "If-None-Match": versione } : {}) },
       });
       if (risposta.status === 401) {
         // Credenziale revocata o monitor rimosso: si torna all'abbinamento.
@@ -344,18 +391,29 @@ async function avviaPlayer() {
         location.reload();
         return;
       }
-      if (risposta.status === 304 || !risposta.ok) return;
-      const manifest = await risposta.json();
-      // Il nuovo palinsesto va in onda solo quando tutti i suoi file sono sul monitor.
-      const pronto = await preparaFile(manifest, scaricaFile);
-      if (!pronto && mostrato) return; // si riprova al prossimo giro, intanto resta il precedente
-      etichetta = risposta.headers.get("ETag");
+      if (!risposta.ok && risposta.status !== 304) return;
+      if (risposta.status === 304 && !inAttesa) return;
+      const manifest = risposta.status === 304 ? inAttesa.manifest : await risposta.json();
+      const nuovaEtichetta = risposta.status === 304 ? inAttesa.etichetta : risposta.headers.get("ETag");
+      limiteKbps = manifest.download?.kbps || 0;
+      // Gli eventi straordinari vicini non aspettano la fascia di download.
+      await preparaFile(manifest, scaricaFile, fileUrgenti(manifest));
+      // Il nuovo palinsesto va in onda solo quando tutti i suoi file sono sul monitor; fuori
+      // fascia (e se c'è già qualcosa in onda) si aspetta, senza scaricare.
+      const libero = !mostrato || scaricaLibero(manifest);
+      const pronto = await preparaFile(manifest, scaricaFile, undefined, !libero);
+      if (!pronto && mostrato) {
+        inAttesa = { manifest, etichetta: nuovaEtichetta, fascia: !libero };
+        return; // si riprova al prossimo giro, intanto resta il precedente
+      }
+      inAttesa = null;
+      etichetta = nuovaEtichetta;
       mostrato = manifest;
       memoria("futurapro.manifest", JSON.stringify(manifest));
       nascondiAvviso();
       motore.mostra(manifest);
       // Gli annunci dei numeri si scaricano dopo, senza far aspettare le slide.
-      pulisciCache(manifest).then(() => preparaFile(manifest, scaricaAnnuncio, fileAnnunci(manifest)));
+      pulisciCache(manifest).then(() => preparaFile(manifest, scaricaAnnuncio, fileAnnunci(manifest), !libero));
       battito();
     } catch {
       // Offline: si continua con quello che c'è.
@@ -370,7 +428,7 @@ async function avviaPlayer() {
     fetch("/api/player/heartbeat/", {
       method: "POST",
       headers: { ...intestazioni, "Content-Type": "application/json" },
-      body: JSON.stringify({ versione: VERSIONE, manifest: mostrato?.versione || "", problema: motore.problema || null, riposo: motore.inRiposo }),
+      body: JSON.stringify({ versione: VERSIONE, manifest: mostrato?.versione || "", problema: motore.problema || null, riposo: motore.inRiposo, attesa_download: Boolean(inAttesa?.fascia) }),
     }).catch(() => {});
   await aggiorna();
   setInterval(aggiorna, OGNI_MANIFEST);

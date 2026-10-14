@@ -98,3 +98,20 @@ class AllarmiTest(Base):
         with contesto_cliente(self.a.id):
             presenza = PresenzaSchermo.objects.get(monitor=self.mon_a_milano)
         self.assertEqual((presenza.minuti, presenza.minuti_riposo), (1, 1))
+
+
+class DownloadTest(Base):
+    def test_fascia_e_scarica_adesso_nel_manifest(self):
+        self.come(self.admin_a)
+        with contesto_cliente(self.a.id):
+            self.assertIsNone(palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))["download"])
+        r = self.client.put("/api/download/", {"attivo": True, "dalle": "22:30", "alle": "06:00", "kbps": 256}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        with contesto_cliente(self.a.id):
+            fascia = palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))["download"]
+        self.assertEqual(fascia, {"dalle": "22:30", "alle": "06:00", "kbps": 256, "subito_fino": None})
+        self.assertEqual(self.client.post("/api/download/").status_code, 200)
+        with contesto_cliente(self.a.id):
+            self.assertIsNotNone(palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))["download"]["subito_fino"])
+        self.come(self.user_a)
+        self.assertEqual(self.client.put("/api/download/", {"attivo": False}, format="json").status_code, 403)

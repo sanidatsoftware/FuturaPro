@@ -23,7 +23,7 @@ from utenti.models import Ruolo
 from . import schermate
 from .models import (
     acceso_secondo_orario, orario_del_monitor,
-    CredenzialeDispositivo, EventoSchermo, GruppoMonitor, ImpostazioniAllarmi, Monitor, OrarioSchermi, Piattaforma,
+    CredenzialeDispositivo, EventoSchermo, GruppoMonitor, ImpostazioniAllarmi, ImpostazioniDownload, Monitor, OrarioSchermi, Piattaforma,
     PresenzaSchermo, RichiestaAbbinamento, impronta,
 )
 
@@ -70,9 +70,13 @@ class MonitorSerializer(serializers.ModelSerializer):
     online = serializers.BooleanField(read_only=True)
     problema = serializers.SerializerMethodField()
     riposo = serializers.SerializerMethodField()
+    attesa_download = serializers.SerializerMethodField()
 
     def get_problema(self, monitor):
         return (monitor.info_dispositivo or {}).get("problema")
+
+    def get_attesa_download(self, monitor):
+        return bool((monitor.info_dispositivo or {}).get("attesa_download"))
 
     def get_riposo(self, monitor):
         return bool((monitor.info_dispositivo or {}).get("riposo"))
@@ -81,7 +85,7 @@ class MonitorSerializer(serializers.ModelSerializer):
         model = Monitor
         fields = [
             "id", "nome", "sede", "gruppi", "orientamento", "rotazione", "layout", "immagine_riserva", "piattaforma",
-            "versione_player", "ultimo_contatto", "online", "problema", "riposo", "schermata_il", "abbinato_il",
+            "versione_player", "ultimo_contatto", "online", "problema", "riposo", "attesa_download", "schermata_il", "abbinato_il",
         ]
         read_only_fields = ["piattaforma", "versione_player", "ultimo_contatto", "schermata_il", "abbinato_il"]
 
@@ -247,6 +251,52 @@ class StatoSchermiView(VistaConContesto, APIView):
         if not allarmi.invia(prova, "FuturaPro: email di prova", "Se leggi questo messaggio, gli allarmi degli schermi arriveranno qui."):
             raise exceptions.ValidationError("L'email non è partita: controlla le impostazioni SMTP del server.")
         return Response({"inviata": True})
+
+
+class ImpostazioniDownloadSerializer(serializers.ModelSerializer):
+    dalle = serializers.TimeField(format="%H:%M")
+    alle = serializers.TimeField(format="%H:%M")
+    kbps = serializers.IntegerField(min_value=0, max_value=1_000_000)
+
+    class Meta:
+        model = ImpostazioniDownload
+        fields = ["attivo", "dalle", "alle", "kbps", "subito_fino"]
+        read_only_fields = ["subito_fino"]
+
+
+class DownloadView(VistaConContesto, APIView):
+    """GET/PUT le fasce di download; POST «scarica adesso» per due ore (solo la gestione)."""
+
+    def get(self, request):
+        impostazioni = ImpostazioniDownload.objects.first() or ImpostazioniDownload()
+        return Response(ImpostazioniDownloadSerializer(impostazioni).data)
+
+    def put(self, request):
+        impostazioni = ImpostazioniDownload.objects.first()
+        dati = ImpostazioniDownloadSerializer(impostazioni, data=request.data, partial=True)
+        dati.is_valid(raise_exception=True)
+        salvate = dati.save()
+        registra(request.user, "download_modificato", None, attivo=salvate.attivo)
+        return Response(ImpostazioniDownloadSerializer(salvate).data)
+
+    def post(self, request):
+        impostazioni = ImpostazioniDownload.objects.first() or ImpostazioniDownload()
+        impostazioni.subito_fino = timezone.now() + timedelta(hours=2)
+        impostazioni.save()
+        registra(request.user, "download_subito", None)
+        return Response(ImpostazioniDownloadSerializer(impostazioni).data)
+
+
+def download_del_monitor(monitor):
+    """Per il manifest: la fascia di download o None (si scarica sempre, senza limiti)."""
+    impostazioni = ImpostazioniDownload.objects.first()
+    if impostazioni is None or not impostazioni.attivo:
+        return None
+    subito = impostazioni.subito_fino and impostazioni.subito_fino > timezone.now()
+    return {
+        "dalle": impostazioni.dalle.strftime("%H:%M"), "alle": impostazioni.alle.strftime("%H:%M"),
+        "kbps": impostazioni.kbps, "subito_fino": impostazioni.subito_fino.isoformat() if subito else None,
+    }
 
 
 class AbbinamentoSerializer(serializers.Serializer):
@@ -483,6 +533,8 @@ class HeartbeatView(VistaPlayer):
                 info.pop("problema", None)
             # Fuori orario lo schermo riposa: non è un guasto.
             info["riposo"] = request.data.get("riposo") is True
+            # Un palinsesto nuovo che aspetta la fascia di download per i suoi file.
+            info["attesa_download"] = request.data.get("attesa_download") is True
             monitor.info_dispositivo = info
             monitor.save(update_fields=["ultimo_contatto", "versione_player", "manifest_ricevuto", "info_dispositivo"])
         return Response(status=status.HTTP_204_NO_CONTENT)

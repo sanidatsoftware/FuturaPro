@@ -283,6 +283,13 @@ l'Administrator Assoluto, nella scheda «Aspetto interfaccia» (`/api/piattaform
   email sono facoltativi (indirizzi, dopo quanti minuti, solo in orario, avviso di ritorno):
   li controlla `manage.py controlla_schermi --ciclo` nel servizio `pianificatore`, una email per
   scollegamento; lo storico (`EventoSchermo`) resta anche senza server email.
+- **Fasce di download** (facoltative; `/api/download/`). Fascia oraria e velocità massima per
+  schermo (`download` nel manifest). Fuori fascia il player non scarica: tiene in onda il
+  palinsesto precedente, ricorda quello nuovo (chiedendo solo se è cambiato, con l'ETag) e lo
+  manda in onda appena i suoi file sono arrivati; nel pannello lo schermo risulta «aspetta la
+  fascia di download». Scaricano subito: uno schermo appena installato, i file degli eventi
+  straordinari delle prossime 24 ore e tutti per due ore dopo «Scarica adesso». La velocità si
+  rispetta leggendo i file a pezzi.
 
 ## 6. Layout grafici
 

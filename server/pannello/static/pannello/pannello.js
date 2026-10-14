@@ -3,7 +3,7 @@
 
 import { attivaAiuti } from "./aiuto.js";
 import { VOCI, clienteRicordato, disegnaMenu, ricordaCliente } from "./menu.js";
-import { preparaSchedeSchermi, schedaAccensione, schedaStato } from "./schede-schermi.js";
+import { preparaSchedeSchermi, schedaAccensione, schedaDownload, schedaStato } from "./schede-schermi.js";
 
 const stato = { io: null, cliente: null, clienti: [], scheda: null };
 
@@ -133,6 +133,7 @@ const SCHEDE = {
   monitor: schedaMonitor,
   accensione: schedaAccensione,
   stato: schedaStato,
+  download: schedaDownload,
   reparti: schedaReparti,
   sedi: schedaSedi,
   utenti: schedaUtenti,
@@ -325,9 +326,11 @@ async function schedaMonitor() {
       }
       // Online ma con un palinsesto vecchio: non ha ancora scaricato le ultime modifiche.
       if (m.online && aggiornato === false) {
-        inOnda.append(" · non aggiornato");
+        inOnda.append(m.attesa_download ? " · aspetta la fascia di download" : " · non aggiornato");
         inOnda.className = "attenzione";
-        inOnda.title = "Lo schermo non ha ancora ricevuto (o scaricato) l'ultimo palinsesto.";
+        inOnda.title = m.attesa_download
+          ? "Il palinsesto nuovo è arrivato: i suoi file si scaricano nella fascia di download (Schermi → Fasce di download, «Scarica adesso» per non aspettare)."
+          : "Lo schermo non ha ancora ricevuto (o scaricato) l'ultimo palinsesto.";
       }
     }).catch(() => (inOnda.textContent = "?"));
     const cellaGruppi = crea("td", {}, riga);

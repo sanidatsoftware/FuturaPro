@@ -333,3 +333,42 @@ export async function schedaStato() {
     }
   }
 }
+
+// --- Fasce di download ------------------------------------------------------------------------
+
+export async function schedaDownload() {
+  const { crea, sezione, api, prova } = H;
+  const d = await api("GET", "/api/download/");
+  const box = sezione("Fasce di download");
+  crea("p", {
+    classe: "nota",
+    testo: "Facoltative. Per non rallentare la rete del negozio (casse, bilance) gli schermi possono scaricare i file nuovi solo in una fascia oraria, per esempio di notte, e a una velocità massima. "
+      + "Intanto restano in onda le promozioni già scaricate; quelle nuove partono appena i loro file sono arrivati. "
+      + "Uno schermo appena installato scarica subito, e i file degli eventi straordinari delle prossime 24 ore non aspettano la fascia.",
+  }, box);
+  const attivo = crea("input", { type: "checkbox", checked: d.attivo });
+  const l = crea("label", { classe: "spunta interruttore" }, crea("div", {}, box));
+  l.append(attivo, " Scarica solo nella fascia");
+  const riga = crea("div", { classe: "riga" }, box);
+  const dalle = H.campo("Dalle", crea("input", { type: "time", value: d.dalle }), riga);
+  const alle = H.campo("Alle", crea("input", { type: "time", value: d.alle }), riga);
+  const kbps = H.campo("Velocità massima per schermo", H.scelta([
+    [0, "Senza limite"], [128, "128 KB/s (≈1 Mbit/s)"], [256, "256 KB/s (≈2 Mbit/s)"], [512, "512 KB/s (≈4 Mbit/s)"],
+    [1024, "1 MB/s (≈8 Mbit/s)"], [2048, "2 MB/s (≈16 Mbit/s)"],
+  ], d.kbps), riga);
+  crea("p", { classe: "tenue", testo: "La velocità vale anche fuori fascia: con «Senza limite» uno schermo usa tutta la banda libera mentre scarica." }, box);
+  const azioni = crea("div", { classe: "riga" }, box);
+  crea("button", {
+    classe: "primario", testo: "Salva",
+    onclick: () => prova(() => api("PUT", "/api/download/", { attivo: attivo.checked, dalle: dalle.value, alle: alle.value, kbps: parseInt(kbps.value, 10) }), "Salvato: gli schermi lo ricevono entro un minuto."),
+  }, azioni);
+  crea("button", {
+    testo: "⚡ Scarica adesso (per 2 ore)",
+    "data-aiuto": "Per le urgenze: per due ore gli schermi scaricano subito, senza aspettare la fascia.",
+    onclick: () => prova(() => api("POST", "/api/download/"), "Per le prossime due ore gli schermi scaricano subito."),
+  }, azioni);
+  if (d.subito_fino && Date.parse(d.subito_fino) > Date.now()) {
+    crea("p", { classe: "nota", testo: `«Scarica adesso» attivo fino alle ${new Date(d.subito_fino).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}.` }, box);
+  }
+  for (const c of [attivo, dalle, alle, kbps]) c.disabled = !H.ruoloGestione();
+}
