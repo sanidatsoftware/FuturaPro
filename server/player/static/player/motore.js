@@ -272,6 +272,7 @@ class ZonaSlide {
     let media;
     if (voce.tipo === "diretta") {
       media = crea("video", "media", strato);
+      media.dataset.nome = voce.nome || "";
       Object.assign(media, { muted: true, playsInline: true, autoplay: true });
       adatta(media, this.config.adattamento === "riempi" ? "riempi" : "adatta", voce.url);
       const diretta = await avviaDiretta(media, voce.url);
@@ -299,6 +300,7 @@ class ZonaSlide {
     }
     if (voce.tipo === "web") {
       media = crea("iframe", "media", strato);
+      media.dataset.nome = voce.nome || "";
       media.setAttribute("sandbox", "allow-scripts allow-same-origin");
       media.src = voce.url;
     } else {

@@ -1,3 +1,5 @@
+from django.core.files.storage import default_storage
+from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import authentication, exceptions, serializers, status
 from rest_framework.decorators import action
@@ -14,6 +16,7 @@ from core.api import RiferimentoCliente, ViewSetCliente, sedi_visibili
 from core.contesto import contesto_cliente
 from utenti.models import Ruolo
 
+from . import schermate
 from .models import CredenzialeDispositivo, GruppoMonitor, Monitor, Piattaforma, RichiestaAbbinamento, impronta
 
 
@@ -55,9 +58,9 @@ class MonitorSerializer(serializers.ModelSerializer):
         model = Monitor
         fields = [
             "id", "nome", "sede", "gruppi", "orientamento", "rotazione", "layout", "immagine_riserva", "piattaforma",
-            "versione_player", "ultimo_contatto", "online", "problema", "abbinato_il",
+            "versione_player", "ultimo_contatto", "online", "problema", "schermata_il", "abbinato_il",
         ]
-        read_only_fields = ["piattaforma", "versione_player", "ultimo_contatto", "abbinato_il"]
+        read_only_fields = ["piattaforma", "versione_player", "ultimo_contatto", "schermata_il", "abbinato_il"]
 
     def validate(self, dati):
         orientamento = dati.get("orientamento") or getattr(self.instance, "orientamento", "orizzontale")
@@ -95,6 +98,34 @@ class MonitorViewSet(ViewSetCliente):
         if self.request.user.ruolo != Ruolo.ADMIN_ASSOLUTO and not abilitazioni.admin_gestisce_dispositivi:
             raise exceptions.PermissionDenied("La gestione dei monitor non è abilitata per questo cliente.")
         return abilitazioni
+
+    @action(detail=True, methods=["get", "post"], url_path="schermata")
+    def schermata(self, request, pk=None):
+        """GET: quando è stata scattata l'ultima fotografia dello schermo. POST: chiedine una nuova.
+
+        Chiunque veda il monitor può chiederla: non cambia nulla di ciò che va in onda.
+        """
+        monitor = self.get_object()
+        if request.method == "POST":
+            schermate.richiedi(monitor)
+            return Response({"richiesta": True}, status=status.HTTP_202_ACCEPTED)
+        return Response({"quando": monitor.schermata_il, "richiesta": schermate.richiesta(monitor)})
+
+    @action(detail=True, methods=["get"], url_path="schermata/immagine")
+    def immagine_schermata(self, request, pk=None):
+        monitor = self.get_object()
+        nome = schermate.percorso(monitor)
+        if not monitor.schermata_il or not default_storage.exists(nome):
+            raise exceptions.NotFound()
+        risposta = FileResponse(default_storage.open(nome, "rb"), content_type="image/jpeg")
+        risposta["Cache-Control"] = "no-store"
+        return risposta
+
+    def get_permissions(self):
+        # Chiedere una fotografia dello schermo è una lettura: lo può fare chiunque veda il monitor.
+        if getattr(self, "action", None) == "schermata":
+            self.ruoli_scrittura = self.ruoli_lettura
+        return super().get_permissions()
 
     @action(detail=False, methods=["post"])
     def abbina(self, request):
@@ -172,6 +203,28 @@ class VistaPlayer(APIView):
     def get_authenticate_header(self, request):
         # Senza schema DRF risponderebbe 403; il player deve capire che è un problema di credenziali.
         return "Device"
+
+
+class SchermataPlayerView(VistaPlayer):
+    """Il player chiede se deve fotografare lo schermo (GET) e manda la fotografia (POST, JPEG)."""
+
+    def get(self, request):
+        credenziale = credenziale_dalla_richiesta(request)
+        with contesto_cliente(credenziale.cliente_id):
+            monitor = Monitor.objects.only("schermata_il", "schermata_richiesta").get(id=credenziale.monitor_id)
+        return Response({"richiesta": schermate.richiesta(monitor)})
+
+    def post(self, request):
+        credenziale = credenziale_dalla_richiesta(request)
+        file = request.FILES.get("immagine")
+        if file is None or file.size > schermate.MASSIMO_BYTE:
+            raise exceptions.ValidationError({"immagine": "Manca la fotografia, o è troppo grande."})
+        dati = file.read()
+        if not dati.startswith(b"\xff\xd8\xff"):
+            raise exceptions.ValidationError({"immagine": "Dev'essere una JPEG."})
+        with contesto_cliente(credenziale.cliente_id):
+            schermate.salva(Monitor.objects.get(id=credenziale.monitor_id), dati)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ThrottleAbbinamento(AnonRateThrottle):

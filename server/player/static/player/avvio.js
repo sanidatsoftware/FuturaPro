@@ -7,6 +7,9 @@ const VERSIONE = "web-0.2";
 const OGNI_MANIFEST = 30_000;
 const OGNI_HEARTBEAT = 60_000;
 const OGNI_STATO = 5_000;
+// Ogni quanto il player chiede se il pannello vuole una fotografia dello schermo.
+const OGNI_SCHERMATA = 8_000;
+const LARGHEZZA_SCHERMATA = 960;
 const CACHE_FILE = "futurapro-file";
 
 const radice = document.getElementById("schermo");
@@ -319,6 +322,124 @@ async function avviaPlayer() {
   setInterval(aggiorna, OGNI_MANIFEST);
   battito();
   setInterval(battito, OGNI_HEARTBEAT);
+
+  // Fotografia dello schermo su richiesta del pannello.
+  let scatto = false;
+  setInterval(async () => {
+    if (scatto || document.hidden) return;
+    try {
+      const risposta = await conLimite("/api/player/schermata/", { headers: intestazioni }, 5000);
+      if (!risposta.ok || !(await risposta.json()).richiesta) return;
+      scatto = true;
+      const foto = await fotografaSchermo(motore);
+      const dati = new FormData();
+      dati.append("immagine", foto, "schermo.jpg");
+      await conLimite("/api/player/schermata/", { method: "POST", headers: intestazioni, body: dati }, 20000);
+    } catch {
+      // Offline o fotografia non riuscita: si riproverà alla prossima richiesta.
+    } finally {
+      scatto = false;
+    }
+  }, OGNI_SCHERMATA);
+}
+
+// --- Fotografia dello schermo -------------------------------------------------------
+// html2canvas ridisegna la pagina; video e dirette li si ricopia fotogramma per
+// fotogramma. Quello che il browser non lascia copiare (una diretta di un altro sito
+// senza permessi, una pagina web) diventa un riquadro con il suo nome.
+
+function caricaScript(percorso, globale) {
+  if (window[globale]) return Promise.resolve(window[globale]);
+  return new Promise((ok, ko) => {
+    const script = document.createElement("script");
+    script.src = new URL(percorso, import.meta.url).href;
+    script.onload = () => ok(window[globale]);
+    script.onerror = () => ko(new Error(`${percorso} non caricato`));
+    document.head.appendChild(script);
+  });
+}
+
+function copiabile(video) {
+  try {
+    const prova = document.createElement("canvas");
+    prova.width = prova.height = 1;
+    const c = prova.getContext("2d");
+    c.drawImage(video, 0, 0, 1, 1);
+    c.getImageData(0, 0, 1, 1);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function riquadro(contesto, r, testo) {
+  contesto.fillStyle = "#101828";
+  contesto.fillRect(r.x, r.y, r.w, r.h);
+  contesto.fillStyle = "#c9d3e3";
+  contesto.font = `${Math.max(12, Math.round(r.h / 10))}px system-ui, sans-serif`;
+  contesto.textAlign = "center";
+  contesto.textBaseline = "middle";
+  contesto.fillText(testo, r.x + r.w / 2, r.y + r.h / 2);
+}
+
+// La posizione di un elemento nel palco, alla misura vera dello schermo (1920×1080 o
+// 1080×1920): le coordinate «offset» non risentono di scala e rotazione del palco.
+function posizioneNelPalco(el, palco) {
+  let x = 0;
+  let y = 0;
+  for (let n = el; n && n !== palco; n = n.offsetParent) {
+    x += n.offsetLeft;
+    y += n.offsetTop;
+  }
+  return { x, y, w: el.offsetWidth, h: el.offsetHeight };
+}
+
+async function fotografaSchermo(motore) {
+  const html2canvas = await caricaScript("./vendor/html2canvas.min.js", "html2canvas");
+  const palco = motore.palco;
+  const { larghezza, altezza } = motore.dimensioni;
+  const scala = Math.min(1, LARGHEZZA_SCHERMATA / Math.max(larghezza, altezza));
+  // Si fotografa una copia del palco alla sua misura vera, senza scala né rotazione:
+  // lo schermo vero non cambia e la foto è dritta anche per un televisore montato in verticale.
+  const tela = await html2canvas(palco, {
+    backgroundColor: "#000000", scale: scala, logging: false, useCORS: true,
+    width: larghezza, height: altezza, windowWidth: larghezza, windowHeight: altezza, x: 0, y: 0, scrollX: 0, scrollY: 0,
+    ignoreElements: (el) => el.tagName === "VIDEO" || el.tagName === "IFRAME",
+    onclone: (_, copia) => Object.assign(copia.style, { transform: "none", left: "0px", top: "0px" }),
+  });
+  const contesto = tela.getContext("2d");
+  // html2canvas lascia la tela con la sua scala: si torna ai pixel veri della foto.
+  contesto.setTransform(1, 0, 0, 1, 0, 0);
+  for (const el of palco.querySelectorAll("video, iframe")) {
+    const p = posizioneNelPalco(el, palco);
+    if (!p.w || !p.h) continue;
+    const r = { x: p.x * scala, y: p.y * scala, w: p.w * scala, h: p.h * scala };
+    const nome = el.dataset.nome || "";
+    if (el.tagName === "IFRAME") {
+      riquadro(contesto, r, `🌐 ${nome || "pagina web"}`);
+    } else if (el.readyState >= 2 && copiabile(el)) {
+      // Come «adatta»: il fotogramma intero, centrato nel suo riquadro.
+      const rapporto = Math.min(r.w / el.videoWidth, r.h / el.videoHeight);
+      const w = el.videoWidth * rapporto;
+      const h = el.videoHeight * rapporto;
+      contesto.fillStyle = "#000";
+      contesto.fillRect(r.x, r.y, r.w, r.h);
+      contesto.drawImage(el, r.x + (r.w - w) / 2, r.y + (r.h - h) / 2, w, h);
+    } else {
+      // Una diretta di un altro sito senza permessi: il browser non la lascia copiare.
+      riquadro(contesto, r, `📡 ${nome || "diretta"} · in onda`);
+    }
+  }
+  // Ora dello scatto, in basso a destra.
+  const ora = new Date().toLocaleTimeString("it-IT");
+  contesto.font = "bold 14px system-ui, sans-serif";
+  contesto.textAlign = "right";
+  contesto.textBaseline = "bottom";
+  contesto.fillStyle = "rgba(0,0,0,.6)";
+  contesto.fillRect(tela.width - 86, tela.height - 24, 86, 24);
+  contesto.fillStyle = "#fff";
+  contesto.fillText(ora, tela.width - 8, tela.height - 5);
+  return new Promise((ok, ko) => tela.toBlob((blob) => (blob ? ok(blob) : ko(new Error("fotografia vuota"))), "image/jpeg", 0.78));
 }
 
 // --- Anteprima nel pannello ----------------------------------------------------

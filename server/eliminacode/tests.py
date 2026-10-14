@@ -289,6 +289,33 @@ class CodeSulTotemTest(ConReparti):
         self.come(self.admin_a)
         self.assertIsNone(self.client.get(f"/api/monitor/{self.mon_a_milano.id}/").json()["problema"])
 
+    def test_fotografia_dello_schermo_su_richiesta(self):
+        import shutil
+        import tempfile
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+
+        cartella = tempfile.mkdtemp()
+        with override_settings(MEDIA_ROOT=cartella):
+            dispositivo = self.player(self.mon_a_milano)
+            self.assertFalse(self.client.get("/api/player/schermata/", **dispositivo).json()["richiesta"])
+            self.come(self.user_a)  # anche un UserCliente può chiederla: non cambia nulla in onda
+            self.assertEqual(self.client.post(f"/api/monitor/{self.mon_a_milano.id}/schermata/").status_code, 202)
+            self.client.logout()
+            self.assertTrue(self.client.get("/api/player/schermata/", **dispositivo).json()["richiesta"])
+            jpeg = SimpleUploadedFile("s.jpg", b"\xff\xd8\xff\xe0" + b"0" * 100, content_type="image/jpeg")
+            self.assertEqual(self.client.post("/api/player/schermata/", {"immagine": jpeg}, **dispositivo).status_code, 204)
+            self.assertFalse(self.client.get("/api/player/schermata/", **dispositivo).json()["richiesta"])
+            self.come(self.admin_a)
+            self.assertIsNotNone(self.client.get(f"/api/monitor/{self.mon_a_milano.id}/schermata/").json()["quando"])
+            r = self.client.get(f"/api/monitor/{self.mon_a_milano.id}/schermata/immagine/")
+            self.assertEqual((r.status_code, r["Content-Type"]), (200, "image/jpeg"))
+            # I monitor degli altri clienti restano invisibili.
+            self.come(self.admin_b)
+            self.assertEqual(self.client.post(f"/api/monitor/{self.mon_a_milano.id}/schermata/").status_code, 404)
+        shutil.rmtree(cartella, ignore_errors=True)
+
     def test_con_il_totem_il_server_non_da_numeri(self):
         self.come(self.admin_a)
         chiave = self.client.post(f"/api/reparti/{self.salumeria.id}/chiave/").json()["chiave"]

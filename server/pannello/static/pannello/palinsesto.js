@@ -1111,6 +1111,8 @@ function disegnaPromozione(box) {
   const raggiunti = destinatari(c);
   const totem = raggiunti.filter((m) => m.orientamento === "verticale").length;
   const monitor = raggiunti.length - totem;
+  const giro = crea("div", { classe: "giro", id: "giro-promozione" }, box);
+  aggiornaGiro(giro);
   const riepilogo = crea("div", { classe: `riepilogo${raggiunti.length ? "" : " attenzione"}` }, box);
   if (!raggiunti.length) {
     riepilogo.textContent = c.insegne.length || c.gruppi.length || c.monitor.length
@@ -1143,6 +1145,45 @@ function disegnaPromozione(box) {
   crea("button", { type: "button", classe: "leggero", testo: "Chiudi", onclick: chiudi }, piede);
 }
 
+// Che cosa ripete ogni schermo, nell'ordine, e quanto dura un giro: così si vede subito
+// se la diretta è l'unica voce per i monitor (in quel caso resta in onda di continuo).
+function descriviGiro(voci, p, c) {
+  const secondiImmagine = c.durata || 10;
+  const testo = voci.map((x) => (x.tipo === "diretta"
+    ? `📡 ${x.nome} ${minuti(p.durate?.[x.id] || x.durata)} min`
+    : x.tipo === "video" ? "▶ video" : "🖼"));
+  const totale = voci.reduce((somma, x) => somma + (x.tipo === "diretta" ? (p.durate?.[x.id] || x.durata || 300) : x.tipo === "video" ? 0 : secondiImmagine), 0);
+  // Le immagini consecutive si raccolgono: «🖼 ×5 (10 s)».
+  const compatto = [];
+  for (const voce of testo) {
+    const ultimo = compatto[compatto.length - 1];
+    if (voce === "🖼" && ultimo?.startsWith("🖼")) compatto[compatto.length - 1] = `🖼 ×${(parseInt(ultimo.split("×")[1], 10) || 1) + 1}`;
+    else compatto.push(voce);
+  }
+  const durata = totale >= 60 ? `${Math.floor(totale / 60)} min ${totale % 60 ? `${totale % 60} s` : ""}` : `${totale} s`;
+  return `${compatto.join(" → ")} → da capo · un giro ≈ ${durata.trim()} (immagini da ${secondiImmagine} s)`;
+}
+
+function aggiornaGiro(box = document.getElementById("giro-promozione")) {
+  if (!box || !S.promozione || !S.campagna) return;
+  const p = S.promozione;
+  const contenuti = perId(S.contenuti);
+  const voci = p.contenuti.map((id) => contenuti.get(id)).filter(Boolean);
+  box.replaceChildren();
+  crea("strong", { testo: "Cosa ripete ogni schermo" }, box);
+  const totem = voci.filter((x) => x.orientamento === "verticale" || !x.orientamento);
+  const monitor = voci.filter((x) => x.orientamento === "orizzontale" || x.tipo === "diretta" || !x.orientamento);
+  for (const [titolo, elenco] of [["Totem", totem], ["Monitor", monitor]]) {
+    if (!elenco.length) continue;
+    const riga = crea("div", {}, box);
+    crea("span", { classe: "tenue", testo: `${titolo}: ` }, riga);
+    riga.append(descriviGiro(elenco, p, S.campagna));
+    if (elenco.length === 1 && elenco[0].tipo === "diretta") {
+      crea("div", { classe: "manca", testo: "La diretta è l'unica voce per i monitor: resta in onda di continuo. Aggiungi immagini orizzontali per alternarla." }, box);
+    }
+  }
+}
+
 function disegnaContenutiPromozione(box, p) {
   const sezione = crea("section", { classe: "contenuti-campagna" }, box);
   crea("h3", { testo: `Immagini (${p.contenuti.length})` }, sezione);
@@ -1169,10 +1210,13 @@ function disegnaContenutiPromozione(box, p) {
         const input = crea("input", { type: "number", min: 1, max: 1440, value: minuti(p.durate[id] || x.durata) }, durata);
         durata.append(" min");
         input.addEventListener("click", (e) => e.stopPropagation());
-        input.addEventListener("change", () => {
-          const valore = Math.max(1, parseInt(input.value, 10) || 5);
+        // Si registra a ogni tasto, non solo uscendo dal campo: premendo subito «Salva» non si perde.
+        input.addEventListener("input", () => {
+          const valore = parseInt(input.value, 10);
+          if (!valore || valore < 1) return;
           p.durate[id] = valore * 60;
           segnaModificata();
+          aggiornaGiro();
         });
         // Audio della sola diretta: spento non tocca gli altri suoni del monitor (es. il din-don dei numeri).
         p.audio ??= [];

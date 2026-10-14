@@ -16,7 +16,14 @@ from contenuti.api import (
     PubblicaView,
     PubblicazioniViewSet,
 )
-from dispositivi.api import GruppiViewSet, HeartbeatView, MonitorViewSet, RichiestaAbbinamentoView, StatoPlayerView
+from dispositivi.api import (
+    GruppiViewSet,
+    HeartbeatView,
+    MonitorViewSet,
+    RichiestaAbbinamentoView,
+    SchermataPlayerView,
+    StatoPlayerView,
+)
 from eliminacode import views as eliminacode
 from eliminacode.api import EmettiPlayerView, PulsanteView, RepartiViewSet
 from layout import views as layout
@@ -65,6 +72,7 @@ urlpatterns = [
     path("api/eliminacode/pulsante/", PulsanteView.as_view(), name="pulsante-stato"),
     path("api/eliminacode/pulsante/<str:operazione>/", PulsanteView.as_view(), name="pulsante"),
     path("api/player/heartbeat/", HeartbeatView.as_view(), name="player-heartbeat"),
+    path("api/player/schermata/", SchermataPlayerView.as_view(), name="player-schermata"),
     path("api/", include(router.urls)),
     path("api/piattaforma/aspetto/", pannello_viste.AspettoView.as_view(), name="aspetto"),
     # La pagina di accesso è la nostra, anche per chi arriva dall'API navigabile.

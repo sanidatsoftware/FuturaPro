@@ -111,3 +111,7 @@ td.attenzione { color: var(--errore); font-weight: 600; cursor: help; }
 select.riserva { max-width: 190px; }
 td select { max-width: 190px; }
 .problema-schermo { margin-top: 4px; font-size: 12px; color: var(--errore); max-width: 260px; }
+.ora-schermata { font-size: 11px; color: var(--tenue); margin-top: 4px; text-align: center; white-space: nowrap; }
+.mini-schermo.con-foto img { object-fit: cover; }
+.mini-schermo.scatto .vetro-schermo::after { content: ""; position: absolute; inset: 0; background: #fff; animation: flash .9s ease-out infinite; }
+@keyframes flash { 0% { opacity: .7; } 100% { opacity: 0; } }

@@ -198,6 +198,14 @@ al passaggio del mouse (`data-aiuto`, `pannello/static/pannello/aiuto.js`).
   in http, il player prova lo stesso indirizzo in https (il browser blocca l'http). Il motivo di
   una diretta che non parte arriva al server con il segnale periodico e compare nella scheda
   Monitor; il pulsante ▶ sulla diretta, nella libreria, la prova dal browser del pannello.
+- **Fotografia dello schermo** (scheda Monitor, clic sulla sagoma): il pannello la chiede
+  (`POST /api/monitor/<id>/schermata/`), il player se ne accorge entro 8 secondi
+  (`GET /api/player/schermata/`), fotografa il palco alla misura vera con html2canvas
+  (`player/static/player/vendor`, licenza MIT) ricopiando i fotogrammi di video e dirette, e la
+  manda in JPEG (`POST /api/player/schermata/`). Una diretta di un altro sito che non concede
+  la copia compare come riquadro con il suo nome. L'ultima foto resta, con la sua ora.
+- **Giro di una promozione**: nel riquadro della promozione, per totem e monitor, la sequenza
+  che ogni schermo ripete e quanto dura un giro; avvisa se la diretta è l'unica voce.
 - **Salvataggio**: i pulsanti «Salva» di campagna e promozione restano spenti finché non si
   cambia qualcosa; con modifiche in sospeso lampeggiano e compare il promemoria.
 - **Insegne** (`/api/insegne/`, facoltative): ogni sede può avere un'insegna; una campagna su

@@ -361,32 +361,71 @@ async function schedaMonitor() {
   }
 }
 
-// Lo schermo disegnato con il suo orientamento. Dentro, la prima immagine in onda; un clic
-// carica l'anteprima vera (layout, orologio, notizie…) e ogni clic successivo la aggiorna.
+// Lo schermo disegnato con il suo orientamento. Dentro, l'ultima fotografia vera di ciò che
+// il monitor mostrava (con l'ora); un clic gliene chiede una nuova, scattata in quell'istante.
+// Se non ce ne sono, la prima immagine in onda. Doppio clic: l'anteprima simulata a tutto schermo.
 function schermoInMiniatura(m, cella) {
   const verticale = m.orientamento === "verticale";
   const cornice = crea("button", {
     type: "button", classe: `mini-schermo ${verticale ? "verticale" : "orizzontale"}`,
-    "data-aiuto": "Clic: mostra qui l'anteprima di ciò che va in onda adesso, con il layout; ogni clic la aggiorna. Doppio clic: la apre a tutto schermo in una scheda nuova.",
+    "data-aiuto": "Clic: il monitor fotografa il suo schermo in questo istante e la foto compare qui (pochi secondi). Doppio clic: l'anteprima a tutto schermo in una scheda nuova.",
   }, cella);
   const vetro = crea("div", { classe: "vetro-schermo" }, cornice);
   crea("span", { classe: "segnaposto", testo: "…" }, vetro);
   crea("span", { classe: `led-schermo ${m.online ? "acceso" : ""}` }, cornice);
   if (!verticale) crea("span", { classe: "piedistallo" }, cornice);
+  const didascalia = crea("div", { classe: "ora-schermata" }, cella);
   const indirizzo = conCliente(`/anteprima/${m.id}/`);
-  cornice.addEventListener("click", () => {
+  let fotografia = m.schermata_il;
+
+  const mostraFoto = (quando) => {
     vetro.replaceChildren();
-    // Un parametro sempre nuovo: l'anteprima si ricarica e riparte da adesso.
-    crea("iframe", { src: `${indirizzo}${indirizzo.includes("?") ? "&" : "?"}t=${Date.now()}`, tabIndex: -1, title: `Anteprima di ${m.nome}` }, vetro);
-    cornice.classList.add("dal-vivo");
+    crea("img", { src: conCliente(`/api/monitor/${m.id}/schermata/immagine/?t=${Date.parse(quando)}`), alt: `Schermo di ${m.nome}` }, vetro);
+    const ora = new Date(quando);
+    const oggi = ora.toDateString() === new Date().toDateString();
+    didascalia.textContent = `📸 ${oggi ? ora.toLocaleTimeString("it-IT") : ora.toLocaleString("it-IT")}`;
+    cornice.classList.add("con-foto");
+  };
+  if (fotografia) mostraFoto(fotografia);
+
+  let inAttesa = false;
+  cornice.addEventListener("click", async () => {
+    if (inAttesa) return;
+    if (!m.online) {
+      didascalia.textContent = fotografia ? "Monitor non in linea: questa è l'ultima foto" : "Monitor non in linea";
+      return;
+    }
+    inAttesa = true;
+    cornice.classList.add("scatto");
+    didascalia.textContent = "📸 scatto in corso…";
+    try {
+      await api("POST", `/api/monitor/${m.id}/schermata/`);
+      // Il monitor se ne accorge entro pochi secondi; si aspetta la foto nuova (al massimo 40 s).
+      for (let i = 0; i < 20; i += 1) {
+        await new Promise((ok) => setTimeout(ok, 2000));
+        const { quando } = await api("GET", `/api/monitor/${m.id}/schermata/`);
+        if (quando && quando !== fotografia) {
+          fotografia = quando;
+          mostraFoto(quando);
+          return;
+        }
+      }
+      didascalia.textContent = "Nessuna risposta: il player è aggiornato? Riprova tra poco.";
+    } catch (errore) {
+      didascalia.textContent = errore.message;
+    } finally {
+      inAttesa = false;
+      cornice.classList.remove("scatto");
+    }
   });
   cornice.addEventListener("dblclick", () => window.open(indirizzo, "_blank"));
   return {
     primo(voce) {
-      if (cornice.classList.contains("dal-vivo")) return;
+      if (fotografia) return;
       vetro.replaceChildren();
       if (voce && voce.tipo === "immagine") crea("img", { src: conCliente(`/api/contenuti/${voce.contenuto}/miniatura/`), alt: "" }, vetro);
       else crea("span", { classe: "segnaposto", testo: voce ? ({ video: "▶ video", diretta: "📡 diretta" }[voce.tipo] || "🌐") : "nessun contenuto" }, vetro);
+      didascalia.textContent = "in onda (clic per la foto)";
     },
   };
 }
