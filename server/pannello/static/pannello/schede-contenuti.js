@@ -1,6 +1,8 @@
 // Le schede del gruppo «Contenuti» nel pannello: listini prezzi e messa in onda.
 // Gli strumenti (api, crea, sezione…) arrivano da pannello.js. I testi dei dati passano da textContent.
 
+import { sezioneInvii } from "./invii.js";
+
 let H = null;
 
 export function preparaSchedeContenuti(strumenti) {
@@ -215,6 +217,7 @@ export async function schedaMessaInOnda() {
   }
   if (!dati.righe.length) {
     crea("p", { classe: "vuoto", testo: "Nessun passaggio nel periodo. Il registro parte dall'aggiornamento dei player: i giorni precedenti non ci sono." }, rapporto);
+    await invii(dati, sedi, f);
     return;
   }
   const massimo = Math.max(...dati.righe.map((r) => r.secondi), 1);
@@ -231,4 +234,18 @@ export async function schedaMessaInOnda() {
     crea("td", { testo: String(r.giorni) }, tr);
   }
   crea("p", { classe: "tenue", testo: `Generato il ${new Date().toLocaleString("it-IT")} da ${document.title.split("·").pop().trim() || "FuturaPro"}: dati registrati dagli schermi durante la messa in onda.` }, rapporto);
+  await invii(dati, sedi, f);
+}
+
+function invii(dati, sedi, f) {
+  return sezioneInvii(H, "messa_in_onda", {
+    nomePredefinito: f.fornitore ? `Messa in onda ${f.fornitore}` : "Messa in onda",
+    filtriAttuali: f,
+    filtri: [
+      { chiave: "raggruppa", etichetta: "Raggruppa per", scelte: RAGGRUPPA },
+      { chiave: "fornitore", etichetta: "Solo il fornitore", scelte: [["", "Tutti"], ...dati.scelte.fornitori.map((x) => [x, x])] },
+      { chiave: "campagna", etichetta: "Solo la campagna", scelte: [["", "Tutte"], ...dati.scelte.campagne.map((c) => [c.id, c.nome])], testo: (v) => dati.scelte.campagne.find((c) => c.id === v)?.nome || v },
+      { chiave: "sede", etichetta: "Solo il negozio", scelte: [["", "Tutti"], ...sedi.map((x) => [x.id, x.nome])], testo: (v) => sedi.find((x) => x.id === v)?.nome || v },
+    ],
+  });
 }

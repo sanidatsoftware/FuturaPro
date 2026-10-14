@@ -281,7 +281,7 @@ l'Administrator Assoluto, nella scheda «Aspetto interfaccia» (`/api/piattaform
   un minuto allo storico del giorno (`PresenzaSchermo`, con i minuti a riposo a parte): la
   disponibilità è il tempo in linea sul tempo in cui lo schermo doveva essere acceso. Gli allarmi
   email sono facoltativi (indirizzi, dopo quanti minuti, solo in orario, avviso di ritorno):
-  li controlla `manage.py controlla_schermi --ciclo` nel servizio `pianificatore`, una email per
+  li controlla il servizio `pianificatore` (`manage.py pianificatore`), una email per
   scollegamento; lo storico (`EventoSchermo`) resta anche senza server email.
 - **Fasce di download** (facoltative; `/api/download/`). Fascia oraria e velocità massima per
   schermo (`download` nel manifest). Fuori fascia il player non scarica: tiene in onda il
@@ -301,6 +301,20 @@ campagna e fornitore (campo «Fornitore / sponsor» della campagna) e conservand
 poi vengono cancellati. `/api/messa-in-onda/` dà i rapporti per periodo, raggruppati per
 campagna, promozione, fornitore, contenuto, negozio, schermo o giorno, con filtri e
 `?formato=csv`; nel pannello si stampano o salvano in PDF.
+
+### Email e rapporti automatici
+
+Il server di posta è **dell'azienda** (`pannello.ImpostazioniEmail`, uno per cliente, da
+«Impostazioni → Email»; password cifrata con una chiave derivata da `SECRET_KEY`, mai restituita
+dall'API); le variabili `FUTURAPRO_EMAIL_…` del server fanno solo da riserva. Tutte le email
+passano da `core.email.invia`, nel contesto del cliente. I destinatari li sceglie ogni
+funzione: allarmi degli schermi, e i rapporti automatici (`/api/invii-rapporti/`: messa in
+onda con raggruppamento e filtri, tempi d'attesa, disponibilità degli schermi), ognuno con
+nome, indirizzi e frequenza (ogni mattina il giorno prima, ogni lunedì la settimana prima, il
+primo del mese il mese prima), testo riassuntivo e CSV allegato. Li manda `manage.py
+pianificatore` (servizio `pianificatore`, ogni minuto, dalle 7): una volta per periodo, con un
+nuovo tentativo dopo 30 minuti se il server di posta non risponde. «Invia adesso» manda subito
+il periodo appena concluso.
 
 ### Listini prezzi (facoltativi)
 

@@ -1,6 +1,8 @@
 // Le schede del gruppo «Code»: tempi d'attesa e coda sul telefono.
 // Gli strumenti (api, crea, sezione…) arrivano da pannello.js. I testi dei dati passano da textContent.
 
+import { sezioneInvii } from "./invii.js";
+
 let H = null;
 
 export function preparaSchedeCode(strumenti) {
@@ -43,6 +45,7 @@ export async function schedaAttese() {
   const conDati = dati.reparti.filter((r) => r.biglietti || r.serviti);
   if (!conDati.length) {
     crea("p", { classe: "vuoto", testo: "Nessun biglietto nel periodo. Le statistiche si riempiono man mano che il totem emette biglietti e i banchi chiamano." }, testa);
+    await sezioneInvii(H, "attese", { nomePredefinito: "Tempi d'attesa" });
     return;
   }
 
@@ -109,6 +112,7 @@ export async function schedaAttese() {
     colonna.title = `${new Date(`${g.giorno}T00:00`).toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })}: ${g.biglietti} biglietti, attesa media ${minuti(g.attesa_media)}`;
   }
   crea("p", { classe: "tenue", testo: "Altezza: biglietti del giorno. Colore: attesa media." }, andamento);
+  await sezioneInvii(H, "attese", { nomePredefinito: "Tempi d'attesa" });
 }
 
 // --- Coda sul telefono ----------------------------------------------------------------------

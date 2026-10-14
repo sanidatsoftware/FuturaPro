@@ -211,3 +211,9 @@ a.pulsante { display: inline-block; padding: 6px 12px; border-radius: 8px; borde
   .riquadro { box-shadow: none !important; border: 0 !important; }
   .rapporto-stampa .tessera { break-inside: avoid; }
 }
+
+/* Invii automatici per email */
+.invio { padding: 10px 12px; border: 1px solid var(--linea); border-radius: 10px; margin: 8px 0; }
+.invio.spento { opacity: .6; }
+.nuovo-invio summary { cursor: pointer; font-weight: 600; color: var(--primario); margin: 8px 0; }
+input.corto { width: 90px; }

@@ -7,8 +7,6 @@ una email sola per scollegamento e, se richiesto, una quando torna in linea.
 
 from datetime import timedelta
 
-from django.conf import settings
-from django.core.mail import send_mail
 from django.utils import timezone
 
 from core.contesto import contesto_cliente, contesto_piattaforma
@@ -17,7 +15,9 @@ from .models import EventoSchermo, ImpostazioniAllarmi, Monitor, acceso_secondo_
 
 
 def email_configurata() -> bool:
-    return bool(settings.EMAIL_HOST)
+    from core import email
+
+    return email.configurata()
 
 
 def durata(delta) -> str:
@@ -31,10 +31,12 @@ def durata(delta) -> str:
 
 
 def invia(impostazioni, oggetto, testo) -> bool:
-    if not impostazioni.email:
+    from core import email
+
+    if not impostazioni.email or not email.configurata():
         return False
     try:
-        send_mail(oggetto, testo, settings.DEFAULT_FROM_EMAIL, impostazioni.email, fail_silently=False)
+        email.invia(oggetto, testo, impostazioni.email)
         return True
     except Exception:
         return False

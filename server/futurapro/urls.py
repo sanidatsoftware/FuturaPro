@@ -64,6 +64,7 @@ router.register("pubblicazioni", PubblicazioniViewSet, basename="pubblicazioni")
 router.register("campagne", CampagneViewSet, basename="campagne")
 router.register("promozioni", PromozioniViewSet, basename="promozioni")
 router.register("eventi", EventiViewSet, basename="eventi")
+router.register("invii-rapporti", pannello_viste.InviiRapportiViewSet, basename="invii-rapporti")
 router.register("listini", ListiniViewSet, basename="listini")
 router.register("layout", LayoutViewSet, basename="layout")
 router.register("reparti", RepartiViewSet, basename="reparti")
@@ -100,6 +101,7 @@ urlpatterns = [
     path("api/player/schermata/", SchermataPlayerView.as_view(), name="player-schermata"),
     path("api/", include(router.urls)),
     path("api/piattaforma/aspetto/", pannello_viste.AspettoView.as_view(), name="aspetto"),
+    path("api/email/", pannello_viste.EmailView.as_view(), name="email"),
     # La pagina di accesso è la nostra, anche per chi arriva dall'API navigabile.
     path("api/sessione/login/", pannello_viste.Accesso.as_view()),
     path("api/sessione/", include("rest_framework.urls")),

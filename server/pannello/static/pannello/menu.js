@@ -39,6 +39,8 @@ export const VOCI = [
     aiuto: "I punti vendita con la loro insegna e il totem delle code, e i gruppi di schermi usati per pubblicare." },
   { chiave: "utenti", gruppo: "Impostazioni", titolo: "Utenti", visibile: gestione,
     aiuto: "Chi accede al pannello del cliente, con quale ruolo ed eventualmente limitato ad alcune sedi." },
+  { chiave: "email", gruppo: "Impostazioni", titolo: "Email (server di posta)", visibile: gestione,
+    aiuto: "Il server di posta dell'azienda da cui partono allarmi e rapporti: ogni azienda usa il suo dominio e la sua casella." },
   { chiave: "aspetto", gruppo: "Impostazioni", titolo: "Aspetto interfaccia", visibile: () => true, serveCliente: false,
     aiuto: "Tema chiaro, scuro o automatico delle pagine. L'Administrator Assoluto qui sceglie anche nome e logo della piattaforma." },
 ];

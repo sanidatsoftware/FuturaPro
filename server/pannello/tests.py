@@ -67,3 +67,50 @@ class TemaTest(Base):
         self.assertEqual(self.client.patch("/api/io/", {"tema": "scuro"}, format="json").json()["tema"], "scuro")
         for pagina in ("/pannello/", "/palinsesto/", "/editor/"):
             self.assertContains(self.client.get(pagina), 'data-tema="scuro"')
+
+
+class EmailAziendaTest(Base):
+    """Ogni azienda ha il suo server di posta; i destinatari li sceglie ogni funzione."""
+
+    def test_server_per_azienda_rapporti_e_prova(self):
+        from datetime import datetime
+
+        from django.core import mail
+        from django.test import override_settings
+        from django.utils import timezone
+
+        from core.contesto import contesto_cliente
+        from pannello.models import ImpostazioniEmail
+        from pannello.rapporti import controlla, periodo
+
+        with override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", EMAIL_HOST=""):
+            self.come(self.admin_a)
+            r = self.client.put("/api/email/", {"attivo": True, "host": "smtp.azienda-a.it", "porta": 587, "utente": "avvisi@azienda-a.it", "password": "segreta", "mittente": "A <avvisi@azienda-a.it>"}, format="json")
+            self.assertEqual(r.status_code, 200, r.content)
+            self.assertNotIn("password", r.json())
+            self.assertTrue(r.json()["password_impostata"])
+            with contesto_cliente(self.a.id):
+                self.assertNotIn("segreta", ImpostazioniEmail.objects.get().password_cifrata)
+            self.assertEqual(self.client.post("/api/email/", {"a": "io@azienda-a.it"}, format="json").status_code, 200)
+            self.assertEqual(mail.outbox[-1].from_email, "A <avvisi@azienda-a.it>")
+            # Un'altra azienda non lo vede e non lo usa.
+            self.come(self.admin_b)
+            self.assertEqual(self.client.get("/api/email/").json()["host"], "")
+            self.assertEqual(self.client.post("/api/email/", {"a": "x@b.it"}, format="json").status_code, 400)
+            # Un rapporto settimanale con i suoi destinatari.
+            self.come(self.admin_a)
+            r = self.client.post("/api/invii-rapporti/", {"tipo": "schermi", "nome": "Schermi della settimana", "email": ["tecnico@azienda-a.it"], "frequenza": "settimanale"}, format="json")
+            self.assertEqual(r.status_code, 201, r.content)
+            lunedi_mattina = timezone.make_aware(datetime(2026, 10, 19, 8, 0))
+            prima = len(mail.outbox)
+            self.assertEqual(controlla(lunedi_mattina), 1)
+            self.assertEqual(controlla(lunedi_mattina), 0)  # una volta per periodo
+            self.assertEqual(len(mail.outbox), prima + 1)
+            messaggio = mail.outbox[-1]
+            self.assertEqual(messaggio.to, ["tecnico@azienda-a.it"])
+            self.assertEqual(messaggio.attachments[0][0], "schermi-2026-10-12-2026-10-18.csv")
+            self.assertEqual(periodo("mensile", datetime(2026, 11, 1).date())[1:], (datetime(2026, 10, 1).date(), datetime(2026, 10, 31).date()))
+            # «Invia adesso» e i permessi: lo user non crea invii.
+            self.assertEqual(self.client.post(f"/api/invii-rapporti/{r.json()['id']}/invia/").status_code, 200)
+            self.come(self.user_a)
+            self.assertEqual(self.client.post("/api/invii-rapporti/", {"tipo": "attese", "nome": "x", "email": ["a@b.it"]}, format="json").status_code, 403)

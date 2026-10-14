@@ -118,11 +118,15 @@ Da internet si raggiungono solo la pagina del biglietto e i suoi dati, mai il pa
 attiva dal pannello in «Code → Coda sul telefono». Sul totem va rilanciata l'installazione
 (servizio code 1.2) perché il biglietto abbia il suo codice.
 
-### Email per gli allarmi degli schermi (facoltativo)
+### Email (facoltativo)
 
-Per ricevere un'email quando uno schermo resta scollegato (scheda «Schermi → Stato e allarmi»)
-aggiungi in fondo a `/opt/futurapro/deploy/.env` i dati di un server email (quello della posta
-aziendale, oppure un servizio come Brevo o Mailgun):
+Ogni azienda imposta il **suo** server di posta nel pannello, in «Impostazioni → Email (server di
+posta)»: server SMTP, porta, utente, password (conservata cifrata) e mittente del proprio
+dominio. Da lì partono allarmi degli schermi e rapporti automatici; i destinatari si scelgono in
+ogni funzione. «Invia un'email di prova» verifica che funzioni.
+
+Solo se serve un server di riserva per tutte le aziende che non ne impostano uno, si possono
+aggiungere in fondo a `/opt/futurapro/deploy/.env`:
 
 ```
 FP_EMAIL_HOST=smtp.miodominio.it
@@ -132,9 +136,8 @@ FP_EMAIL_PASSWORD=la-password
 FP_EMAIL_MITTENTE=FuturaPro <futurapro@miodominio.it>
 ```
 
-Poi `cd /opt/futurapro/deploy && sudo docker compose up -d`. Nel pannello, «Invia un'email di
-prova» verifica che funzioni. Il controllo degli schermi lo fa il servizio `pianificatore`, ogni
-minuto. Senza queste righe tutto funziona lo stesso: gli allarmi restano solo nello storico.
+e poi `cd /opt/futurapro/deploy && sudo docker compose up -d`. Allarmi e rapporti li manda il
+servizio `pianificatore`, ogni minuto (i rapporti dalle 7 del mattino).
 
 ---
 

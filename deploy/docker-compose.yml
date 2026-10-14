@@ -45,13 +45,13 @@ services:
       - media:/dati/media
       - static:/dati/static
 
-  # I lavori periodici: allarmi degli schermi scollegati (ogni minuto).
+  # I lavori periodici, ogni minuto: allarmi degli schermi scollegati e rapporti per email.
   pianificatore:
     build: ../server
     restart: unless-stopped
     depends_on: [app]
     environment: *ambiente
-    entrypoint: ["python", "manage.py", "controlla_schermi", "--ciclo"]
+    entrypoint: ["python", "manage.py", "pianificatore"]
     volumes:
       - media:/dati/media
 

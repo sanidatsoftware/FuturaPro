@@ -2,6 +2,8 @@
 // allarmi, fasce di download. Gli strumenti (api, crea, sezione…) arrivano da pannello.js.
 // I testi che arrivano dai dati passano sempre da textContent.
 
+import { sezioneInvii } from "./invii.js";
+
 let H = null;
 
 export function preparaSchedeSchermi(strumenti) {
@@ -285,7 +287,8 @@ export async function schedaStato() {
       + "Fuori dal suo orario di accensione uno schermo spento non è un guasto.",
   }, allarmi);
   if (!dati.email_configurata) {
-    crea("p", { classe: "attenzione", testo: "Il server non ha ancora un server email (SMTP): gli allarmi restano nello storico qui sotto ma le email non partono. Vedi la guida di installazione (FUTURAPRO_EMAIL_…)." }, allarmi);
+    const avviso = crea("p", { classe: "attenzione", testo: "L'azienda non ha ancora un server email: gli allarmi restano nello storico qui sotto ma le email non partono. " }, allarmi);
+    crea("button", { testo: "Imposta il server email", onclick: () => H.mostra("email") }, avviso);
   }
   const a = dati.allarmi;
   const attivo = crea("input", { type: "checkbox", checked: a.attivo, disabled: !gestione });
@@ -318,6 +321,8 @@ export async function schedaStato() {
       },
     }, azioni);
   }
+
+  await sezioneInvii(H, "schermi", { nomePredefinito: "Disponibilità degli schermi" });
 
   const storico = sezione("Storico");
   if (!dati.eventi.length) crea("p", { classe: "vuoto", testo: "Nessun allarme finora." }, storico);
