@@ -128,3 +128,59 @@ class CredenzialePulsante(models.Model):
     reparto = models.OneToOneField(Reparto, on_delete=models.CASCADE, related_name="credenziale")
     cliente_id = models.UUIDField()
     creata = models.DateTimeField(auto_now_add=True)
+
+
+def codice_biglietto() -> str:
+    """Il codice del QR sul biglietto: 10 caratteri casuali, senza lettere che si confondono."""
+    import secrets
+
+    alfabeto = "23456789abcdefghjkmnpqrstuvwxyz"
+    return "".join(secrets.choice(alfabeto) for _ in range(10))
+
+
+class Biglietto(ModelloCliente):
+    """Un biglietto emesso (dal totem o dal server): serve ai tempi d'attesa e alla coda sul
+    telefono. ``progressivo`` è il totale dei biglietti della giornata (non gira mai), ``numero``
+    quello stampato (da 0 al massimo del reparto)."""
+
+    reparto = models.ForeignKey(Reparto, on_delete=models.CASCADE, related_name="biglietti")
+    giornata = models.DateField()
+    progressivo = models.PositiveIntegerField()
+    numero = models.PositiveIntegerField()
+    emesso_il = models.DateTimeField()
+    chiamato_il = models.DateTimeField(null=True, blank=True)
+    codice = models.CharField(max_length=16, unique=True, default=codice_biglietto)
+
+    class Meta:
+        # Niente unicità su giornata e progressivo: dopo un «azzera» i progressivi ripartono.
+        ordering = ["reparto", "emesso_il"]
+        indexes = [models.Index(fields=["reparto", "giornata"])]
+
+
+class ChiamataCoda(ModelloCliente):
+    """Ogni chiamata del banco (avanti, indietro, ripeti, imposta), con il totale dei chiamati:
+    il ritmo del banco anche senza biglietti, e il numero servito per la coda sul telefono."""
+
+    reparto = models.ForeignKey(Reparto, on_delete=models.CASCADE, related_name="chiamate")
+    giornata = models.DateField()
+    quando = models.DateTimeField()
+    operazione = models.CharField(max_length=10)
+    progressivo = models.PositiveIntegerField()
+    numero = models.PositiveIntegerField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["reparto", "quando"]
+        indexes = [models.Index(fields=["reparto", "giornata"])]
+
+
+class ImpostazioniTelefono(ModelloCliente):
+    """La coda sul telefono (facoltativa): il QR sul biglietto e la pagina che segue la coda."""
+
+    attivo = models.BooleanField(default=False)
+    testo = models.CharField(max_length=80, default="Segui la coda dal telefono")
+    # A quanti numeri dal proprio il telefono avvisa.
+    avviso_a = models.PositiveSmallIntegerField(default=3)
+
+    class Meta:
+        verbose_name_plural = "impostazioni coda sul telefono"
+        constraints = [models.UniqueConstraint(fields=["cliente"], name="telefono_uno_per_cliente")]

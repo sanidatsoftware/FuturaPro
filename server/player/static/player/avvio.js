@@ -248,6 +248,33 @@ async function inviaConfigCode(manifest, scarica) {
   await copiaAnnunciSulTotem(annunci, scarica);
 }
 
+// Il registro del servizio code (biglietti e chiamate) va al server: tempi d'attesa e coda
+// sul telefono. Se il server non risponde si riprova: il servizio code tiene gli eventi.
+let inoltroInCorso = false;
+async function inoltraEventiCode(manifest, intestazioni) {
+  if (inoltroInCorso || !manifest?.code?.reparti) return;
+  inoltroInCorso = true;
+  try {
+    let ultimo = parseInt(memoria("futurapro.eventi.ultimo") || "0", 10) || 0;
+    for (let giro = 0; giro < 10; giro += 1) {
+      const dati = await (await conLimite(`${SERVIZIO_LOCALE}/eventi?dopo=${ultimo}`)).json();
+      // Il registro del servizio è ripartito (reinstallato): si ricomincia dall'inizio.
+      if (dati.ultimo < ultimo) { ultimo = 0; continue; }
+      if (!dati.eventi?.length) break;
+      const risposta = await conLimite("/api/player/code/eventi/", {
+        method: "POST", headers: { ...intestazioni, "Content-Type": "application/json" }, body: JSON.stringify({ eventi: dati.eventi }),
+      }, 20000);
+      if (!risposta.ok) break;
+      ultimo = Math.max(...dati.eventi.map((e) => e.seq));
+      memoria("futurapro.eventi.ultimo", String(ultimo));
+    }
+  } catch {
+    // Servizio code o server non raggiungibili: si riprova al prossimo giro.
+  } finally {
+    inoltroInCorso = false;
+  }
+}
+
 // I file degli annunci restano anche sul totem: i monitor del negozio li prendono da lì,
 // e li suonano anche quando il server o internet non rispondono.
 let copiaInCorso = false;
@@ -420,6 +447,7 @@ async function avviaPlayer() {
     } finally {
       inCorso = false;
       inviaConfigCode(mostrato, scaricaFile);
+      inoltraEventiCode(mostrato, intestazioni);
     }
   };
 

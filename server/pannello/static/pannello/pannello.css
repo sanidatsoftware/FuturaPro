@@ -187,3 +187,16 @@ button.giorno.scelto { background: var(--primario); color: #fff; border-color: v
 .stella { color: var(--tenue); padding: 4px 8px; }
 .stella.accesa { color: #e0a020; border-color: #e0a020; }
 a.pulsante { display: inline-block; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--linea); background: var(--carta); color: var(--testo); text-decoration: none; margin: 2px; }
+
+/* Tempi d'attesa */
+.bollino-attesa { display: inline-block; min-width: 64px; text-align: center; padding: 3px 10px; border-radius: 99px; color: #fff; font-weight: 700; font-size: 13px; }
+.mappa-attese { display: grid; gap: 3px; margin: 10px 0; overflow-x: auto; }
+.mappa-attese .ora { text-align: center; font-size: 11px; color: var(--tenue); }
+.mappa-attese .giorno { font-size: 12.5px; color: var(--tenue); align-self: center; }
+.mappa-attese .cella { height: 38px; border-radius: 6px; background: color-mix(in srgb, var(--testo) 5%, transparent); display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; line-height: 1.1; }
+.mappa-attese .cella b { font-size: 13px; }
+.mappa-attese .cella small { font-size: 9.5px; opacity: .85; }
+.consigli-attese { margin-top: 10px; padding: 10px 14px; border-radius: 10px; background: color-mix(in srgb, #ef7d32 12%, transparent); border: 1px solid color-mix(in srgb, #ef7d32 40%, transparent); display: flex; flex-direction: column; gap: 4px; }
+.andamento-attese { display: flex; align-items: flex-end; gap: 2px; height: 120px; padding: 6px 0; border-bottom: 1px solid var(--linea); }
+.andamento-attese .colonna { flex: 1; height: 100%; display: flex; align-items: flex-end; }
+.andamento-attese .colonna span { display: block; width: 100%; min-height: 2px; border-radius: 3px 3px 0 0; }

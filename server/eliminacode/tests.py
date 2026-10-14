@@ -432,3 +432,80 @@ class AnnunciTest(ConReparti):
         self.assertEqual(len(self.client.get(f"/api/annunci/{salumeria['id']}/").json()["reparti"]), 2)
         self.assertEqual(self.client.delete(f"/api/annunci/{salumeria['id']}/").status_code, 204)
         self.assertIsNone(self.client.get(f"/api/reparti/{self.salumeria.id}/").json()["annunci"])
+
+
+class RegistroCodeTest(ConReparti):
+    """Biglietti e chiamate restano nel registro: tempi d'attesa e coda sul telefono."""
+
+    def test_attese_e_pagina_del_telefono(self):
+        from datetime import timedelta
+
+        from django.test import override_settings
+        from django.utils import timezone
+
+        from .models import Biglietto
+
+        self.come(self.admin_a)
+        primo = self.client.post(f"/api/reparti/{self.salumeria.id}/emetti/").json()
+        secondo = self.client.post(f"/api/reparti/{self.salumeria.id}/emetti/").json()
+        with contesto_cliente(self.a.id):
+            biglietti = list(Biglietto.objects.filter(reparto=self.salumeria).order_by("progressivo"))
+            # Il primo aspetta 4 minuti.
+            Biglietto.objects.filter(id=biglietti[0].id).update(emesso_il=timezone.now() - timedelta(minutes=4))
+        self.assertEqual([b.numero for b in biglietti], [0, 1])
+        codice = biglietti[1].codice
+        # Senza la coda sul telefono attiva la pagina non risponde.
+        self.client.logout()
+        self.assertEqual(self.client.get(f"/api/pubblico/biglietti/{codice}/").status_code, 404)
+        self.come(self.admin_a)
+        self.assertEqual(self.client.put("/api/coda-telefono/", {"attivo": True}, format="json").status_code, 200)
+        self.client.logout()
+        stato = self.client.get(f"/api/pubblico/biglietti/{codice}/").json()
+        self.assertEqual((stato["stato"], stato["davanti"], stato["reparto"]), ("in_attesa", 1, "Salumeria"))
+        self.come(self.admin_a)
+        self.client.post(f"/api/reparti/{self.salumeria.id}/avanti/")
+        self.client.logout()
+        self.assertEqual(self.client.get(f"/api/pubblico/biglietti/{codice}/").json()["stato"], "in_attesa")
+        self.come(self.admin_a)
+        self.client.post(f"/api/reparti/{self.salumeria.id}/avanti/")
+        self.client.logout()
+        stato = self.client.get(f"/api/pubblico/biglietti/{codice}/").json()
+        self.assertEqual((stato["stato"], stato["servito"]), ("tocca_a_te", 1))
+        self.assertEqual(self.client.get("/b/" + codice).status_code, 200)
+        self.assertEqual(self.client.get("/api/pubblico/biglietti/inesistente/").status_code, 404)
+
+        self.come(self.admin_a)
+        dati = self.client.get("/api/statistiche-code/").json()
+        salumeria = next(r for r in dati["reparti"] if r["nome"] == "Salumeria")
+        self.assertEqual((salumeria["biglietti"], salumeria["serviti"]), (2, 2))
+        self.assertEqual(salumeria["attesa_massima"], 4.0)
+        self.assertTrue(dati["mappa"])
+        # L'indirizzo per il QR arriva al player solo se c'è quello pubblico del server.
+        from contenuti import palinsesto
+
+        with contesto_cliente(self.a.id):
+            self.assertIsNone(palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))["telefono"])
+        with override_settings(FUTURAPRO_URL_PUBBLICO="https://coda.example.com"), contesto_cliente(self.a.id):
+            telefono = palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))["telefono"]
+        self.assertEqual(telefono["url"], "https://coda.example.com/b/")
+        self.assertEqual((primo["ultimo_emesso"], secondo["ultimo_emesso"]), (0, 1))
+
+    def test_eventi_inoltrati_dal_totem(self):
+        token = secrets.token_urlsafe(32)
+        with contesto_cliente(self.a.id):
+            CredenzialeDispositivo.objects.create(impronta_token=impronta(token), monitor=self.mon_a_milano, cliente_id=self.a.id)
+        eventi = [
+            {"tipo": "emesso", "reparto": str(self.salumeria.id), "progressivo": 1, "quando": "2026-10-14T09:00:00+02:00", "codice": "totem00001"},
+            {"tipo": "avanti", "reparto": str(self.salumeria.id), "progressivo": 1, "quando": "2026-10-14T09:06:00+02:00"},
+            {"tipo": "emesso", "reparto": str(self.roma.id), "progressivo": 1, "quando": "2026-10-14T09:00:00+02:00", "codice": "altrasede1"},
+        ]
+        intestazione = {"HTTP_AUTHORIZATION": f"Device {token}"}
+        r = self.client.post("/api/player/code/eventi/", {"eventi": eventi}, format="json", **intestazione)
+        self.assertEqual(r.json()["registrati"], 2)  # il reparto di un'altra sede non passa
+        r = self.client.post("/api/player/code/eventi/", {"eventi": eventi}, format="json", **intestazione)
+        self.assertEqual(r.json()["registrati"], 0)  # rimandati: nessun doppione
+        from .models import Biglietto
+
+        with contesto_cliente(self.a.id):
+            b = Biglietto.objects.get(codice="totem00001")
+        self.assertEqual((b.chiamato_il - b.emesso_il).total_seconds(), 360)

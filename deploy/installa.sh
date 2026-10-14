@@ -146,6 +146,31 @@ https://$FP_INDIRIZZO {
 }
 EOF
 
+# Facoltativo: l'indirizzo pubblico della coda sul telefono (FP_URL_PUBBLICO in .env). Da internet
+# si raggiungono solo la pagina del biglietto e i suoi dati, mai il pannello. Il certificato è
+# quello pubblico (Let's Encrypt): il nome deve puntare all'IP pubblico, porte 80 e 443 aperte.
+URL_PUBBLICO=$(precedente FP_URL_PUBBLICO)
+if [ -n "$URL_PUBBLICO" ]; then
+    host_pubblico=$(echo "$URL_PUBBLICO" | sed -E 's#^https?://##; s#/.*$##')
+    cat >> Caddyfile <<EOF
+
+# Coda sul telefono, raggiungibile da internet: solo la pagina del biglietto.
+$host_pubblico {
+	tls {
+		issuer acme
+	}
+	encode zstd gzip
+	@coda path /b/* /api/pubblico/* /aspetto/logo/*
+	handle @coda {
+		reverse_proxy app:8000
+	}
+	handle {
+		respond "Non trovato" 404
+	}
+}
+EOF
+fi
+
 # --- 5. Avvio ---------------------------------------------------------------------------
 blu "Avvio FuturaPro (la prima volta ci vogliono alcuni minuti)…"
 docker compose up -d --build < /dev/null

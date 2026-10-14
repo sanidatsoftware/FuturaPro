@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#1f4e79">
+  <title>Il tuo turno · {{ aspetto.nome_app }}</title>
+  <style>
+    :root { --colore: {{ aspetto.colore|default:"#1f4e79" }}; --reparto: #c62828; --testo-reparto: #fff; color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #eef2f7; color: #1d2330; display: flex; flex-direction: column; align-items: center; }
+    header { width: 100%; padding: 14px 18px; display: flex; align-items: center; gap: 10px; background: var(--colore); color: #fff; font-weight: 700; }
+    header img { height: 28px; }
+    main { width: min(440px, 100%); padding: 18px 16px 40px; display: flex; flex-direction: column; gap: 14px; }
+    .biglietto { border-radius: 22px; overflow: hidden; background: #fff; box-shadow: 0 10px 30px rgba(16, 24, 40, .12); text-align: center; }
+    .reparto { padding: 14px; font-size: 20px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; background: var(--reparto); color: var(--testo-reparto); }
+    .etichetta { margin-top: 16px; color: #5d6675; font-size: 14px; }
+    .numero { font-size: 96px; line-height: 1; font-weight: 900; padding: 4px 0 18px; font-variant-numeric: tabular-nums; }
+    .stato { border-radius: 18px; padding: 18px; background: #fff; box-shadow: 0 6px 20px rgba(16, 24, 40, .08); text-align: center; }
+    .stato .grande { font-size: 30px; font-weight: 800; margin: 4px 0; }
+    .stato .piccolo { color: #5d6675; }
+    .righe { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .tessera { background: #fff; border-radius: 16px; padding: 14px; text-align: center; box-shadow: 0 6px 20px rgba(16, 24, 40, .06); }
+    .tessera strong { display: block; font-size: 34px; font-variant-numeric: tabular-nums; }
+    .tessera span { color: #5d6675; font-size: 13px; }
+    .barra { height: 10px; border-radius: 99px; background: #e2e7ef; overflow: hidden; margin-top: 10px; }
+    .barra span { display: block; height: 100%; width: 0; background: var(--reparto); transition: width .8s ease; }
+    .tocca { background: #1e8e3e; color: #fff; animation: pulsa 1s ease-in-out infinite alternate; }
+    .tocca .piccolo { color: rgba(255, 255, 255, .85); }
+    .vicino { background: #fff4d6; }
+    @keyframes pulsa { to { transform: scale(1.03); } }
+    button { font: inherit; font-weight: 700; padding: 14px 18px; border-radius: 14px; border: 0; background: var(--colore); color: #fff; width: 100%; }
+    button.attivo { background: #e7ecf3; color: #1d2330; }
+    .nota { color: #5d6675; font-size: 12.5px; text-align: center; line-height: 1.4; }
+    .errore { color: #b26a00; }
+  </style>
+</head>
+<body>
+  <header>{% if aspetto.logo %}<img src="/aspetto/logo/?v={{ aspetto.modificato|date:'U' }}" alt="">{% endif %}<span>{{ aspetto.nome_app }}</span></header>
+  <main>
+    <section class="biglietto" id="biglietto" hidden>
+      <div class="reparto" id="reparto"></div>
+      <div class="etichetta">Il tuo numero</div>
+      <div class="numero" id="numero"></div>
+    </section>
+    <section class="stato" id="stato"><div class="piccolo">Caricamento…</div></section>
+    <section class="righe" id="righe" hidden>
+      <div class="tessera"><strong id="servito">–</strong><span>ora serviamo</span></div>
+      <div class="tessera"><strong id="attesa">–</strong><span>attesa stimata</span></div>
+    </section>
+    <button type="button" id="avviso">🔔 Avvisami quando tocca a me</button>
+    <p class="nota">Tieni aperta questa pagina mentre fai la spesa: si aggiorna da sola. Funziona con la rete dati del telefono, senza app e senza registrazione. Non raccogliamo dati personali.</p>
+    <p class="nota errore" id="rete" hidden>Aggiornamento momentaneamente non disponibile: controlla i monitor del reparto.</p>
+  </main>
+  {{ codice|json_script:"c" }}
+  <script>
+    (() => {
+      const codice = JSON.parse(document.getElementById("c").textContent);
+      const $ = (id) => document.getElementById(id);
+      let avvisoAttivo = false;
+      let avvisato = false;
+      let contesto = null;
+      let prima = null;
+
+      function suona() {
+        try {
+          contesto = contesto || new AudioContext();
+          const t = contesto.currentTime;
+          [[880, 0], [660, 0.35], [880, 0.7]].forEach(([f, r]) => {
+            const o = contesto.createOscillator(), g = contesto.createGain();
+            o.frequency.value = f;
+            g.gain.setValueAtTime(0.0001, t + r);
+            g.gain.exponentialRampToValueAtTime(0.6, t + r + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + r + 0.3);
+            o.connect(g).connect(contesto.destination);
+            o.start(t + r); o.stop(t + r + 0.32);
+          });
+        } catch (e) { /* niente audio */ }
+        if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 600]);
+      }
+
+      $("avviso").addEventListener("click", () => {
+        avvisoAttivo = !avvisoAttivo;
+        $("avviso").classList.toggle("attivo", avvisoAttivo);
+        $("avviso").textContent = avvisoAttivo ? "🔔 Avviso attivo: suona e vibra quando ti avvicini" : "🔔 Avvisami quando tocca a me";
+        if (avvisoAttivo) {
+          // Il primo suono va sbloccato con un tocco: lo si prova subito, piano.
+          try { contesto = contesto || new AudioContext(); contesto.resume(); } catch (e) { /* niente audio */ }
+        }
+      });
+
+      function mostra(d) {
+        document.documentElement.style.setProperty("--reparto", d.colore);
+        document.documentElement.style.setProperty("--testo-reparto", d.colore_testo || "#fff");
+        $("biglietto").hidden = false;
+        $("reparto").textContent = d.reparto;
+        $("numero").textContent = d.numero;
+        $("righe").hidden = d.stato !== "in_attesa";
+        $("servito").textContent = d.servito ?? "–";
+        $("attesa").textContent = d.attesa_minuti === null ? "–" : d.attesa_minuti < 1 ? "< 1 min" : `${d.attesa_minuti} min`;
+        const stato = $("stato");
+        stato.className = "stato";
+        stato.replaceChildren();
+        const riga = (classe, testo) => { const el = document.createElement("div"); el.className = classe; el.textContent = testo; stato.appendChild(el); };
+        if (d.stato === "tocca_a_te") {
+          stato.classList.add("tocca");
+          riga("grande", "Tocca a te!");
+          riga("piccolo", `Vai al banco ${d.reparto}`);
+        } else if (d.stato === "passato") {
+          riga("grande", "Il tuo numero è passato");
+          riga("piccolo", "Se non sei stato servito, chiedi al banco.");
+        } else if (d.stato === "scaduto") {
+          riga("grande", "Biglietto non più valido");
+          riga("piccolo", "La coda è ripartita: prendi un nuovo numero al totem.");
+        } else {
+          if (d.davanti < d.avviso_a) stato.classList.add("vicino");
+          riga("grande", d.davanti === 0 ? "Sei il prossimo!" : `Davanti a te: ${d.davanti}`);
+          riga("piccolo", d.davanti < d.avviso_a ? "Avvicinati al banco." : "Puoi continuare la spesa: ti avvisiamo.");
+          const barra = document.createElement("div");
+          barra.className = "barra";
+          const pieno = document.createElement("span");
+          barra.appendChild(pieno);
+          stato.appendChild(barra);
+          if (prima === null) prima = Math.max(d.davanti, 1);
+          requestAnimationFrame(() => (pieno.style.width = `${Math.max(4, 100 - (d.davanti / prima) * 100)}%`));
+        }
+        $("avviso").hidden = d.stato !== "in_attesa";
+        const vicino = d.stato === "tocca_a_te" || (d.stato === "in_attesa" && d.davanti < d.avviso_a);
+        if (vicino && avvisoAttivo && !avvisato) { avvisato = true; suona(); }
+        if (d.stato === "tocca_a_te" && avvisoAttivo) suona();
+        document.title = d.stato === "tocca_a_te" ? "🔔 Tocca a te!" : d.stato === "in_attesa" ? `${d.davanti} prima di te · ${d.reparto}` : "Il tuo turno";
+      }
+
+      async function aggiorna() {
+        let attesa = 5000;
+        try {
+          const r = await fetch(`/api/pubblico/biglietti/${encodeURIComponent(codice)}/`, { cache: "no-store" });
+          if (r.status === 404) {
+            $("stato").replaceChildren();
+            const el = document.createElement("div");
+            el.className = "grande";
+            el.textContent = "Biglietto non trovato";
+            $("stato").appendChild(el);
+            $("avviso").hidden = true;
+            return;
+          }
+          if (!r.ok) throw new Error(r.status);
+          const d = await r.json();
+          $("rete").hidden = true;
+          mostra(d);
+          if (d.stato === "passato" || d.stato === "scaduto") return;
+          if (d.stato === "in_attesa" && d.davanti > 15) attesa = 15000;
+        } catch (e) {
+          $("rete").hidden = false;
+          attesa = 10000;
+        }
+        setTimeout(aggiorna, attesa);
+      }
+      aggiorna();
+    })();
+  </script>
+</body>
+</html>

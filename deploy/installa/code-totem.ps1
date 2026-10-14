@@ -30,10 +30,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.1"
+$Versione = "1.2"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
+# Il registro di biglietti e chiamate: il player del totem lo inoltra al server (tempi d'attesa,
+# coda sul telefono) appena c'è rete. Resta qui anche quando il server non risponde.
+$fileEventi = Join-Path $Cartella "eventi.jsonl"
 New-Item -ItemType Directory -Force -Path $Cartella | Out-Null
 New-Item -ItemType Directory -Force -Path $cartellaAnnunci | Out-Null
 
@@ -111,6 +114,43 @@ function Stato-Reparto($r) {
 
 function Adesso { return (Get-Date).ToUniversalTime().ToString("o") }
 
+# --- Registro degli eventi ---------------------------------------------------------
+
+$script:eventi = New-Object System.Collections.ArrayList
+$script:seq = 0
+
+function Carica-Eventi {
+    if (-not (Test-Path $fileEventi)) { return }
+    foreach ($riga in Get-Content -Encoding UTF8 $fileEventi) {
+        if (-not $riga) { continue }
+        try { $e = $riga | ConvertFrom-Json } catch { continue }
+        [void]$script:eventi.Add($e)
+        if ([int]$e.seq -gt $script:seq) { $script:seq = [int]$e.seq }
+    }
+}
+
+function Nota-Evento([string]$tipo, $r, [int]$progressivo, [string]$codice) {
+    $script:seq += 1
+    $e = [pscustomobject][ordered]@{
+        seq = $script:seq; tipo = $tipo; reparto = [string]$r.id; progressivo = $progressivo; quando = (Adesso); codice = $codice
+    }
+    [void]$script:eventi.Add($e)
+    Add-Content -Path $fileEventi -Value ($e | ConvertTo-Json -Compress) -Encoding UTF8
+    # Si tengono gli ultimi 5000: il player li inoltra in pochi secondi quando c'è rete.
+    if ($script:eventi.Count -gt 5000) {
+        $script:eventi.RemoveRange(0, 1000)
+        Set-Content -Path $fileEventi -Encoding UTF8 -Value ($script:eventi | ForEach-Object { $_ | ConvertTo-Json -Compress })
+    }
+}
+
+# Il codice del QR sul biglietto: 10 caratteri casuali, come quelli del server.
+function Nuovo-Codice {
+    $alfabeto = "23456789abcdefghjkmnpqrstuvwxyz"
+    $byte = New-Object byte[] 10
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($byte)
+    return (-join ($byte | ForEach-Object { $alfabeto[$_ % $alfabeto.Length] }))
+}
+
 # --- Operazioni ------------------------------------------------------------------
 
 function Esegui([string]$operazione, $r, $numero) {
@@ -129,6 +169,7 @@ function Esegui([string]$operazione, $r, $numero) {
         }
     }
     Salva-Stato
+    Nota-Evento $operazione $r $c.chiamati ""
     Registra "$operazione $($r.nome) -> $(Numero $c.chiamati ([int]$r.massimo))"
 }
 
@@ -138,10 +179,12 @@ function Emetti($r) {
     $c.emessi = [Math]::Max($c.emessi, $c.chiamati) + 1
     Salva-Stato
     $stato = Stato-Reparto $r
+    $codice = Nuovo-Codice
+    Nota-Evento "emesso" $r $c.emessi $codice
     Registra "biglietto $($r.nome) $($stato.ultimo_emesso)"
     return [ordered]@{
         reparto_id = [string]$r.id; reparto = $r.nome; colore = $r.colore; colore_testo = $r.colore_testo
-        numero = $stato.ultimo_emesso; davanti = [Math]::Max(0, $stato.in_coda - 1)
+        numero = $stato.ultimo_emesso; davanti = [Math]::Max(0, $stato.in_coda - 1); codice = $codice
     }
 }
 
@@ -274,6 +317,12 @@ function Gestisci($contesto) {
         [System.IO.File]::WriteAllBytes((Join-Path $cartellaAnnunci $impronta), $byte)
         Rispondi $contesto 204 $null; return
     }
+    if ($metodo -eq "GET" -and $percorso -eq "/eventi") {
+        if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }
+        $dopo = [int]($richiesta.QueryString["dopo"] -as [int])
+        $nuovi = @($script:eventi | Where-Object { [int]$_.seq -gt $dopo } | Select-Object -First 500)
+        Rispondi $contesto 200 @{ eventi = $nuovi; ultimo = $script:seq }; return
+    }
     if ($metodo -eq "POST" -and $percorso -match "^/emetti/([0-9a-fA-F-]{36})$") {
         if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }
         $r = Trova-Reparto $Matches[1]
@@ -314,6 +363,7 @@ function Gestisci($contesto) {
 # --- Avvio ----------------------------------------------------------------------------
 
 Carica-Stato
+Carica-Eventi
 $ascoltatore = New-Object System.Net.HttpListener
 $ascoltatore.Prefixes.Add("http://+:$PortaHttp/")
 if (-not $SoloHttp) { $ascoltatore.Prefixes.Add("https://+:$PortaHttps/") }

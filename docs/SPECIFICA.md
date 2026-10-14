@@ -420,6 +420,24 @@ si sentono anche senza server. Con il totem, il player del totem li copia nel se
 (`C:\FuturaPro\code\annunci`, `GET/POST /annunci/<sha256>`, cancellati quando non servono
 più) e i monitor del negozio li prendono da lì prima che dal server (`/api/player/annunci/<id>/`).
 
+**Registro, tempi d'attesa e coda sul telefono.** Ogni biglietto (`Biglietto`: progressivo
+della giornata, numero, emesso/chiamato, codice casuale di 10 caratteri) e ogni chiamata
+(`ChiamataCoda`: avanti, indietro, ripeti, imposta, azzera, con il totale dei chiamati) resta
+nel registro. Con le code sul server lo scrivono le operazioni stesse; con il totem lo scrive il
+servizio code (`eventi.jsonl`, `GET /eventi?dopo=N` solo dal totem) e il player del totem lo
+inoltra a `POST /api/player/code/eventi/` appena c'è rete (gli eventi già registrati non si
+duplicano). Le statistiche (`/api/statistiche-code/`) danno per reparto biglietti, serviti,
+attesa media, 90° percentile e massima, rinunce e serviti all'ora, la mappa giorno × ora e
+l'andamento giornaliero, con le fasce da rinforzare. La coda sul telefono (facoltativa,
+`/api/coda-telefono/`) stampa sul biglietto un QR (Epson: lo disegna la stampante; browser:
+`player/vendor/qrcode.js`, licenza MIT) verso `FUTURAPRO_URL_PUBBLICO/b/<codice>`: una pagina
+pubblica senza dati personali che legge `/api/pubblico/biglietti/<codice>/` ogni 5–15 secondi
+(limite per codice, non per IP), mostra numero, servito, davanti e attesa stimata (mediana degli
+intervalli di chiamata dell'ultima mezz'ora) e suona e vibra a N numeri dal turno. Il telefono
+usa la sua rete dati: l'indirizzo pubblico va esposto su internet (installa.sh aggiunge a Caddy
+un sito che serve solo `/b/` e `/api/pubblico/`, con certificato Let's Encrypt). `/b/prova`
+mostra un biglietto inventato.
+
 **Totem.** Il cliente tocca il reparto, il server assegna il numero, lo schermo lo mostra con
 le persone che lo precedono e il player stampa:
 

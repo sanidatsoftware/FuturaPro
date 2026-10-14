@@ -3,7 +3,7 @@
 // Rete prima (per prendere subito gli aggiornamenti), copia salvata se la rete manca.
 // Le chiamate alle API e i file dei contenuti non passano di qui: li gestisce avvio.js.
 
-const CACHE = "futurapro-app-v10";
+const CACHE = "futurapro-app-v11";
 const FILE = [
   "/player/",
   "/static/player/avvio.js",
@@ -12,6 +12,7 @@ const FILE = [
   "/static/player/schermo.css",
   "/static/player/vendor/hls.min.js",
   "/static/player/vendor/html2canvas.min.js",
+  "/static/player/vendor/qrcode.js",
 ];
 
 self.addEventListener("install", (evento) => {

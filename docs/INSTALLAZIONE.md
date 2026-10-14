@@ -106,6 +106,18 @@ contenuti, tenuti 14 giorni). Copiali anche fuori dalla VM.
 Rilanciare `sudo ./installa.sh` è sicuro: password e dati restano, si aggiornano solo le risposte
 (per esempio un nuovo indirizzo).
 
+### Coda sul telefono (facoltativo)
+
+Per il QR sul biglietto i telefoni dei clienti devono raggiungere il server da internet:
+1. un nome (es. `coda.miodominio.it`) che punti all'IP pubblico della sede del server;
+2. porte 80 e 443 del router inoltrate alla VM;
+3. in `/opt/futurapro/deploy/.env` la riga `FP_URL_PUBBLICO=https://coda.miodominio.it`;
+4. `cd /opt/futurapro/deploy && sudo ./installa.sh` (rigenera la configurazione di Caddy).
+
+Da internet si raggiungono solo la pagina del biglietto e i suoi dati, mai il pannello. Poi si
+attiva dal pannello in «Code → Coda sul telefono». Sul totem va rilanciata l'installazione
+(servizio code 1.2) perché il biglietto abbia il suo codice.
+
 ### Email per gli allarmi degli schermi (facoltativo)
 
 Per ricevere un'email quando uno schermo resta scollegato (scheda «Schermi → Stato e allarmi»)

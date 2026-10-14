@@ -982,6 +982,8 @@ async function stampaEpson(indirizzo, biglietto) {
     `<text width="2" height="2" em="true">${xml(biglietto.reparto)}&#10;</text>` +
     `<text width="6" height="6" em="true">${xml(biglietto.numero)}&#10;</text>` +
     `<text width="1" height="1" em="false">${xml(biglietto.davanti)}&#10;${xml(biglietto.messaggio)}&#10;${xml(biglietto.quando)}&#10;</text>` +
+    // La coda sul telefono: il QR lo disegna la stampante.
+    (biglietto.qr ? `<feed line="1"/><symbol type="qrcode_model_2" level="level_m" width="6">${xml(biglietto.qr)}</symbol><text>&#10;${xml(biglietto.testo_qr || "")}&#10;</text>` : "") +
     '<cut type="feed"/></epos-print></s:Body></s:Envelope>';
   // Stesso protocollo della pagina: su HTTPS la stampante va usata in HTTPS
   // (il suo certificato va accettato una volta sul totem).
@@ -1000,7 +1002,24 @@ async function stampaEpson(indirizzo, biglietto) {
   }
 }
 
-function stampaBrowser(biglietto) {
+// Il QR come immagine (per la stampa dal browser), con la libreria in player/vendor.
+async function immagineQr(testo) {
+  if (!window.qrcode) {
+    await new Promise((ok, ko) => {
+      const script = document.createElement("script");
+      script.src = new URL("./vendor/qrcode.js", import.meta.url).href;
+      script.onload = ok;
+      script.onerror = () => ko(new Error("qrcode.js non caricato"));
+      document.head.appendChild(script);
+    });
+  }
+  const qr = window.qrcode(0, "M");
+  qr.addData(testo);
+  qr.make();
+  return qr.createDataURL(6, 2);
+}
+
+async function stampaBrowser(biglietto) {
   // Con Chrome avviato con --kiosk --kiosk-printing esce senza finestre sulla stampante predefinita.
   let foglio = document.getElementById("biglietto");
   if (!foglio) {
@@ -1014,6 +1033,16 @@ function stampaBrowser(biglietto) {
     ["riga", biglietto.davanti], ["riga", biglietto.messaggio], ["riga", biglietto.quando],
   ]) {
     if (testo !== "" && testo !== null && testo !== undefined) crea("div", classe, foglio).textContent = testo;
+  }
+  if (biglietto.qr) {
+    try {
+      const img = crea("img", "qr", foglio);
+      img.src = await immagineQr(biglietto.qr);
+      await img.decode().catch(() => {});
+      if (biglietto.testo_qr) crea("div", "riga", foglio).textContent = biglietto.testo_qr;
+    } catch {
+      // Senza QR il biglietto esce lo stesso.
+    }
   }
   window.print();
 }
@@ -1092,6 +1121,9 @@ class ZonaPrendiNumero {
       const quando = new Date().toLocaleString("it-IT", { timeZone: this.motore.fuso, dateStyle: "short", timeStyle: "short" });
       const davanti = biglietto.davanti > 0 ? `Persone prima di te: ${biglietto.davanti}` : "Sei il prossimo!";
       const dati = { ...biglietto, davanti, quando, intestazione: this.config.intestazione, messaggio: this.config.messaggio };
+      // Coda sul telefono (se attiva): il QR porta alla pagina del biglietto.
+      const telefono = this.motore.manifest.telefono;
+      if (telefono && biglietto.codice) Object.assign(dati, { qr: `${telefono.url}${biglietto.codice}`, testo_qr: telefono.testo });
       if (biglietto.anteprima) {
         this.mostraEsito(dati, "Anteprima: biglietto di prova, non conta e non si stampa. I biglietti veri li emette il totem.");
         return;
@@ -1099,7 +1131,7 @@ class ZonaPrendiNumero {
       let errore = null;
       try {
         if (this.config.stampa === "epson") await stampaEpson(this.config.stampante, dati);
-        else if (this.config.stampa === "browser") stampaBrowser(dati);
+        else if (this.config.stampa === "browser") await stampaBrowser(dati);
       } catch (e) {
         errore = `Stampante non raggiungibile o spenta (${e.name === "AbortError" ? "tempo scaduto" : e.message}). Ricorda il tuo numero.`;
       }

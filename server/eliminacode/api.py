@@ -4,17 +4,19 @@ from django.http import FileResponse
 from rest_framework import exceptions, serializers, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.throttling import SimpleRateThrottle
+from rest_framework.views import APIView
 
 from audit.models import registra
 from clienti.models import Sede
-from core.api import CONTENUTI, GESTIONE, RiferimentoCliente, ViewSetCliente, sedi_visibili
+from core.api import CONTENUTI, GESTIONE, RiferimentoCliente, ViewSetCliente, VistaConContesto, sedi_visibili
 from core.contesto import contesto_cliente
 from dispositivi.api import VistaPlayer, credenziale_dalla_richiesta
 from dispositivi.models import Monitor, impronta
 from layout.manifest import layout_del_monitor
 
-from . import annunci, servizi
-from .models import CredenzialePulsante, FileAnnuncio, Reparto, SerieAnnunci
+from . import annunci, registro, servizi
+from .models import Biglietto, CredenzialePulsante, FileAnnuncio, ImpostazioniTelefono, Reparto, SerieAnnunci
 
 # Operazioni del banco: le fa anche lo UserCliente, che non gestisce i reparti.
 AZIONI_BANCO = {"avanti", "indietro", "ripeti", "azzera", "imposta", "emetti"}
@@ -337,6 +339,119 @@ class EmettiPlayerView(VistaPlayer):
             return Response(
                 {"reparto_id": str(reparto.id), "reparto": reparto.nome, "colore": reparto.colore,
                  "colore_testo": reparto.colore_testo, "numero": reparto.ultimo_emesso,
-                 "davanti": reparto.in_coda - 1, "sede": monitor.sede.nome},
+                 "davanti": reparto.in_coda - 1, "sede": monitor.sede.nome, "codice": reparto.biglietto.codice},
                 status=status.HTTP_201_CREATED,
             )
+
+
+class EventiCodaPlayerView(VistaPlayer):
+    """Il player del totem inoltra il registro del servizio code (biglietti e chiamate)."""
+
+    def post(self, request):
+        credenziale = credenziale_dalla_richiesta(request)
+        eventi = request.data.get("eventi")
+        if not isinstance(eventi, list):
+            raise exceptions.ValidationError({"eventi": "Elenco mancante."})
+        with contesto_cliente(credenziale.cliente_id):
+            monitor = Monitor.objects.get(id=credenziale.monitor_id)
+            ammessi = {str(r.id): r for r in Reparto.objects.filter(sede_id=monitor.sede_id)}
+            registrati = registro.registra_dal_totem(ammessi, eventi)
+        return Response({"registrati": registrati})
+
+
+# --- Coda sul telefono -----------------------------------------------------------
+
+
+class LimitePerBiglietto(SimpleRateThrottle):
+    """Per codice, non per indirizzo: i telefoni con la rete dati escono spesso dallo stesso IP."""
+
+    scope = "biglietto"
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {"scope": self.scope, "ident": view.kwargs.get("codice", "")}
+
+
+class BigliettoPubblicoView(APIView):
+    """Lo stato di un biglietto per la pagina sul telefono: chi ha il codice (dal QR) lo vede."""
+
+    authentication_classes = []
+    permission_classes = []
+    throttle_classes = [LimitePerBiglietto]
+
+    def get(self, request, codice):
+        from core.contesto import contesto_piattaforma
+
+        if codice == "prova":
+            # Per vedere com'è la pagina prima di attivarla: un biglietto inventato.
+            return Response({
+                "reparto": "Salumeria", "colore": "#c62828", "colore_testo": "#ffffff", "numero": 27, "servito": 23,
+                "davanti": 3, "stato": "in_attesa", "attesa_minuti": 6, "avviso_a": 3, "aggiornato": None, "emesso_il": None,
+            })
+        with contesto_piattaforma():
+            trovato = Biglietto.objects.filter(codice=codice).values_list("id", "cliente_id").first()
+        if trovato is None:
+            raise exceptions.NotFound()
+        with contesto_cliente(trovato[1]):
+            impostazioni = ImpostazioniTelefono.objects.first()
+            if impostazioni is None or not impostazioni.attivo:
+                raise exceptions.NotFound()
+            biglietto = Biglietto.objects.select_related("reparto").get(id=trovato[0])
+            risposta = Response(registro.stato_biglietto(biglietto))
+        risposta["Cache-Control"] = "no-store"
+        return risposta
+
+
+class ImpostazioniTelefonoSerializer(serializers.ModelSerializer):
+    avviso_a = serializers.IntegerField(min_value=1, max_value=10, required=False)
+
+    class Meta:
+        model = ImpostazioniTelefono
+        fields = ["attivo", "testo", "avviso_a"]
+
+
+class TelefonoView(VistaConContesto, APIView):
+    """Le impostazioni della coda sul telefono, con l'indirizzo pubblico del server (se c'è)."""
+
+    def _risposta(self, impostazioni):
+        from django.conf import settings
+
+        dati = ImpostazioniTelefonoSerializer(impostazioni).data
+        dati["url_pubblico"] = settings.FUTURAPRO_URL_PUBBLICO
+        return Response(dati)
+
+    def get(self, request):
+        return self._risposta(ImpostazioniTelefono.objects.first() or ImpostazioniTelefono())
+
+    def put(self, request):
+        impostazioni = ImpostazioniTelefono.objects.first()
+        dati = ImpostazioniTelefonoSerializer(impostazioni, data=request.data, partial=True)
+        dati.is_valid(raise_exception=True)
+        salvate = dati.save()
+        registra(request.user, "coda_telefono_modificata", None, attivo=salvate.attivo)
+        return self._risposta(salvate)
+
+
+class StatisticheCodeView(VistaConContesto, APIView):
+    """I tempi d'attesa: ?dal=AAAA-MM-GG&al=…&reparto=<id> (facoltativo)."""
+
+    def get(self, request):
+        from datetime import date, timedelta
+
+        from django.utils import timezone
+
+        from . import statistiche
+
+        try:
+            al = date.fromisoformat(request.query_params.get("al") or timezone.localdate().isoformat())
+            dal = date.fromisoformat(request.query_params.get("dal") or (al - timedelta(days=29)).isoformat())
+        except ValueError:
+            raise exceptions.ValidationError("Date non valide.")
+        if dal > al or (al - dal).days > 366:
+            raise exceptions.ValidationError("Periodo non valido (al massimo un anno).")
+        reparti = Reparto.objects.select_related("sede").order_by("sede__nome", "ordine", "nome")
+        limitate = sedi_visibili(request.user)
+        if limitate is not None:
+            reparti = reparti.filter(sede_id__in=limitate)
+        if request.query_params.get("reparto"):
+            reparti = reparti.filter(id=request.query_params["reparto"])
+        return Response({"dal": dal, "al": al, **statistiche.calcola(list(reparti), dal, al)})

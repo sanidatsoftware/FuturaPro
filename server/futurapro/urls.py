@@ -31,7 +31,10 @@ from dispositivi.api import (
     StatoPlayerView,
 )
 from eliminacode import views as eliminacode
-from eliminacode.api import AnnuncioPlayerView, EmettiPlayerView, PulsanteView, RepartiViewSet, SerieAnnunciViewSet
+from eliminacode.api import (
+    AnnuncioPlayerView, BigliettoPubblicoView, EmettiPlayerView, EventiCodaPlayerView, PulsanteView, RepartiViewSet,
+    SerieAnnunciViewSet, StatisticheCodeView, TelefonoView,
+)
 from layout import views as layout
 from layout.api import CercaLocalitaView, DatiZonaPlayerView, DatiZonaView, LayoutViewSet
 from pannello import views as pannello_viste
@@ -85,6 +88,10 @@ urlpatterns = [
     path("api/listini/carica/", CaricaListinoView.as_view(), name="listino-carica"),
     path("api/download/", DownloadView.as_view(), name="download"),
     path("api/stato-schermi/", StatoSchermiView.as_view(), name="stato-schermi"),
+    path("api/player/code/eventi/", EventiCodaPlayerView.as_view(), name="player-eventi-coda"),
+    path("api/pubblico/biglietti/<str:codice>/", BigliettoPubblicoView.as_view(), name="biglietto-pubblico"),
+    path("api/statistiche-code/", StatisticheCodeView.as_view(), name="statistiche-code"),
+    path("api/coda-telefono/", TelefonoView.as_view(), name="coda-telefono"),
     path("api/player/heartbeat/", HeartbeatView.as_view(), name="player-heartbeat"),
     path("api/player/schermata/", SchermataPlayerView.as_view(), name="player-schermata"),
     path("api/", include(router.urls)),
@@ -100,6 +107,7 @@ urlpatterns = [
     path("player/", player.schermo, name="player"),
     path("player/sw.js", player.service_worker, name="player-sw"),
     path("banco/", eliminacode.banco, name="banco"),
+    path("b/<str:codice>", eliminacode.biglietto, name="biglietto"),
     path("editor/", layout.editor, name="editor"),
     path("editor/<uuid:layout_id>/", layout.editor, name="editor-layout"),
     path("anteprima/<uuid:monitor_id>/", player.anteprima, name="anteprima-schermo"),

@@ -61,6 +61,12 @@ def pubblicazioni_del_monitor(monitor):
     )
 
 
+def telefono_per_manifest():
+    from eliminacode.registro import telefono_per_manifest as calcola
+
+    return calcola()
+
+
 def download_del_monitor(monitor):
     from dispositivi.api import download_del_monitor as calcola
 
@@ -223,6 +229,8 @@ def manifest(monitor) -> dict:
         ],
         "contenuti": {chiave: _voce(contenuto) for chiave, contenuto in contenuti.items()},
         "code": code_del_monitor(monitor, layout),
+        # La coda sul telefono: indirizzo per il QR sul biglietto; null se non attiva.
+        "telefono": telefono_per_manifest(),
         # I file audio dei numeri chiamati, per i reparti della sede che li hanno.
         "annunci": annunci_della_sede(monitor.sede_id),
     }

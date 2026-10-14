@@ -101,7 +101,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 100,
-    "DEFAULT_THROTTLE_RATES": {"abbinamento": _env("THROTTLE_ABBINAMENTO", "120/hour")},
+    "DEFAULT_THROTTLE_RATES": {"abbinamento": _env("THROTTLE_ABBINAMENTO", "120/hour"), "biglietto": "40/min"},
 }
 
 SESSION_COOKIE_HTTPONLY = True
@@ -131,6 +131,15 @@ EMAIL_TIMEOUT = 20
 DEFAULT_FROM_EMAIL = _env("EMAIL_MITTENTE", EMAIL_HOST_USER or "futurapro@localhost")
 if not EMAIL_HOST:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+# Facoltativo: l'indirizzo pubblico (da internet) per la coda sul telefono, es. https://coda.miodominio.it
+FUTURAPRO_URL_PUBBLICO = _env("URL_PUBBLICO", "")
+if FUTURAPRO_URL_PUBBLICO:
+    from urllib.parse import urlsplit
+
+    _host_pubblico = urlsplit(FUTURAPRO_URL_PUBBLICO).hostname
+    if _host_pubblico and _host_pubblico not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_host_pubblico)
 
 STATIC_URL = "static/"
 STATIC_ROOT = Path(_env("STATIC_ROOT", BASE_DIR / "staticfiles"))
