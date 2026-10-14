@@ -67,6 +67,7 @@ const SPIEGAZIONI = {
   notizie: "Il rullo che scorre con le notizie dei feed RSS scelti e i messaggi del negozio.",
   testo: "Una scritta fissa, es. un saluto o un orario.",
   immagine: "Un'immagine sempre ferma, es. il logo del negozio.",
+  listino: "Una tabella di prodotti e prezzi (es. banco salumi), dal listino compilato nel pannello, da Excel o dal gestionale. Va a pagine se le righe sono tante.",
   coda: "I numeri chiamati dei reparti (eliminacode), con il din-don quando cambiano.",
   prendi_numero: "I pulsanti del totem per prendere il numero e stampare il biglietto.",
 };
@@ -81,6 +82,7 @@ const TIPI = {
   notizie: { nome: "Rullo notizie", colore: "#ec6a1f", dimensioni: [100, 12] },
   testo: { nome: "Testo", colore: "#5b5b5b", dimensioni: [40, 10] },
   immagine: { nome: "Immagine fissa", colore: "#7a5c99", dimensioni: [20, 20] },
+  listino: { nome: "Listino prezzi", colore: "#2e7d32", dimensioni: [40, 60] },
   coda: { nome: "Numeri dei reparti", colore: "#c62828", dimensioni: [22, 50] },
   prendi_numero: { nome: "Prendi il numero", colore: "#ef6c00", dimensioni: [100, 33] },
 };
@@ -131,6 +133,20 @@ const CAMPI = {
     { nome: "contenuto", etichetta: "Immagine", tipo: "immagine" },
     { nome: "adattamento", etichetta: "Adattamento", tipo: "scelta", valori: ADATTAMENTO, predefinito: "adatta" },
   ],
+  listino: [
+    { nome: "listino", etichetta: "Listino", tipo: "listino" },
+    { nome: "titolo", etichetta: "Titolo (vuoto = senza barra)", tipo: "testo", predefinito: "" },
+    { nome: "colore", etichetta: "Colore testo", tipo: "colore", predefinito: "#1d2330" },
+    { nome: "sfondo", etichetta: "Sfondo", tipo: "sfondo", predefinito: "#ffffff" },
+    { nome: "colore_titolo", etichetta: "Colore titolo", tipo: "colore", predefinito: "#ffffff" },
+    { nome: "sfondo_titolo", etichetta: "Sfondo titolo", tipo: "colore", predefinito: "#c62828" },
+    { nome: "colore_prezzo", etichetta: "Colore dei prezzi", tipo: "colore", predefinito: "#c62828" },
+    { nome: "colore_evidenza", etichetta: "Fondo delle righe in evidenza", tipo: "colore", predefinito: "#fff3c4" },
+    { nome: "righe_per_pagina", etichetta: "Righe per pagina (0 = automatico)", tipo: "numero", min: 0, max: 40, passo: 1, predefinito: 0 },
+    { nome: "secondi_pagina", etichetta: "Secondi per pagina", tipo: "numero", min: 3, max: 120, passo: 1, predefinito: 10 },
+    { nome: "mostra_unita", etichetta: "Mostra l'unità (al kg, all'etto…)", tipo: "si_no", predefinito: true },
+    { nome: "mostra_nota", etichetta: "Mostra la nota (es. OFFERTA)", tipo: "si_no", predefinito: true },
+  ],
   coda: [
     { nome: "reparti", etichetta: "Reparti", tipo: "reparti" },
     { nome: "disposizione", etichetta: "Disposizione", tipo: "scelta", valori: [["automatica", "Automatica"], ["colonna", "In colonna"], ["riga", "In riga"], ["griglia", "A griglia"]], predefinito: "automatica" },
@@ -165,7 +181,7 @@ const stato = {
   selezionata: null,
   modificato: false,
   errori: new Map(), // _chiave -> messaggi dal server
-  archivi: { playlist: [], immagini: [], reparti: [] },
+  archivi: { playlist: [], immagini: [], reparti: [], listini: [] },
 };
 let contatore = 0;
 const nuovaChiave = () => `z${++contatore}`;
@@ -222,6 +238,26 @@ function anteprimaZona(el, zona) {
       const immagine = stato.archivi.immagini.find((i) => i.id === c.contenuto);
       crea("div", { classe: "grande", testo: "🖼" }, corpo);
       crea("div", { testo: immagine ? immagine.nome : "Scegli l'immagine" }, corpo);
+      break;
+    }
+    case "listino": {
+      const listino = stato.archivi.listini.find((l) => l.id === c.listino);
+      el.style.background = c.sfondo || "#ffffff";
+      corpo.style.color = c.colore || "#1d2330";
+      corpo.classList.add("listino");
+      if (c.titolo) {
+        const titolo = crea("div", { classe: "titolo", testo: c.titolo }, el);
+        Object.assign(titolo.style, { background: c.sfondo_titolo || "#c62828", color: c.colore_titolo || "#fff" });
+        el.insertBefore(titolo, corpo);
+      }
+      const righe = listino ? listino.righe.filter((r) => r.visibile !== false).slice(0, 6) : [];
+      for (const r of righe) {
+        const riga = crea("div", { classe: "riga-listino" }, corpo);
+        crea("span", { testo: r.prodotto }, riga);
+        const prezzo = crea("b", { testo: r.prezzo ? `€ ${r.prezzo.replace(".", ",")}` : "" }, riga);
+        prezzo.style.color = c.colore_prezzo || "#c62828";
+      }
+      if (!righe.length) crea("div", { testo: listino ? "Listino vuoto" : "Scegli il listino" }, corpo);
       break;
     }
     case "coda":
@@ -623,6 +659,13 @@ function mostraProprieta() {
         select.addEventListener("change", () => cambia(zona, campo.nome, select.value));
         break;
       }
+      case "listino": {
+        const select = crea("select", {}, riga);
+        crea("option", { value: "", testo: stato.archivi.listini.length ? "— scegli —" : "Nessun listino: crealo nel pannello (Contenuti → Listini)" }, select);
+        for (const l of stato.archivi.listini) crea("option", { value: l.id, testo: `${l.nome} (${l.righe.length} righe)`, selected: l.id === valore }, select);
+        select.addEventListener("change", () => cambia(zona, campo.nome, select.value));
+        break;
+      }
       case "reparti":
         campoReparti(riga, zona);
         break;
@@ -778,10 +821,10 @@ async function avviaEditor(id) {
   new ResizeObserver(adattaPalco).observe(area);
 
   try {
-    const [layout, playlist, contenuti, reparti] = await Promise.all([
-      api("GET", `/api/layout/${id}/`), tutti("/api/playlist/"), tutti("/api/contenuti/?uso=libreria"), tutti("/api/reparti/"),
+    const [layout, playlist, contenuti, reparti, listini] = await Promise.all([
+      api("GET", `/api/layout/${id}/`), tutti("/api/playlist/"), tutti("/api/contenuti/?uso=libreria"), tutti("/api/reparti/"), tutti("/api/listini/"),
     ]);
-    stato.archivi = { playlist, immagini: contenuti.filter((c) => c.tipo === "immagine"), reparti };
+    stato.archivi = { playlist, immagini: contenuti.filter((c) => c.tipo === "immagine"), reparti, listini };
     caricaLayout(layout);
   } catch (errore) {
     avvisa(errore.stato === 403 ? "Accedi al pannello per modificare i layout." : errore.message);

@@ -659,6 +659,108 @@ class ZonaTesto {
   ferma() {}
 }
 
+// --- Listino prezzi ---------------------------------------------------------------
+// Una tabella di prodotti e prezzi. Se le righe non entrano tutte, va a pagine.
+
+const OGNI_LISTINO = 60_000;
+const euro = (prezzo) => (prezzo ? `€ ${Number(prezzo).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "");
+
+class ZonaListino {
+  constructor(el, zona, px, motore) {
+    Object.assign(this, { el, zona, px, motore, config: zona.configurazione });
+    Object.assign(el.style, { color: this.config.colore, background: this.config.sfondo || "transparent" });
+    this.righe = [];
+    this.pagina = 0;
+  }
+
+  avvia() {
+    const aggiorna = async () => {
+      try {
+        const { listino } = await this.motore.fonte.dati(this.zona.id);
+        const firma = JSON.stringify(listino.righe);
+        if (firma !== this.firma) {
+          this.firma = firma;
+          this.righe = listino.righe;
+          this.titolo = this.config.titolo || "";
+          this.disegna();
+        }
+      } catch {
+        // Restano i prezzi già scaricati.
+      }
+    };
+    aggiorna();
+    this.timer = setInterval(aggiorna, OGNI_LISTINO);
+    this.giro = setInterval(() => this.giraPagina(), this.config.secondi_pagina * 1000);
+  }
+
+  // Quante righe per pagina: quelle scelte, oppure quante ne entrano con un testo leggibile.
+  misure() {
+    const { altezza } = this.px;
+    const testata = this.titolo ? altezza * 0.13 : 0;
+    const disponibile = altezza - testata;
+    const perPagina = this.config.righe_per_pagina || Math.max(3, Math.min(14, Math.floor(disponibile / Math.max(44, altezza / 11))));
+    return { testata, perPagina, alta: disponibile / perPagina };
+  }
+
+  disegna() {
+    this.el.replaceChildren();
+    const { testata, perPagina, alta } = this.misure();
+    this.pagine = Math.max(1, Math.ceil(this.righe.length / perPagina));
+    this.pagina %= this.pagine;
+    if (this.titolo) {
+      const t = crea("div", "titolo-listino", this.el);
+      const misura = Math.min(testata * 0.55, (this.px.larghezza * 0.8) / Math.max(6, this.titolo.length * 0.62));
+      Object.assign(t.style, { height: `${testata}px`, fontSize: `${misura}px`, color: this.config.colore_titolo, background: this.config.sfondo_titolo });
+      crea("span", "", t).textContent = this.titolo;
+      this.indicatore = crea("span", "pagine-listino", t);
+    }
+    this.corpo = crea("div", "corpo-listino", this.el);
+    const carattere = Math.min(alta * 0.5, this.px.larghezza / 22);
+    this.stile = { alta, carattere };
+    this.mostraPagina(false);
+  }
+
+  mostraPagina(animata = true) {
+    const { perPagina } = this.misure();
+    const { alta, carattere } = this.stile;
+    const pagina = crea("div", "pagina-listino");
+    for (const r of this.righe.slice(this.pagina * perPagina, (this.pagina + 1) * perPagina)) {
+      const riga = crea("div", `riga-listino${r.evidenza ? " evidenza" : ""}`, pagina);
+      Object.assign(riga.style, { height: `${alta}px`, fontSize: `${carattere}px` });
+      if (r.evidenza) riga.style.background = this.config.colore_evidenza;
+      crea("span", "prodotto", riga).textContent = r.prodotto;
+      if (this.config.mostra_nota && r.nota) crea("span", "nota", riga).textContent = r.nota;
+      const prezzo = crea("span", "prezzo", riga);
+      prezzo.style.color = this.config.colore_prezzo;
+      prezzo.textContent = euro(r.prezzo);
+      if (this.config.mostra_unita && r.unita) {
+        const unita = crea("small", "", prezzo);
+        unita.textContent = ` ${r.unita}`;
+      }
+    }
+    if (this.indicatore) this.indicatore.textContent = this.pagine > 1 ? `${this.pagina + 1}/${this.pagine}` : "";
+    const vecchia = this.corpo.firstChild;
+    this.corpo.appendChild(pagina);
+    // La pagina nuova sale e spinge via la vecchia: le due non si sovrappongono mai.
+    if (vecchia && animata) {
+      const tempi = { duration: 700, easing: "cubic-bezier(.4, 0, .2, 1)" };
+      pagina.animate([{ transform: "translateY(100%)" }, { transform: "translateY(0)" }], tempi);
+      vecchia.animate([{ transform: "translateY(0)" }, { transform: "translateY(-100%)" }], tempi).onfinish = () => vecchia.remove();
+    } else vecchia?.remove();
+  }
+
+  giraPagina() {
+    if (!this.pagine || this.pagine < 2) return;
+    this.pagina = (this.pagina + 1) % this.pagine;
+    this.mostraPagina();
+  }
+
+  ferma() {
+    clearInterval(this.timer);
+    clearInterval(this.giro);
+  }
+}
+
 const OBJECT_FIT = { adatta: "contain", sfondo: "contain", riempi: "cover", allunga: "fill" };
 
 // Applica l'adattamento a un'immagine o a un video. «sfondo» mette dietro la stessa
@@ -1041,6 +1143,7 @@ const TIPI = {
   notizie: ZonaNotizie,
   testo: ZonaTesto,
   immagine: ZonaImmagine,
+  listino: ZonaListino,
   coda: ZonaCoda,
   prendi_numero: ZonaPrendiNumero,
 };

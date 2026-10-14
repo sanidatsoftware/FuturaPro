@@ -140,3 +140,16 @@ html, body {
 
 /* Riposo fuori orario: tutto nero, nessun puntatore. */
 .riposo { position: fixed; inset: 0; background: #000; cursor: none; }
+
+/* Listino prezzi */
+.zona-listino { display: flex; flex-direction: column; }
+.titolo-listino { flex: none; white-space: nowrap; overflow: hidden; display: flex; align-items: center; justify-content: space-between; padding: 0 3%; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; }
+.pagine-listino { font-size: .45em; opacity: .8; font-weight: 600; }
+.corpo-listino { position: relative; flex: 1; overflow: hidden; }
+.pagina-listino { position: absolute; inset: 0; }
+.riga-listino { display: flex; align-items: center; gap: 2%; padding: 0 3%; border-bottom: 1px solid rgba(0, 0, 0, .08); box-sizing: border-box; }
+.riga-listino .prodotto { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.riga-listino .nota { flex: none; font-size: .6em; font-weight: 800; text-transform: uppercase; padding: .15em .6em; border-radius: 99px; background: #c62828; color: #fff; }
+.riga-listino .prezzo { flex: none; font-weight: 800; font-variant-numeric: tabular-nums; }
+.riga-listino .prezzo small { font-size: .55em; font-weight: 600; opacity: .75; }
+.riga-listino.evidenza .prodotto::before { content: "★ "; }

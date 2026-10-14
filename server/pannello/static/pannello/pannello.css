@@ -175,3 +175,15 @@ button.giorno.scelto { background: var(--primario); color: #fff; border-color: v
 .barre-disponibilita span.chiuso::after { background: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, var(--testo) 18%, transparent) 3px 5px); }
 .percentuale { margin-left: 8px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .barre-disponibilita span.nessuno::after { height: 0; } .interruttore { font-weight: 600; }
+
+/* Listini */
+.schede-listini { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.scheda-listino { border-radius: 99px; }
+.scheda-listino.attiva { background: var(--primario); color: #fff; border-color: var(--primario); }
+.tabella-listino input { width: 100%; box-sizing: border-box; }
+.tabella-listino input.corto { width: 90px; text-align: right; }
+.tabella-listino input.medio { width: 150px; }
+.tabella-listino tr.evidenza td { background: color-mix(in srgb, #f2a93b 18%, transparent); }
+.stella { color: var(--tenue); padding: 4px 8px; }
+.stella.accesa { color: #e0a020; border-color: #e0a020; }
+a.pulsante { display: inline-block; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--linea); background: var(--carta); color: var(--testo); text-decoration: none; margin: 2px; }

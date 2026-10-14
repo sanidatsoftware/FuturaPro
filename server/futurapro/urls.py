@@ -14,6 +14,8 @@ from contenuti.api import (
     PlaylistViewSet,
     PromozioniViewSet,
     EventiViewSet,
+    ListiniViewSet,
+    CaricaListinoView,
     PubblicaView,
     PubblicazioniViewSet,
 )
@@ -57,6 +59,7 @@ router.register("pubblicazioni", PubblicazioniViewSet, basename="pubblicazioni")
 router.register("campagne", CampagneViewSet, basename="campagne")
 router.register("promozioni", PromozioniViewSet, basename="promozioni")
 router.register("eventi", EventiViewSet, basename="eventi")
+router.register("listini", ListiniViewSet, basename="listini")
 router.register("layout", LayoutViewSet, basename="layout")
 router.register("reparti", RepartiViewSet, basename="reparti")
 router.register("annunci", SerieAnnunciViewSet, basename="annunci")
@@ -79,6 +82,7 @@ urlpatterns = [
     path("api/eliminacode/pulsante/", PulsanteView.as_view(), name="pulsante-stato"),
     path("api/eliminacode/pulsante/<str:operazione>/", PulsanteView.as_view(), name="pulsante"),
     path("api/player/annunci/<uuid:file_id>/", AnnuncioPlayerView.as_view(), name="player-annuncio"),
+    path("api/listini/carica/", CaricaListinoView.as_view(), name="listino-carica"),
     path("api/download/", DownloadView.as_view(), name="download"),
     path("api/stato-schermi/", StatoSchermiView.as_view(), name="stato-schermi"),
     path("api/player/heartbeat/", HeartbeatView.as_view(), name="player-heartbeat"),

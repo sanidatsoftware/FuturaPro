@@ -142,3 +142,8 @@ input[type="checkbox"] { width: auto; }
 .aiuto-mouse.visibile { opacity: 1; transform: none; }
 :root[data-tema="scuro"] .aiuto-mouse { background: #2b3550; }
 @media (prefers-color-scheme: dark) { :root[data-tema="auto"] .aiuto-mouse { background: #2b3550; } }
+
+/* Anteprima della zona listino */
+.contenuto.listino { justify-content: flex-start; align-items: stretch; padding: 4px 8px; gap: 2px; }
+.riga-listino { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; border-bottom: 1px solid rgba(0, 0, 0, .1); }
+.riga-listino span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

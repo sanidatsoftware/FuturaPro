@@ -291,6 +291,18 @@ l'Administrator Assoluto, nella scheda «Aspetto interfaccia» (`/api/piattaform
   straordinari delle prossime 24 ore e tutti per due ore dopo «Scarica adesso». La velocità si
   rispetta leggendo i file a pezzi.
 
+### Listini prezzi (facoltativi)
+
+`/api/listini/`: tabelle di prodotti (prodotto, prezzo, unità, nota, evidenza, visibile) mostrate
+dalla zona «Listino prezzi» del layout, a pagine (righe per pagina automatiche o scelte, secondi
+per pagina, la pagina nuova spinge via la vecchia), con colori propri e le righe in evidenza.
+Si compilano nel pannello, si importano da CSV (intestazione facoltativa, separatore `;` `,` o
+tabulazione, prezzo con virgola o euro) e si esportano. Dal gestionale: un indirizzo internet
+pubblico riletto ogni N minuti (si rifiutano gli indirizzi della rete interna, come per i feed)
+oppure l'invio `POST /api/listini/carica/` con `Authorization: Listino <chiave>` e il CSV nel
+corpo, per il gestionale in rete locale. Il player li riceve con i dati della zona (ogni minuto)
+e li tiene per l'uso senza rete.
+
 ## 6. Layout grafici
 
 Ogni cliente ha i propri layout; l'AdminCliente li gestisce se l'Administrator Assoluto glielo

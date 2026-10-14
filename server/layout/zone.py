@@ -163,6 +163,31 @@ class Coda(serializers.Serializer):
     volume_annunci = serializers.IntegerField(min_value=0, max_value=100, required=False, default=100)
 
 
+class ListinoZona(serializers.Serializer):
+    """Un listino prezzi (contenuti.Listino), a pagine se le righe non entrano tutte."""
+
+    listino = serializers.UUIDField()
+    titolo = serializers.CharField(max_length=80, required=False, allow_blank=True, default="")
+    colore = Colore("#1d2330")
+    sfondo = Sfondo("#ffffff")
+    colore_titolo = Colore("#ffffff")
+    sfondo_titolo = Colore("#c62828")
+    colore_prezzo = Colore("#c62828")
+    colore_evidenza = Colore("#fff3c4")
+    # 0: quante ne entrano con un testo ben leggibile.
+    righe_per_pagina = serializers.IntegerField(min_value=0, max_value=40, required=False, default=0)
+    secondi_pagina = serializers.IntegerField(min_value=3, max_value=120, required=False, default=10)
+    mostra_unita = serializers.BooleanField(required=False, default=True)
+    mostra_nota = serializers.BooleanField(required=False, default=True)
+
+    def validate_listino(self, listino):
+        from contenuti.models import Listino
+
+        if not Listino.objects.filter(id=listino).exists():
+            raise serializers.ValidationError("Listino inesistente.")
+        return str(listino)
+
+
 STAMPE = ["nessuna", "browser", "epson"]
 
 
@@ -199,6 +224,7 @@ CONFIGURAZIONI = {
     TipoZona.NOTIZIE: Notizie,
     TipoZona.TESTO: Testo,
     TipoZona.IMMAGINE: Immagine,
+    TipoZona.LISTINO: ListinoZona,
     TipoZona.CODA: Coda,
     TipoZona.PRENDI_NUMERO: PrendiNumero,
 }

@@ -3,6 +3,7 @@
 
 import { attivaAiuti } from "./aiuto.js";
 import { VOCI, clienteRicordato, disegnaMenu, ricordaCliente } from "./menu.js";
+import { preparaSchedeContenuti, schedaListini } from "./schede-contenuti.js";
 import { preparaSchedeSchermi, schedaAccensione, schedaDownload, schedaStato } from "./schede-schermi.js";
 
 const stato = { io: null, cliente: null, clienti: [], scheda: null };
@@ -134,6 +135,7 @@ const SCHEDE = {
   accensione: schedaAccensione,
   stato: schedaStato,
   download: schedaDownload,
+  listini: schedaListini,
   reparti: schedaReparti,
   sedi: schedaSedi,
   utenti: schedaUtenti,
@@ -941,7 +943,9 @@ async function avvia() {
       scegliCliente(e.target.value, stato.scheda === "clienti" && e.target.value ? "monitor" : undefined));
   }
   attivaAiuti();
-  preparaSchedeSchermi({ stato, api, elenco, tutteLePagine, crea, avvisa, prova, sezione, campo, scelta, tabella, ruoloGestione, conCliente, mostra });
+  const strumenti = { stato, api, elenco, tutteLePagine, crea, avvisa, prova, sezione, campo, scelta, tabella, ruoloGestione, conCliente, mostra };
+  preparaSchedeSchermi(strumenti);
+  preparaSchedeContenuti(strumenti);
   const richiesta = location.hash.slice(1);
   const visibile = VOCI.some((v) => v.chiave === richiesta && SCHEDE[richiesta] && v.visibile(stato.io));
   await mostra(visibile ? richiesta : stato.io.ruolo === "admin_assoluto" && !stato.cliente ? "clienti" : "monitor");

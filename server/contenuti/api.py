@@ -19,10 +19,12 @@ from dispositivi.api import VistaPlayer, credenziale_dalla_richiesta
 from clienti.models import Insegna
 from dispositivi.models import GruppoMonitor, Monitor
 
+from layout import fonti
+
 from . import palinsesto
 from .file import crea_miniatura, impronta_e_dimensione, misure_immagine, riconosci
-from . import campagne, dirette
-from .models import Campagna, Contenuto, ElementoPlaylist, EventoStraordinario, Playlist, Promozione, Pubblicazione, Tipo, Uso
+from . import campagne, dirette, listini
+from .models import Campagna, Contenuto, ElementoPlaylist, EventoStraordinario, Listino, Playlist, Promozione, Pubblicazione, Tipo, Uso
 
 MB = 1024 * 1024
 
@@ -870,3 +872,158 @@ class FilePlayerView(VistaPlayer):
             if str(contenuto_id) not in ammessi:
                 raise exceptions.NotFound()
             return _servi(Contenuto.objects.get(id=contenuto_id))
+
+
+# --- Listini prezzi ------------------------------------------------------------
+
+
+class RigaListinoSerializer(serializers.Serializer):
+    prodotto = serializers.CharField(max_length=120)
+    prezzo = serializers.CharField(max_length=20, allow_blank=True, required=False, default="")
+    unita = serializers.CharField(max_length=30, allow_blank=True, required=False, default="")
+    nota = serializers.CharField(max_length=60, allow_blank=True, required=False, default="")
+    evidenza = serializers.BooleanField(required=False, default=False)
+    visibile = serializers.BooleanField(required=False, default=True)
+
+
+class ListinoSerializer(serializers.ModelSerializer):
+    righe = RigaListinoSerializer(many=True, required=False)
+    ha_chiave = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Listino
+        fields = ["id", "nome", "righe", "fonte_url", "aggiorna_minuti", "aggiornato_il", "errore_fonte", "ha_chiave", "modificato"]
+        read_only_fields = ["aggiornato_il", "errore_fonte", "modificato"]
+        extra_kwargs = {"aggiorna_minuti": {"min_value": 5, "max_value": 24 * 60}}
+
+    def get_ha_chiave(self, listino):
+        return bool(listino.impronta_chiave)
+
+    def validate_righe(self, righe):
+        if len(righe) > listini.MASSIMO_RIGHE:
+            raise serializers.ValidationError(f"Al massimo {listini.MASSIMO_RIGHE} righe.")
+        return [listini.riga_pulita(r) for r in righe]
+
+    def validate_nome(self, nome):
+        doppione = Listino.objects.filter(nome__iexact=nome.strip())
+        if self.instance is not None:
+            doppione = doppione.exclude(id=self.instance.id)
+        if doppione.exists():
+            raise serializers.ValidationError("Esiste già un listino con questo nome.")
+        return nome.strip()
+
+    def validate_fonte_url(self, url):
+        if url:
+            try:
+                fonti.verifica_indirizzo(url)
+            except fonti.IndirizzoNonAmmesso:
+                raise serializers.ValidationError(
+                    "Indirizzo non raggiungibile dal server o nella rete interna: per un gestionale in rete locale usa l'invio con la chiave."
+                )
+        return url
+
+
+class ListiniViewSet(ViewSetCliente):
+    """I listini prezzi per la zona «Listino». Li compila anche chi gestisce i contenuti."""
+
+    ruoli_scrittura = CONTENUTI
+    serializer_class = ListinoSerializer
+
+    def get_queryset(self):
+        return Listino.objects.all()
+
+    def perform_create(self, serializer):
+        registra(self.request.user, "listino_creato", serializer.save())
+
+    def perform_update(self, serializer):
+        listino = serializer.save()
+        if "fonte_url" in serializer.validated_data and listino.fonte_url:
+            listini.aggiorna_da_fonte(listino)
+        registra(self.request.user, "listino_modificato", listino)
+
+    def perform_destroy(self, listino):
+        registra(self.request.user, "listino_eliminato", listino, nome=listino.nome)
+        listino.delete()
+
+    @action(detail=True, methods=["post"])
+    def importa(self, request, pk=None):
+        """Sostituisce le righe con quelle di un CSV (file o testo incollato)."""
+        listino = self.get_object()
+        file = request.FILES.get("file")
+        testo = file.read(2 * 1024 * 1024).decode("utf-8-sig", errors="replace") if file else str(request.data.get("testo") or "")
+        righe, avvisi = listini.leggi_csv(testo)
+        if not righe:
+            raise exceptions.ValidationError({"file": "Nessuna riga trovata: controlla il file (prodotto; prezzo; unità; nota; evidenza)."})
+        listino.righe = righe
+        listino.save(update_fields=["righe", "modificato"])
+        registra(request.user, "listino_importato", listino, righe=len(righe))
+        return Response({**ListinoSerializer(listino).data, "avvisi": avvisi})
+
+    @action(detail=True, methods=["get"])
+    def esporta(self, request, pk=None):
+        listino = self.get_object()
+        risposta = HttpResponse(listini.csv_del_listino(listino), content_type="text/csv; charset=utf-8")
+        risposta["Content-Disposition"] = f'attachment; filename="listino.csv"'
+        return risposta
+
+    @action(detail=True, methods=["post"])
+    def aggiorna(self, request, pk=None):
+        listino = self.get_object()
+        if not listino.fonte_url:
+            raise exceptions.ValidationError("Il listino non ha un indirizzo da cui leggere.")
+        listini.aggiorna_da_fonte(listino)
+        return Response(ListinoSerializer(listino).data)
+
+    @action(detail=True, methods=["post", "delete"])
+    def chiave(self, request, pk=None):
+        """Una chiave nuova per l'invio dal gestionale (si vede solo adesso); DELETE la revoca."""
+        listino = self.get_object()
+        if request.method == "DELETE":
+            listino.impronta_chiave = ""
+            listino.save(update_fields=["impronta_chiave"])
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        import secrets
+
+        from dispositivi.models import impronta
+
+        chiave = secrets.token_urlsafe(24)
+        listino.impronta_chiave = impronta(chiave)
+        listino.save(update_fields=["impronta_chiave"])
+        registra(request.user, "listino_chiave_creata", listino)
+        return Response({"chiave": chiave}, status=status.HTTP_201_CREATED)
+
+
+class CaricaListinoView(APIView):
+    """Il gestionale invia il CSV del listino: POST con «Authorization: Listino <chiave>»,
+    corpo il CSV (testo) o un file «file»."""
+
+    authentication_classes = []
+    permission_classes = []
+
+    def get_authenticate_header(self, request):
+        return "Listino"
+
+    def post(self, request):
+        from core.contesto import contesto_piattaforma
+        from dispositivi.models import impronta
+
+        parti = request.headers.get("Authorization", "").split()
+        if len(parti) != 2 or parti[0] != "Listino":
+            raise exceptions.AuthenticationFailed()
+        with contesto_piattaforma():
+            trovato = Listino.objects.filter(impronta_chiave=impronta(parti[1])).values_list("id", "cliente_id").first()
+        if trovato is None:
+            raise exceptions.AuthenticationFailed()
+        # Il CSV nel corpo (curl --data-binary) o come file di un modulo.
+        file = request.FILES.get("file") if request.content_type.startswith("multipart/") else None
+        grezzo = file.read(2 * 1024 * 1024) if file else request.body[: 2 * 1024 * 1024]
+        righe, avvisi = listini.leggi_csv(grezzo.decode("utf-8-sig", errors="replace"))
+        if not righe:
+            raise exceptions.ValidationError("Nessuna riga trovata nel CSV.")
+        with contesto_cliente(trovato[1]):
+            listino = Listino.objects.get(id=trovato[0])
+            listino.righe = righe
+            listino.aggiornato_il = timezone.now()
+            listino.errore_fonte = ""
+            listino.save(update_fields=["righe", "aggiornato_il", "errore_fonte", "modificato"])
+        return Response({"righe": len(righe), "avvisi": avvisi})

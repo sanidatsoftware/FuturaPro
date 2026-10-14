@@ -195,6 +195,12 @@ def dati_zona(zona, monitor=None) -> dict:
     if zona.tipo == TipoZona.NOTIZIE:
         titoli = fonti.notizie(configurazione.get("feed", []), configurazione.get("aggiornamento_minuti", 15))
         return {"notizie": configurazione.get("messaggi", []) + titoli}
+    if zona.tipo == TipoZona.LISTINO:
+        from contenuti.listini import dati_listino
+        from contenuti.models import Listino
+
+        listino = Listino.objects.filter(id=configurazione.get("listino")).first()
+        return {"listino": dati_listino(listino) if listino else {"nome": "", "righe": [], "aggiornato": None}}
     raise exceptions.NotFound()
 
 

@@ -54,6 +54,7 @@ class TipoZona(models.TextChoices):
     NOTIZIE = "notizie", "Notizie (rullo)"
     TESTO = "testo", "Testo"
     IMMAGINE = "immagine", "Immagine fissa"
+    LISTINO = "listino", "Listino prezzi"
     CODA = "coda", "Eliminacode: numeri dei reparti"
     PRENDI_NUMERO = "prendi_numero", "Eliminacode: prendi il numero (totem touch)"
 

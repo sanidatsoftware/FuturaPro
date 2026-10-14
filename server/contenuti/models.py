@@ -262,3 +262,31 @@ class EventoStraordinario(ModelloCliente):
 
         self.fine = self.inizio + timedelta(seconds=self.durata)
         super().save(*args, **kwargs)
+
+
+class Listino(ModelloCliente):
+    """Una tabella di prodotti e prezzi da mostrare sugli schermi con la zona «Listino»
+    (es. il banco salumi o la panetteria).
+
+    Le righe si scrivono nel pannello, si importano da un CSV o arrivano da un indirizzo del
+    gestionale (``fonte_url``), riletto ogni ``aggiorna_minuti``.
+    """
+
+    nome = models.CharField(max_length=200)
+    # [{"prodotto", "prezzo" (testo, es. "12.90"), "unita", "nota", "evidenza", "visibile"}]
+    righe = models.JSONField(default=list, blank=True)
+    fonte_url = models.URLField(max_length=500, blank=True)
+    aggiorna_minuti = models.PositiveIntegerField(default=30)
+    aggiornato_il = models.DateTimeField(null=True, blank=True)
+    errore_fonte = models.CharField(max_length=300, blank=True)
+    # Il gestionale può inviare il CSV con «Authorization: Listino <chiave>»: qui l'impronta.
+    impronta_chiave = models.CharField(max_length=64, blank=True, db_index=True)
+    modificato = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["nome"]
+        verbose_name_plural = "listini"
+        constraints = [models.UniqueConstraint(fields=["cliente", "nome"], name="listino_nome_unico")]
+
+    def __str__(self):
+        return self.nome
