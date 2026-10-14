@@ -19,7 +19,7 @@ class PagineTest(TestCase):
     def test_pannello_chiede_l_accesso(self):
         r = self.client.get("/pannello/")
         self.assertEqual(r.status_code, 302)
-        self.assertTrue(r["Location"].startswith("/api/sessione/login/"))
+        self.assertTrue(r["Location"].startswith("/accesso/"))
         self.assertEqual(self.client.get("/")["Location"], "/pannello/")
 
     def test_service_worker(self):

@@ -1,0 +1,66 @@
+{% load static %}<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Creazione palinsesto · {{ aspetto.nome_app }}</title>
+  <link rel="stylesheet" href="{% static 'pannello/palinsesto.css' %}">
+  <style>:root { --accento: {{ aspetto.colore }}; }</style>
+</head>
+<body>
+  <header class="testata">
+    <a class="marchio" href="/pannello/" id="al-pannello">
+      {% if aspetto.logo %}<img src="/aspetto/logo/?v={{ aspetto.modificato|date:'U' }}" alt="">{% endif %}
+      <span>{{ aspetto.nome_app }}</span>
+    </a>
+    <h1>Creazione palinsesto</h1>
+    <label id="scelta-cliente" class="cliente" hidden>Cliente <select id="cliente"></select></label>
+    <span class="spazio"></span>
+    <button type="button" id="apri-importa" class="vetro">Importa campagne da CSV</button>
+    <a class="vetro" href="/pannello/" id="torna">← Pannello</a>
+  </header>
+  <div id="avviso" class="avviso" hidden></div>
+  <section class="statistiche" id="statistiche"></section>
+  <main class="area">
+    <section class="libreria" id="libreria">
+      <div class="caricamento" id="caricamento">
+        <div class="icona" aria-hidden="true">⇪</div>
+        <div>
+          <strong>Trascina qui immagini e video, anche un'intera cartella</strong>
+          <p>Verticali e orizzontali vengono riconosciute da sole: le prime vanno ai totem, le seconde ai monitor.</p>
+        </div>
+        <div class="pulsanti">
+          <label class="pulsante">Scegli file<input type="file" id="scegli-file" multiple accept="image/*,video/mp4,video/webm,video/quicktime" hidden></label>
+          <label class="pulsante">Scegli cartella<input type="file" id="scegli-cartella" webkitdirectory multiple hidden></label>
+        </div>
+        <div class="avanzamento" id="avanzamento" hidden></div>
+      </div>
+      <div class="filtri">
+        <input type="search" id="cerca" placeholder="Cerca per nome…">
+        <label class="interruttore"><input type="checkbox" id="solo-liberi"> Solo non usati in campagne</label>
+      </div>
+      <div id="gallerie"></div>
+    </section>
+    <aside class="campagna" id="campagna"></aside>
+  </main>
+  <section class="calendario" id="calendario"></section>
+  <div class="barra-selezione" id="barra-selezione" hidden></div>
+
+  <dialog id="importa" class="finestra">
+    <form method="dialog" class="chiudi"><button aria-label="Chiudi">✕</button></form>
+    <h2>Importa campagne da CSV</h2>
+    <p>Prepara a inizio anno tutte le campagne con le loro date: i contenuti si aggiungono dopo, quando sono pronti. Le campagne con lo stesso nome vengono aggiornate, non duplicate.</p>
+    <ol class="passi">
+      <li><a id="scarica-modello" href="#">Scarica il modello</a> e compilalo con Excel (salva come «CSV UTF-8» o «CSV (separato da punto e virgola)»).</li>
+      <li>Sceglilo qui: prima viene controllato, riga per riga, senza salvare nulla.</li>
+    </ol>
+    <details class="tracciato"><summary>Il tracciato delle colonne</summary><div id="tracciato"></div></details>
+    <input type="file" id="file-csv" accept=".csv,text/csv">
+    <div id="esito-csv"></div>
+    <div class="azioni"><button type="button" id="conferma-csv" class="primario" disabled>Importa</button></div>
+  </dialog>
+
+  <dialog id="visore" class="visore"><form method="dialog"><button class="chiudi-visore" aria-label="Chiudi">✕</button></form><div id="visore-contenuto"></div></dialog>
+  <script type="module" src="{% static 'pannello/palinsesto.js' %}"></script>
+</body>
+</html>

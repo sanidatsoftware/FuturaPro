@@ -72,6 +72,7 @@ urlpatterns = [
     path("aspetto/logo/", pannello_viste.logo, name="logo"),
     path("", RedirectView.as_view(url="/pannello/", permanent=False)),
     path("pannello/", pannello, name="pannello"),
+    path("palinsesto/", pannello_viste.palinsesto, name="palinsesto"),
     path("player/", player.schermo, name="player"),
     path("player/sw.js", player.service_worker, name="player-sw"),
     path("banco/", eliminacode.banco, name="banco"),

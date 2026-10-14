@@ -21,6 +21,13 @@ def pannello(request):
     return render(request, "pannello/pannello.html")
 
 
+def palinsesto(request):
+    """«Creazione palinsesto»: libreria, campagne e calendario. I dati passano dalle API."""
+    if not request.user.is_authenticated:
+        return redirect_to_login(request.get_full_path())
+    return render(request, "pannello/palinsesto.html")
+
+
 class Accesso(LoginView):
     template_name = "pannello/accesso.html"
     redirect_authenticated_user = True

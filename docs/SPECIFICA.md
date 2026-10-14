@@ -142,6 +142,52 @@ valuta le regole da solo, quindi continua a seguire il palinsesto anche offline.
 dipende solo dal contenuto: con `If-None-Match` il server risponde 304 se non è cambiato
 nulla. I file si scaricano da `/api/player/file/<id>/`, solo se pubblicati su quel monitor.
 
+### Creazione palinsesto e campagne
+
+La pagina `/palinsesto/` (scheda «Creazione palinsesto» del pannello) affianca «Contenuti e
+pubblicazioni», che resta com'era.
+
+- **Verticali e orizzontali.** Al caricamento il server legge larghezza e altezza delle
+  immagini (tenendo conto della rotazione EXIF); per i video le misura il browser. La
+  libreria mostra a parte le verticali (totem) e le orizzontali (monitor), con miniature
+  JPEG create alla prima richiesta (`/api/contenuti/<id>/miniatura/`).
+- **Cartelle.** Si trascina o si sceglie un'intera cartella: i file vengono caricati tre alla
+  volta e, se non c'è una campagna aperta, ne viene preparata una con il nome della cartella.
+- **Campagna** (`/api/campagne/`): nome, date dal/al, orari, giorni, priorità, secondi per
+  immagine, colore, destinatari (insegne, gruppi, singoli monitor e totem) e contenuti in
+  ordine. Il server la traduce in una pubblicazione per orientamento: le immagini verticali
+  vanno solo ai totem, le orizzontali solo ai monitor, i contenuti senza misure a tutti. Il
+  player non cambia: riceve pubblicazioni come prima. Senza contenuti o senza destinatari la
+  campagna è una **bozza** e non va in onda.
+- **Insegne** (`/api/insegne/`, facoltative): ogni sede può avere un'insegna; pubblicare su
+  un'insegna raggiunge tutti i monitor e totem delle sue sedi.
+- **Calendario**: anno o tre mesi, con le campagne colorate per stato (in onda, programmata,
+  bozza, conclusa).
+
+**Importazione CSV** (`POST /api/campagne/importa/`, modello in `GET /api/campagne/modello/`).
+Serve a caricare a inizio anno le campagne con le loro date; i contenuti si aggiungono dopo.
+Separatore `;` (Excel italiano) o `,`; prima riga con i nomi delle colonne; UTF-8 o Windows-1252.
+
+| Colonna | | Formato |
+|---|---|---|
+| `nome` | obbligatoria | se esiste già una campagna con questo nome, viene aggiornata |
+| `codice` | | testo, es. numero del volantino |
+| `data_inizio`, `data_fine` | obbligatorie | `gg/mm/aaaa` (anche `aaaa-mm-gg`), fine compresa |
+| `insegne`, `gruppi`, `monitor` | | nomi esistenti separati da `\|` |
+| `ora_inizio`, `ora_fine` | | `hh:mm` |
+| `giorni` | | `lun\|mar\|mer\|gio\|ven\|sab\|dom`, vuoto = tutti |
+| `priorita` | | da -100 a 100 |
+| `durata` | | secondi per immagine |
+| `colore` | | `#rrggbb` |
+| `note` | | testo |
+
+Con `prova=1` il file viene solo controllato e l'esito torna riga per riga. Tutto o niente: se
+una riga ha un errore non si salva nessuna campagna. È riservata a chi vede tutto il cliente.
+
+**Aspetto della piattaforma.** Nome dell'applicazione, frase, colore e logo (PNG, JPEG, GIF o
+WebP; niente SVG) della pagina di accesso `/accesso/` e del pannello. Li cambia solo
+l'Administrator Assoluto, nella scheda «Aspetto» (`/api/piattaforma/aspetto/`).
+
 ## 6. Layout grafici
 
 Ogni cliente ha i propri layout; l'AdminCliente li gestisce se l'Administrator Assoluto glielo

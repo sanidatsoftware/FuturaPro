@@ -115,6 +115,7 @@ const contenuto = document.getElementById("contenuto");
 const SCHEDE = {
   clienti: { titolo: "Clienti", visibile: () => stato.io.ruolo === "admin_assoluto", serveCliente: false, mostra: schedaClienti },
   monitor: { titolo: "Monitor", visibile: () => true, mostra: schedaMonitor },
+  palinsesto: { titolo: "Creazione palinsesto", visibile: () => stato.io.ruolo !== "tecnico", collegamento: () => conCliente("/palinsesto/") },
   contenuti: { titolo: "Contenuti e pubblicazioni", visibile: () => stato.io.ruolo !== "tecnico", mostra: schedaContenuti },
   reparti: { titolo: "Reparti ed eliminacode", visibile: () => stato.io.ruolo !== "tecnico", mostra: schedaReparti },
   layout: { titolo: "Layout", visibile: ruoloGestione, collegamento: () => conCliente("/editor/") },
