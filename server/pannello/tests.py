@@ -34,11 +34,11 @@ class AspettoTest(Base):
         self.assertContains(r, "FuturaPro")
         self.assertNotContains(r, "Django REST framework")
         self.come(self.assoluto)
-        r = self.client.patch("/api/piattaforma/aspetto/", {"nome_app": "Tocal Vision", "logo": png()}, format="multipart")
+        r = self.client.patch("/api/piattaforma/aspetto/", {"nome_app": "Insegna Vision", "logo": png()}, format="multipart")
         self.assertEqual(r.status_code, 200, r.content)
         self.client.logout()
         r = self.client.get("/api/sessione/login/")
-        self.assertContains(r, "Tocal Vision")
+        self.assertContains(r, "Insegna Vision")
         self.assertContains(r, "/aspetto/logo/")
         self.assertEqual(self.client.get("/aspetto/logo/").status_code, 200)
 

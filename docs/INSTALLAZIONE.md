@@ -81,14 +81,14 @@ browser del tuo PC mostrerà un avviso finché non installi il certificato anche
 
 ### Primo giro nel pannello
 
-1. **Clienti**: crea il cliente (es. «Tocal») e il suo primo AdminCliente.
+1. **Clienti**: crea il cliente (es. «Nome azienda») e il suo primo AdminCliente.
 2. In alto scegli il cliente, poi **Sedi e gruppi**: crea la sede (es. «Catania via Etnea») e un
    gruppo «Tutti».
 3. **Reparti ed eliminacode**: crea Salumeria, Macelleria, Gastronomia… con i loro colori.
 4. **Layout ↗**: parti da un modello (es. «Supermercato: offerte, ora, meteo e reparti» e
    «Totem eliminacode») e adattalo; segna come *Predefinito* quello orizzontale e quello verticale.
-5. **Contenuti e pubblicazioni**: carica le immagini delle offerte, spuntale e pubblicale sul gruppo
-   «Tutti».
+5. **Creazione palinsesto**: crea una campagna con i suoi destinatari (es. il gruppo «Tutti»),
+   poi carica le immagini delle offerte e crea la promozione con le sue date.
 
 ### Gestione quotidiana
 

@@ -154,9 +154,9 @@ GIORNI = {"lun": 0, "mar": 1, "mer": 2, "gio": 3, "ven": 4, "sab": 5, "dom": 6}
 
 MODELLO = (
     ";".join(COLONNE) + "\r\n"
-    "Autunno 2026;Volantino 6-19 ottobre;06/10/2026;19/10/2026;Tocal;;;;;;0;10;#ec6a1f;AUT26;\r\n"
-    "Autunno 2026;Volantino 20 ott - 2 nov;20/10/2026;02/11/2026;Tocal;;;;;;0;10;#ec6a1f;AUT26;\r\n"
-    "Speciali;Black Friday;25/11/2026;30/11/2026;Tocal|Tocal Express;;;08:00;21:00;;5;8;#111111;BF;\r\n"
+    "Autunno 2026;Volantino 6-19 ottobre;06/10/2026;19/10/2026;Insegna A;;;;;;0;10;#ec6a1f;AUT26;\r\n"
+    "Autunno 2026;Volantino 20 ott - 2 nov;20/10/2026;02/11/2026;Insegna A;;;;;;0;10;#ec6a1f;AUT26;\r\n"
+    "Speciali;Black Friday;25/11/2026;30/11/2026;Insegna A|Insegna B;;;08:00;21:00;;5;8;#111111;BF;\r\n"
     "Speciali;Weekend griglia;01/06/2026;30/06/2026;;;;;;sab|dom;5;8;#111111;;Solo sabato e domenica\r\n"
 )
 

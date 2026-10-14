@@ -25,8 +25,8 @@ class CampagneTest(ConFile):
     def setUpTestData(cls):
         super().setUpTestData()
         with contesto_cliente(cls.a.id):
-            cls.tocal = Insegna.objects.create(cliente=cls.a, nome="Tocal")
-            cls.a_milano.insegna = cls.tocal
+            cls.insegna = Insegna.objects.create(cliente=cls.a, nome="Insegna A")
+            cls.a_milano.insegna = cls.insegna
             cls.a_milano.save()
             cls.totem_milano = Monitor.objects.create(
                 cliente=cls.a, sede=cls.a_milano, nome="Totem", piattaforma="windows", orientamento="verticale"
@@ -62,13 +62,13 @@ class CampagneTest(ConFile):
         self.come(self.admin_a)
         verticale = self.carica(immagine(248, 350))["id"]
         orizzontale = self.carica(immagine(192, 108))["id"]
-        campagna = self.campagna(insegne=[str(self.tocal.id)], durata=8)
+        campagna = self.campagna(insegne=[str(self.insegna.id)], durata=8)
         r = self.promozione(campagna, contenuti=[verticale, orizzontale])
         self.assertEqual(r.status_code, 201, r.content)
         promo = r.json()
         self.assertEqual(promo["contenuti"], [verticale, orizzontale])
         self.assertEqual(sorted(p["orientamento"] for p in promo["pubblicazioni"]), ["orizzontale", "verticale"])
-        # Milano è Tocal: il totem riceve la verticale, il monitor l'orizzontale; Roma niente.
+        # Milano è dell'insegna: il totem riceve la verticale, il monitor l'orizzontale; Roma niente.
         self.assertEqual(self.pubblicati(self.totem_milano), {verticale})
         self.assertEqual(self.pubblicati(self.mon_a_milano), {orizzontale})
         self.assertEqual(self.pubblicati(self.mon_a_roma), set())
@@ -110,7 +110,7 @@ class CampagneTest(ConFile):
         self.come(self.admin_a)
         testo = (
             "campagna;promozione;data_inizio;data_fine;insegne;gruppi;giorni\n"
-            "Autunno;Volantino 1;06/10/2026;19/10/2026;tocal;;\n"
+            "Autunno;Volantino 1;06/10/2026;19/10/2026;insegna a;;\n"
             "Autunno;Volantino 2;20/10/2026;02/11/2026;;Tutti;\n"
             "Speciali;Weekend;01/06/2026;30/06/2026;;Tutti;sab|dom\n"
         )
@@ -124,7 +124,7 @@ class CampagneTest(ConFile):
         self.assertEqual((r.status_code, r.json()["salvate"], r.json()["campagne"]), (201, 3, 2), r.content)
         campagne = {c["nome"]: c for c in self.client.get("/api/campagne/").json()["results"]}
         # I destinatari delle righe di una campagna si sommano.
-        self.assertEqual(campagne["Autunno"]["insegne"], [str(self.tocal.id)])
+        self.assertEqual(campagne["Autunno"]["insegne"], [str(self.insegna.id)])
         self.assertEqual(campagne["Autunno"]["gruppi"], [str(self.tutti.id)])
         self.assertEqual([p["nome"] for p in campagne["Autunno"]["promozioni"]], ["Volantino 1", "Volantino 2"])
         self.assertEqual(campagne["Speciali"]["promozioni"][0]["giorni"], [5, 6])
@@ -151,7 +151,7 @@ class CampagneTest(ConFile):
         attuale = self.carica(immagine(248, 350))["id"]
         condivisa = self.carica(immagine(192, 108))["id"]
         libera = self.carica(immagine(192, 108))["id"]
-        campagna = self.campagna(insegne=[str(self.tocal.id)])
+        campagna = self.campagna(insegne=[str(self.insegna.id)])
         ieri = timezone.localdate() - timedelta(days=1)
         self.promozione(campagna, nome="Scaduta", data_inizio=str(ieri - timedelta(days=10)), data_fine=str(ieri),
                         contenuti=[vecchia, condivisa])
@@ -170,13 +170,13 @@ class CampagneTest(ConFile):
         campagna = self.campagna()
         self.come(self.admin_b)
         self.assertEqual(self.promozione(campagna).status_code, 400)
-        r = self.client.post("/api/campagne/", {"nome": "X", "insegne": [str(self.tocal.id)]}, format="json")
+        r = self.client.post("/api/campagne/", {"nome": "X", "insegne": [str(self.insegna.id)]}, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertEqual(self.client.get("/api/insegne/").json()["results"], [])
 
     def test_utente_limitato_solo_monitor_delle_sue_sedi(self):
         self.come(self.user_a_milano)
-        r = self.client.post("/api/campagne/", {"nome": "X", "insegne": [str(self.tocal.id)]}, format="json")
+        r = self.client.post("/api/campagne/", {"nome": "X", "insegne": [str(self.insegna.id)]}, format="json")
         self.assertEqual(r.status_code, 403)
         r = self.client.post("/api/campagne/", {"nome": "Y", "monitor": [str(self.mon_a_roma.id)]}, format="json")
         self.assertEqual(r.status_code, 400)

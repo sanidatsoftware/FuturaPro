@@ -16,9 +16,10 @@
     <h1>Creazione palinsesto</h1>
     <label id="scelta-cliente" class="cliente" hidden>Cliente <select id="cliente"></select></label>
     <span class="spazio"></span>
-    <button type="button" id="apri-importa" class="vetro">Importa promozioni da CSV</button>
-    <a class="vetro" href="/pannello/" id="torna">← Pannello</a>
+    <button type="button" id="apri-importa" class="vetro" data-aiuto="Carica da un file Excel/CSV tutte le campagne e promozioni dell'anno con le loro date: le immagini si aggiungono dopo.">Importa promozioni da CSV</button>
+    <span class="utente" id="utente"></span>
   </header>
+  <nav id="menu" class="menu"></nav>
   <div id="avviso" class="avviso" hidden></div>
   <section class="statistiche" id="statistiche"></section>
   <main class="area">
@@ -30,14 +31,14 @@
           <p>Verticali e orizzontali vengono riconosciute da sole: le prime vanno ai totem, le seconde ai monitor. Una cartella diventa una promozione.</p>
         </div>
         <div class="pulsanti">
-          <label class="pulsante">Scegli file<input type="file" id="scegli-file" multiple accept="image/*,video/mp4,video/webm,video/quicktime" hidden></label>
-          <label class="pulsante">Scegli cartella<input type="file" id="scegli-cartella" webkitdirectory multiple hidden></label>
+          <label class="pulsante" data-aiuto="Scegli una o più immagini o video dal computer. Restano selezionati, pronti per una nuova promozione.">Scegli file<input type="file" id="scegli-file" multiple accept="image/*,video/mp4,video/webm,video/quicktime" hidden></label>
+          <label class="pulsante" data-aiuto="Scegli un'intera cartella (es. il volantino della settimana): tutte le sue immagini vengono caricate e diventano una promozione con il nome della cartella.">Scegli cartella<input type="file" id="scegli-cartella" webkitdirectory multiple hidden></label>
         </div>
         <div class="avanzamento" id="avanzamento" hidden></div>
       </div>
       <div class="filtri">
         <div class="schede-libreria" id="schede-libreria"></div>
-        <input type="search" id="cerca" placeholder="Cerca per nome…">
+        <input type="search" id="cerca" placeholder="Cerca per nome…" data-aiuto="Filtra le immagini (e le cartelle delle promozioni) per nome.">
       </div>
       <div id="gallerie"></div>
     </section>

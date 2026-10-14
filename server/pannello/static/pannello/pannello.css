@@ -77,3 +77,34 @@ td.attenzione { color: var(--errore); font-weight: 600; cursor: help; }
 .provino.chiaro .c { background: #eef1f5; } .provino.chiaro .c i { background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.1); }
 .provino.scuro .c { background: #0f1524; } .provino.scuro .c i { background: #222c42; }
 .provino.auto .c { background: linear-gradient(90deg, #eef1f5 50%, #0f1524 50%); } .provino.auto .c i:first-child { background: #fff; } .provino.auto .c i:last-child { background: #222c42; }
+
+/* Monitor: lo schermo in miniatura con l'anteprima */
+.cella-schermo { width: 132px; }
+.mini-schermo { position: relative; display: flex; flex-direction: column; align-items: center; padding: 0; margin: 0; border: 0; background: none; cursor: pointer; }
+.mini-schermo .vetro-schermo {
+  position: relative; overflow: hidden; display: grid; place-items: center; background: #0b0f18; border-radius: 4px;
+  border: 5px solid #23272f; box-shadow: 0 2px 6px rgba(0, 0, 0, .25), inset 0 0 0 1px rgba(255, 255, 255, .06); transition: transform .15s, box-shadow .15s;
+}
+.mini-schermo.orizzontale .vetro-schermo { width: 120px; height: 68px; }
+.mini-schermo.verticale .vetro-schermo { width: 54px; height: 96px; border-width: 4px; border-radius: 6px; }
+.mini-schermo:hover .vetro-schermo { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(0, 0, 0, .3), 0 0 0 2px var(--primario); }
+.mini-schermo img { width: 100%; height: 100%; object-fit: contain; }
+.mini-schermo iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; background: #000; }
+.mini-schermo .segnaposto { font-size: 10.5px; color: #8a93a3; text-align: center; padding: 2px; }
+.mini-schermo .piedistallo { width: 34px; height: 6px; margin-top: -1px; background: #23272f; border-radius: 0 0 4px 4px; }
+.mini-schermo .led-schermo { position: absolute; right: 6px; bottom: 9px; width: 5px; height: 5px; border-radius: 50%; background: #5c6370; }
+.mini-schermo.verticale .led-schermo { bottom: 6px; right: 50%; transform: translateX(50%); }
+.mini-schermo .led-schermo.acceso { background: #2fbf71; box-shadow: 0 0 6px #2fbf71; }
+.mini-schermo.dal-vivo .vetro-schermo { box-shadow: 0 0 0 2px #2fbf71, 0 2px 6px rgba(0, 0, 0, .25); }
+
+/* Spiegazioni al passaggio del mouse (aiuto.js) */
+.aiuto-mouse {
+  position: fixed; z-index: 2000; max-width: 320px; padding: 9px 12px; border-radius: 10px; pointer-events: none;
+  background: #1d2330; color: #f3f5f9; font: 13px/1.45 system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .3); border: 1px solid rgba(255, 255, 255, .12);
+  opacity: 0; transform: translateY(4px); transition: opacity .15s, transform .15s;
+}
+.aiuto-mouse.sopra { transform: translateY(-4px); }
+.aiuto-mouse.visibile { opacity: 1; transform: none; }
+:root[data-tema="scuro"] .aiuto-mouse { background: #2b3550; }
+@media (prefers-color-scheme: dark) { :root[data-tema="auto"] .aiuto-mouse { background: #2b3550; } }

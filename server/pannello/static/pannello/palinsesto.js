@@ -6,8 +6,10 @@
 // pubblicazione per orientamento: qui si sceglie solo cosa, quando e dove.
 // I testi che arrivano dai dati passano sempre da textContent.
 
-const parametri = new URLSearchParams(location.search);
-const cliente = parametri.get("cliente");
+import { attivaAiuti } from "./aiuto.js";
+import { clienteRicordato, disegnaMenu, ricordaCliente } from "./menu.js";
+
+const cliente = clienteRicordato();
 const MESI = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
 const GIORNI = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
 const STATI = {
@@ -36,10 +38,10 @@ const S = {
   campagna: null, // la campagna aperta (copia modificabile)
   promozione: null, // la promozione aperta, dentro la campagna aperta
   modificata: false,
-  anno: new Date().getFullYear(),
-  mese: new Date().getMonth(),
-  vista: "anno",
+  zoom: 0, // livello del calendario (LIVELLI)
+  inizioVista: new Date(new Date().getFullYear(), 0, 1),
   libreria: "da_assegnare",
+  cartella: null, // la promozione aperta come cartella nella libreria
   cerca: "",
 };
 
@@ -216,22 +218,33 @@ function anteprima(contenuto, classe = "") {
   return web;
 }
 
+const AIUTI_LIBRERIA = {
+  da_assegnare: "Le immagini caricate che non sono ancora in nessuna promozione: è qui che si prepara la prossima.",
+  attivi: "Le promozioni in onda, programmate o in bozza, ognuna come una cartella con le sue immagini.",
+  scaduti: "Le promozioni concluse. Le loro immagini, se non servono altrove, si possono cancellare con «Libera spazio».",
+  tutti: "Tutta la libreria del cliente, senza filtri.",
+};
+
 function disegnaSchedeLibreria(uso) {
   const box = document.getElementById("schede-libreria");
   box.replaceChildren();
   const conteggi = { da_assegnare: 0, attivi: 0, scaduti: 0, tutti: S.contenuti.length };
   for (const c of S.contenuti) conteggi[categoria(c, uso)] += 1;
   for (const [chiave, titolo] of Object.entries(VISTE_LIBRERIA)) {
-    const b = crea("button", { type: "button", classe: `scheda-libreria${S.libreria === chiave ? " attiva" : ""}` }, box);
+    const b = crea("button", { type: "button", classe: `scheda-libreria${S.libreria === chiave ? " attiva" : ""}`, "data-aiuto": AIUTI_LIBRERIA[chiave] }, box);
     b.append(titolo);
     crea("span", { classe: "conteggio", testo: String(conteggi[chiave]) }, b);
     b.addEventListener("click", () => {
       S.libreria = chiave;
+      S.cartella = null;
       disegnaLibreria();
     });
   }
   if (S.libreria === "scaduti" && conteggi.scaduti) {
-    crea("button", { type: "button", classe: "pericolo", testo: "Libera spazio…", onclick: liberaSpazio }, box);
+    crea("button", {
+      type: "button", classe: "pericolo", testo: "Libera spazio…", onclick: liberaSpazio,
+      "data-aiuto": "Cancella dalla libreria e dal server le immagini usate solo da promozioni concluse. Prima mostra quante sono e quanto spazio si libera.",
+    }, box);
   }
 }
 
@@ -242,7 +255,7 @@ async function liberaSpazio() {
       avvisa("Nessun contenuto da eliminare: quelli delle promozioni scadute sono usati anche altrove.", "info");
       return;
     }
-    if (!confirm(`Eliminare definitivamente ${stima.contenuti} contenuti delle promozioni scadute (${peso(stima.spazio)})?\nI file spariscono anche dal server. Restano quelli usati da promozioni in corso o future, dalle playlist fatte a mano e dai layout.`)) return;
+    if (!confirm(`Eliminare definitivamente ${stima.contenuti} contenuti delle promozioni scadute (${peso(stima.spazio)})?\nI file spariscono anche dal server. Restano quelli usati da promozioni in corso o future, dalle playlist e dai layout.`)) return;
     const esito = await api("POST", "/api/contenuti/pulizia/");
     avvisa(`Eliminati ${esito.contenuti} contenuti: liberati ${peso(esito.spazio)}.`, "ok");
     await ricarica();
@@ -251,16 +264,50 @@ async function liberaSpazio() {
   }
 }
 
+// Il nome delle promozioni di un'immagine, per l'etichetta sulla miniatura.
+function etichettaPromozioni(usi) {
+  if (!usi.length) return "";
+  return usi.length === 1 ? usi[0].nome : `${usi[0].nome} +${usi.length - 1}`;
+}
+
 function disegnaLibreria() {
   const uso = usoContenuti();
   disegnaSchedeLibreria(uso);
   const box = document.getElementById("gallerie");
   box.replaceChildren();
-  const nellaPromozione = new Set(S.promozione?.contenuti || []);
   const filtro = S.cerca.trim().toLowerCase();
-  const visibili = S.contenuti.filter(
-    (c) => (!filtro || c.nome.toLowerCase().includes(filtro)) && (S.libreria === "tutti" || categoria(c, uso) === S.libreria),
-  );
+  const corrisponde = (c) => !filtro || c.nome.toLowerCase().includes(filtro);
+
+  // Promozioni attive e scadute: prima le cartelle, una per promozione.
+  if ((S.libreria === "attivi" || S.libreria === "scaduti") && !S.cartella) {
+    disegnaCartelle(box, uso, corrisponde);
+    return;
+  }
+  let visibili;
+  if (S.cartella) {
+    const promo = promozioni().find((p) => p.id === S.cartella);
+    if (!promo) {
+      S.cartella = null;
+      disegnaLibreria();
+      return;
+    }
+    const percorso = crea("div", { classe: "percorso" }, box);
+    crea("button", { type: "button", classe: "leggero", testo: `← ${VISTE_LIBRERIA[S.libreria]}`, onclick: () => { S.cartella = null; disegnaLibreria(); } }, percorso);
+    crea("span", { classe: "pallino", style: `background:${promo.campagnaDati.colore}` }, percorso);
+    crea("span", { classe: "tenue", testo: promo.campagnaDati.nome }, percorso);
+    crea("span", { classe: "tenue", testo: "›" }, percorso);
+    crea("strong", { testo: promo.nome }, percorso);
+    crea("span", { classe: `stato ${STATI[promo.stato].classe}`, testo: STATI[promo.stato].testo }, percorso);
+    crea("span", { classe: "tenue", testo: periodo(promo) }, percorso);
+    crea("button", {
+      type: "button", testo: "Apri la promozione", onclick: () => apriPromozione(promo.campagnaDati.id, promo.id),
+      "data-aiuto": "Apre la promozione a destra per cambiarne date e immagini.",
+    }, percorso);
+    const contenuti = perId(S.contenuti);
+    visibili = promo.contenuti.map((id) => contenuti.get(id)).filter((c) => c && corrisponde(c));
+  } else {
+    visibili = S.contenuti.filter((c) => corrisponde(c) && (S.libreria === "tutti" || categoria(c, uso) === S.libreria));
+  }
   if (!visibili.length) {
     const vuoto = crea("div", { classe: "galleria vuota" }, box);
     crea("p", {
@@ -271,7 +318,49 @@ function disegnaLibreria() {
     }, vuoto);
     return;
   }
+  disegnaGallerie(box, visibili, uso);
+}
 
+function disegnaCartelle(box, uso, corrisponde) {
+  const contenuti = perId(S.contenuti);
+  const scadute = S.libreria === "scaduti";
+  const cartelle = promozioni()
+    .filter((p) => (scadute ? p.stato === "conclusa" : p.stato !== "conclusa"))
+    .filter((p) => !S.cerca.trim() || p.nome.toLowerCase().includes(S.cerca.trim().toLowerCase())
+      || p.contenuti.some((id) => contenuti.has(id) && corrisponde(contenuti.get(id))))
+    .sort((a, b) => (a.data_inizio || "").localeCompare(b.data_inizio || ""));
+  if (!cartelle.length) {
+    const vuoto = crea("div", { classe: "galleria vuota" }, box);
+    crea("p", { classe: "vuoto", testo: scadute ? "Nessuna promozione conclusa." : "Nessuna promozione attiva: crea la prima dalle immagini da assegnare." }, vuoto);
+    return;
+  }
+  const griglia = crea("div", { classe: "cartelle" }, box);
+  for (const p of cartelle) {
+    const info = STATI[p.stato];
+    const cartella = crea("button", {
+      type: "button", classe: `cartella ${info.classe}`,
+      "data-aiuto": `Apri la cartella: le ${p.contenuti.length} immagini di «${p.nome}» (campagna «${p.campagnaDati.nome}»).`,
+      onclick: () => { S.cartella = p.id; disegnaLibreria(); },
+    }, griglia);
+    cartella.style.setProperty("--colore", p.campagnaDati.colore);
+    const mosaico = crea("div", { classe: "mosaico" }, cartella);
+    const prime = p.contenuti.map((id) => contenuti.get(id)).filter(Boolean).slice(0, 4);
+    for (const c of prime) mosaico.appendChild(anteprima(c));
+    if (!prime.length) crea("span", { classe: "senza", testo: "nessuna immagine" }, mosaico);
+    const testo = crea("div", { classe: "testo" }, cartella);
+    const riga = crea("div", { classe: "riga-cartella" }, testo);
+    crea("span", { classe: "linguetta" }, riga);
+    crea("strong", { testo: p.nome }, riga);
+    crea("span", { classe: "tenue", testo: `${p.campagnaDati.nome} · ${periodo(p)}` }, testo);
+    const piede = crea("div", { classe: "riga-cartella" }, testo);
+    crea("span", { classe: `stato ${info.classe}`, testo: info.testo }, piede);
+    const vert = p.contenuti.filter((id) => contenuti.get(id)?.orientamento === "verticale").length;
+    crea("span", { classe: "tenue", testo: `${vert} totem · ${p.contenuti.length - vert} monitor` }, piede);
+  }
+}
+
+function disegnaGallerie(box, visibili, uso) {
+  const nellaPromozione = new Set(S.promozione?.contenuti || []);
   const gruppi = [
     ["verticale", "Verticali", "per i totem", "▯"],
     ["orizzontale", "Orizzontali", "per i monitor", "▭"],
@@ -290,6 +379,7 @@ function disegnaLibreria() {
     const tuttiScelti = elementi.every((c) => S.selezione.has(c.id));
     crea("button", {
       type: "button", classe: "leggero", testo: tuttiScelti ? "Deseleziona tutti" : "Seleziona tutti",
+      "data-aiuto": "Seleziona tutte le immagini di questo riquadro: poi in basso scegli «Nuova promozione con queste immagini».",
       onclick: () => {
         for (const c of elementi) (tuttiScelti ? S.selezione.delete(c.id) : S.selezione.add(c.id));
         disegnaLibreria();
@@ -302,19 +392,21 @@ function disegnaLibreria() {
       const usi = uso.get(c.id) || [];
       const scheda = crea("article", {
         classe: `media${S.selezione.has(c.id) ? " scelta" : ""}${nellaPromozione.has(c.id) ? " in-campagna" : ""}`,
-        tabIndex: 0, title: [c.nome, ...usi.map((p) => `· ${p.campagnaDati.nome} / ${p.nome}`)].join("\n"),
+        tabIndex: 0, title: [c.nome, ...usi.map((p) => `· ${p.campagnaDati.nome} › ${p.nome}`)].join("\n"),
       }, griglia);
       const cornice = crea("div", { classe: "cornice" }, scheda);
       cornice.appendChild(anteprima(c));
       crea("span", { classe: "spunta", testo: "✓" }, cornice);
-      if (nellaPromozione.has(c.id)) crea("span", { classe: "etichetta-campagna", testo: "nella promozione" }, cornice);
-      else if (usi.length) crea("span", { classe: "etichetta-usato", testo: usi.length === 1 ? usi[0].nome : `${usi.length} promozioni` }, cornice);
+      if (usi.length) {
+        const etichetta = crea("span", { classe: nellaPromozione.has(c.id) ? "etichetta-campagna" : "etichetta-usato", testo: etichettaPromozioni(usi) }, cornice);
+        etichetta.style.setProperty("--colore", usi[0].campagnaDati.colore);
+      }
       const azioni = crea("div", { classe: "azioni-media" }, cornice);
       crea("button", { type: "button", title: "Ingrandisci", testo: "⤢", onclick: (e) => { e.stopPropagation(); apriVisore(c); } }, azioni);
       if (S.promozione) {
         const dentro = nellaPromozione.has(c.id);
         crea("button", {
-          type: "button", title: dentro ? "Togli dalla promozione" : "Aggiungi alla promozione", testo: dentro ? "−" : "+",
+          type: "button", title: dentro ? "Togli dalla promozione aperta" : "Aggiungi alla promozione aperta", testo: dentro ? "−" : "+",
           onclick: (e) => { e.stopPropagation(); dentro ? togliDallaPromozione(c.id) : aggiungiAllaPromozione([c.id]); },
         }, azioni);
       }
@@ -358,15 +450,18 @@ function disegnaSelezione() {
   if (S.promozione) {
     crea("button", {
       type: "button", classe: "primario", testo: `Aggiungi a «${S.promozione.nome || "nuova promozione"}»`,
+      "data-aiuto": "Aggiunge le immagini selezionate alla promozione aperta a destra. Ricorda di salvarla.",
       onclick: () => { aggiungiAllaPromozione(scelti); S.selezione.clear(); disegnaLibreria(); disegnaSelezione(); },
     }, barra);
   }
   crea("button", {
     type: "button", classe: S.promozione ? "" : "primario", testo: "Nuova promozione con queste immagini",
+    "data-aiuto": "Crea una promozione con le immagini selezionate: poi scegli la campagna, il nome e le date.",
     onclick: () => chiediNuovaPromozione({ contenuti: scelti }),
   }, barra);
   crea("button", {
     type: "button", classe: "pericolo", testo: "Elimina dalla libreria",
+    "data-aiuto": "Cancella le immagini selezionate dalla libreria e dal server. Spariscono anche dalle promozioni.",
     onclick: async () => {
       if (!confirm(`Eliminare ${scelti.length} contenuti dalla libreria? Spariranno anche dalle promozioni e dalle playlist.`)) return;
       try {
@@ -661,7 +756,7 @@ function disegnaPannello() {
   }
   scelta.addEventListener("change", () => (scelta.value ? apriCampagna(scelta.value) : null));
   crea("button", {
-    type: "button", classe: "primario", testo: "+ Campagna",
+    type: "button", classe: "primario", testo: "+ Campagna", "data-aiuto": "Crea una campagna vuota: un contenitore di promozioni con gli stessi destinatari.",
     onclick: () => {
       if (!confermaAbbandono()) return;
       S.campagna = nuovaCampagnaVuota();
@@ -683,8 +778,8 @@ function disegnaPannello() {
   else disegnaCampagna(box);
 }
 
-function campoIn(contenitore, etichetta, controllo, classe = "") {
-  const l = crea("label", { classe: `campo ${classe}` }, contenitore);
+function campoIn(contenitore, etichetta, controllo, classe = "", aiuto = null) {
+  const l = crea("label", { classe: `campo ${classe}`, "data-aiuto": aiuto }, contenitore);
   crea("span", { testo: etichetta }, l);
   l.appendChild(controllo);
   return controllo;
@@ -697,17 +792,23 @@ function disegnaCampagna(box) {
   crea("span", { classe: "tipo", testo: "Campagna" }, intestazione);
   crea("span", { classe: `stato ${stato.classe}`, testo: c.id ? stato.testo : "Nuova" }, intestazione);
   if (c.data_inizio) crea("span", { classe: "periodo", testo: periodo(c) }, intestazione);
+  // In evidenza, in cima: la cosa che si fa più spesso con una campagna.
+  crea("button", {
+    type: "button", classe: "primario nuova-promo", testo: "＋ Nuova promozione in questa campagna",
+    "data-aiuto": "Aggiunge una promozione a questa campagna: dai nome e date, poi aggiungi le immagini dalla libreria (+ su ogni immagine, o selezionale e «Aggiungi»).",
+    onclick: () => (confermaAbbandono() ? apriNuovaPromozione({}) : null),
+  }, box);
 
   const campi = crea("div", { classe: "campi" }, box);
-  const nome = campoIn(campi, "Nome della campagna", crea("input", { id: "nome-campagna", value: c.nome, placeholder: "es. Autunno 2026", maxLength: 200 }), "largo");
+  const nome = campoIn(campi, "Nome della campagna", crea("input", { id: "nome-campagna", value: c.nome, placeholder: "es. Autunno 2026", maxLength: 200 }), "largo", "Il nome che raggruppa le promozioni, es. la stagione o il tipo di offerte.");
   nome.addEventListener("input", () => { c.nome = nome.value; segnaModificata(); });
-  const colore = campoIn(campi, "Colore", crea("input", { type: "color", value: c.colore || "#ec6a1f" }), "stretto");
+  const colore = campoIn(campi, "Colore", crea("input", { type: "color", value: c.colore || "#ec6a1f" }), "stretto", "Il colore della campagna nel calendario e sulle cartelle.");
   colore.addEventListener("input", () => { c.colore = colore.value; segnaModificata(); });
-  const durata = campoIn(campi, "Secondi per immagine", crea("input", { type: "number", min: 1, max: 3600, value: c.durata || "", placeholder: "10" }));
+  const durata = campoIn(campi, "Secondi per immagine", crea("input", { type: "number", min: 1, max: 3600, value: c.durata || "", placeholder: "10" }), "", "Quanto resta sullo schermo ogni immagine delle promozioni di questa campagna. I video vanno sempre fino alla fine.");
   durata.addEventListener("change", () => { c.durata = parseInt(durata.value, 10) || null; segnaModificata(); });
-  const priorita = campoIn(campi, "Priorità", crea("input", { type: "number", min: -100, max: 100, value: c.priorita || 0, title: "Più alta: nello stesso periodo sostituisce le altre campagne" }));
+  const priorita = campoIn(campi, "Priorità", crea("input", { type: "number", min: -100, max: 100, value: c.priorita || 0 }), "", "Di solito 0: le promozioni dello stesso periodo si alternano. Con un numero più alto questa campagna, quando è in onda, sostituisce tutte le altre (es. un'offerta lampo).");
   priorita.addEventListener("change", () => { c.priorita = parseInt(priorita.value, 10) || 0; segnaModificata(); });
-  const codice = campoIn(campi, "Codice", crea("input", { value: c.codice || "", placeholder: "es. AUT26", maxLength: 50 }));
+  const codice = campoIn(campi, "Codice", crea("input", { value: c.codice || "", placeholder: "es. AUT26", maxLength: 50 }), "", "Un riferimento interno libero, es. il numero del volantino.");
   codice.addEventListener("input", () => { c.codice = codice.value; segnaModificata(); });
 
   disegnaDestinatari(box, c);
@@ -716,7 +817,7 @@ function disegnaCampagna(box) {
   const titolo = crea("div", { classe: "titolo-sezione" }, sezione);
   crea("h3", { testo: `Promozioni (${c.promozioni.length})` }, titolo);
   crea("button", {
-    type: "button", classe: "leggero", testo: "+ Nuova promozione",
+    type: "button", classe: "leggero", testo: "+ Nuova promozione", "data-aiuto": "Aggiunge una promozione a questa campagna: nome, date e poi le immagini dalla libreria.",
     onclick: () => (confermaAbbandono() ? apriNuovaPromozione({}) : null),
   }, titolo);
   if (!c.id) crea("p", { classe: "vuoto", testo: "Salva la campagna, poi aggiungi le sue promozioni (o seleziona le immagini nella libreria)." }, sezione);
@@ -761,12 +862,12 @@ function disegnaCampagna(box) {
 
 function disegnaDestinatari(box, c) {
   const sezione = crea("section", { classe: "destinatari" }, box);
-  crea("h3", { testo: "Dove vanno in onda le sue promozioni" }, sezione);
+  crea("h3", { testo: "Dove vanno in onda le sue promozioni", "data-aiuto": "Gli schermi che ricevono tutte le promozioni della campagna: per insegna, per gruppo o uno per uno. Le immagini verticali vanno ai totem, le orizzontali ai monitor." }, sezione);
 
   const chips = (titolo, voci, campo, aiuto) => {
     if (!voci.length) return;
     const riga = crea("div", { classe: "gruppo-chip" }, sezione);
-    crea("span", { classe: "etichetta", testo: titolo, title: aiuto }, riga);
+    crea("span", { classe: "etichetta", testo: titolo, "data-aiuto": aiuto }, riga);
     for (const v of voci) {
       const attivo = c[campo].includes(v.id);
       const chip = crea("button", { type: "button", classe: `chip${attivo ? " attivo" : ""}`, testo: v.nome }, riga);
@@ -787,7 +888,7 @@ function disegnaDestinatari(box, c) {
     if (!elenco.length) continue;
     const scelti = elenco.filter((m) => c.monitor.includes(m.id)).length;
     const blocco = crea("details", { classe: "singoli", open: scelti > 0 }, sezione);
-    crea("summary", { testo: `${titolo} singoli${scelti ? ` · ${scelti} scelti` : ""}` }, blocco);
+    crea("summary", { testo: `${titolo} singoli${scelti ? ` · ${scelti} scelti` : ""}`, "data-aiuto": `Scegli i singoli ${titolo.toLowerCase()} uno per uno, oltre a insegne e gruppi.` }, blocco);
     const lista = crea("div", { classe: "lista-schermi" }, blocco);
     for (const m of elenco) {
       const voce = crea("label", { classe: "schermo" }, lista);
@@ -830,15 +931,15 @@ function disegnaPromozione(box) {
   crea("span", { classe: `stato ${stato.classe}`, testo: p.id ? stato.testo : "Nuova" }, intestazione);
 
   const campi = crea("div", { classe: "campi" }, box);
-  const nome = campoIn(campi, "Nome della promozione", crea("input", { id: "nome-promozione", value: p.nome, placeholder: "es. Volantino 6-19 ottobre", maxLength: 200 }), "largo");
+  const nome = campoIn(campi, "Nome della promozione", crea("input", { id: "nome-promozione", value: p.nome, placeholder: "es. Volantino 6-19 ottobre", maxLength: 200 }), "largo", "Il nome della promozione, es. il volantino del periodo.");
   nome.addEventListener("input", () => { p.nome = nome.value; segnaModificata(); });
-  const dal = campoIn(campi, "Dal", crea("input", { type: "date", value: p.data_inizio || "", required: true }));
+  const dal = campoIn(campi, "Dal", crea("input", { type: "date", value: p.data_inizio || "", required: true }), "", "Il primo giorno in cui la promozione va in onda.");
   dal.addEventListener("change", () => { p.data_inizio = dal.value || null; segnaModificata(); });
-  const al = campoIn(campi, "Al (compreso)", crea("input", { type: "date", value: p.data_fine || "", required: true }));
+  const al = campoIn(campi, "Al (compreso)", crea("input", { type: "date", value: p.data_fine || "", required: true }), "", "L'ultimo giorno in onda, compreso. Dal giorno dopo la promozione è conclusa e sparisce dagli schermi da sola.");
   al.addEventListener("change", () => { p.data_fine = al.value || null; segnaModificata(); });
 
   const avanzate = crea("details", { classe: "avanzate", open: Boolean(p.ora_inizio || p.ora_fine || p.giorni.length) }, box);
-  crea("summary", { testo: "Solo in certe ore o certi giorni" }, avanzate);
+  crea("summary", { testo: "Solo in certe ore o certi giorni", "data-aiuto": "Facoltativo: limita la promozione a una fascia oraria (es. 8-12) o ad alcuni giorni (es. sabato e domenica)." }, avanzate);
   const griglia = crea("div", { classe: "campi" }, avanzate);
   const dalle = campoIn(griglia, "Dalle", crea("input", { type: "time", value: p.ora_inizio?.slice(0, 5) || "" }));
   dalle.addEventListener("change", () => { p.ora_inizio = dalle.value || null; segnaModificata(); });
@@ -1008,66 +1109,115 @@ async function salvaPromozione() {
 
 // --- Calendario ----------------------------------------------------------------------------------
 
+// Dal più largo al più stretto: la lente «+» passa al livello dopo, «−» a quello prima.
+const LIVELLI = [
+  { titolo: "Anno", mesi: 12 },
+  { titolo: "6 mesi", mesi: 6 },
+  { titolo: "3 mesi", mesi: 3 },
+  { titolo: "Mese", mesi: 1 },
+  { titolo: "2 settimane", giorni: 14 },
+];
+const GIORNO = 86400000;
+const ALTEZZA_CORSIA = 40;
+
+const aggiungiMesi = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, 1);
+const aggiungiGiorni = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const lunedi = (d) => aggiungiGiorni(d, -((d.getDay() + 6) % 7));
+
+// Il primo giorno della vista di quel livello che contiene (circa al centro) la data.
+function inizioPer(livello, centro) {
+  if (livello.giorni) return lunedi(aggiungiGiorni(centro, -3));
+  if (livello.mesi === 12) return new Date(centro.getFullYear(), 0, 1);
+  return aggiungiMesi(new Date(centro.getFullYear(), centro.getMonth(), 1), -Math.floor((livello.mesi - 1) / 2));
+}
+
 function intervalloCalendario() {
-  if (S.vista === "trimestre") {
-    const inizio = new Date(S.anno, S.mese, 1);
-    const fine = new Date(S.anno, S.mese + 3, 1);
-    const mesi = [0, 1, 2].map((k) => new Date(S.anno, S.mese + k, 1));
-    return { inizio, fine, mesi, titolo: `${MESI[mesi[0].getMonth()]} – ${MESI[mesi[2].getMonth()]} ${mesi[2].getFullYear()}` };
+  const livello = LIVELLI[S.zoom];
+  const inizio = S.inizioVista;
+  const fine = livello.giorni ? aggiungiGiorni(inizio, livello.giorni) : aggiungiMesi(inizio, livello.mesi);
+  const colonne = [];
+  if (livello.mesi && livello.mesi > 1) {
+    for (let k = 0; k < livello.mesi; k += 1) {
+      const m = aggiungiMesi(inizio, k);
+      colonne.push({ testo: livello.mesi === 12 ? MESI[m.getMonth()] : m.toLocaleDateString("it-IT", { month: "long", year: "numeric" }) });
+    }
+  } else {
+    // Mese e due settimane: una colonna per giorno, il fine settimana in evidenza.
+    for (let d = inizio; d < fine; d = aggiungiGiorni(d, 1)) {
+      colonne.push({ testo: livello.giorni ? `${GIORNI[(d.getDay() + 6) % 7]} ${d.getDate()}` : String(d.getDate()), festivo: d.getDay() === 0 || d.getDay() === 6 });
+    }
   }
-  const mesi = MESI.map((_, k) => new Date(S.anno, k, 1));
-  return { inizio: new Date(S.anno, 0, 1), fine: new Date(S.anno + 1, 0, 1), mesi, titolo: String(S.anno) };
+  const titolo = livello.mesi === 12 ? String(inizio.getFullYear())
+    : livello.mesi === 1 ? inizio.toLocaleDateString("it-IT", { month: "long", year: "numeric" })
+      : `${data(isoLocale(inizio))} – ${data(isoLocale(aggiungiGiorni(fine, -1)))}`;
+  return { inizio, fine, colonne, titolo };
 }
 
 function sposta(passo) {
-  if (S.vista === "trimestre") {
-    const d = new Date(S.anno, S.mese + passo * 3, 1);
-    S.anno = d.getFullYear();
-    S.mese = d.getMonth();
-  } else S.anno += passo;
+  const livello = LIVELLI[S.zoom];
+  S.inizioVista = livello.giorni ? aggiungiGiorni(S.inizioVista, passo * 7) : aggiungiMesi(S.inizioVista, passo * livello.mesi);
   disegnaCalendario();
 }
 
-const ALTEZZA_CORSIA = 40;
+function ingrandisci(passo, centro) {
+  const nuovo = Math.max(0, Math.min(LIVELLI.length - 1, S.zoom + passo));
+  if (nuovo === S.zoom) return;
+  const { inizio, fine } = intervalloCalendario();
+  const adesso = new Date();
+  const riferimento = centro || (adesso >= inizio && adesso < fine ? adesso : new Date((inizio.getTime() + fine.getTime()) / 2));
+  S.zoom = nuovo;
+  S.inizioVista = inizioPer(LIVELLI[nuovo], riferimento);
+  disegnaCalendario();
+}
 
 function disegnaCalendario() {
+  chiudiDettaglio();
   const box = document.getElementById("calendario");
   box.replaceChildren();
-  const { inizio, fine, mesi, titolo } = intervalloCalendario();
+  const { inizio, fine, colonne, titolo } = intervalloCalendario();
   const testa = crea("header", {}, box);
   crea("h2", { testo: "Calendario delle promozioni" }, testa);
   const comandi = crea("div", { classe: "anno" }, testa);
-  const viste = crea("div", { classe: "viste" }, comandi);
-  for (const [vista, etichetta] of [["anno", "Anno"], ["trimestre", "3 mesi"]]) {
-    crea("button", {
-      type: "button", classe: `chip${S.vista === vista ? " attivo" : ""}`, testo: etichetta,
-      onclick: () => {
-        S.vista = vista;
-        if (vista === "trimestre") {
-          const adesso = new Date();
-          S.anno = adesso.getFullYear();
-          S.mese = adesso.getMonth();
-        }
-        disegnaCalendario();
-      },
-    }, viste);
-  }
-  crea("button", { type: "button", classe: "leggero", testo: "‹", title: "Indietro", onclick: () => sposta(-1) }, comandi);
+  const lente = crea("div", { classe: "lente" }, comandi);
+  crea("button", {
+    type: "button", classe: "leggero", testo: "－", disabled: S.zoom === 0,
+    "data-aiuto": "Riduci: mostra un periodo più lungo (fino a tutto l'anno). Anche Ctrl + rotellina sul calendario.",
+    onclick: () => ingrandisci(-1),
+  }, lente);
+  crea("span", { classe: "livello", testo: `🔍 ${LIVELLI[S.zoom].titolo}` }, lente);
+  crea("button", {
+    type: "button", classe: "leggero", testo: "＋", disabled: S.zoom === LIVELLI.length - 1,
+    "data-aiuto": "Ingrandisci: mostra un periodo più corto, fino ai singoli giorni. Anche Ctrl + rotellina sul calendario.",
+    onclick: () => ingrandisci(1),
+  }, lente);
+  crea("button", {
+    type: "button", classe: "leggero", testo: "Oggi", "data-aiuto": "Riporta il calendario su oggi.",
+    onclick: () => { S.inizioVista = inizioPer(LIVELLI[S.zoom], new Date()); disegnaCalendario(); },
+  }, comandi);
+  crea("button", { type: "button", classe: "leggero", testo: "‹", "data-aiuto": "Periodo precedente", onclick: () => sposta(-1) }, comandi);
   crea("strong", { testo: titolo }, comandi);
-  crea("button", { type: "button", classe: "leggero", testo: "›", title: "Avanti", onclick: () => sposta(1) }, comandi);
+  crea("button", { type: "button", classe: "leggero", testo: "›", "data-aiuto": "Periodo successivo", onclick: () => sposta(1) }, comandi);
 
-  const giorni = (fine - inizio) / 86400000;
-  const posizione = (d) => Math.min(100, Math.max(0, ((d - inizio) / 86400000 / giorni) * 100));
+  const durata = fine - inizio;
+  const posizione = (d) => Math.min(100, Math.max(0, ((d - inizio) / durata) * 100));
   const inizioDi = (p) => (p.data_inizio ? new Date(`${p.data_inizio}T00:00:00`) : inizio);
-  const fineDi = (p) => (p.data_fine ? new Date(new Date(`${p.data_fine}T00:00:00`).getTime() + 86400000) : fine);
+  const fineDi = (p) => (p.data_fine ? aggiungiGiorni(new Date(`${p.data_fine}T00:00:00`), 1) : fine);
 
-  const tela = crea("div", { classe: `tela vista-${S.vista}` }, box);
-  const intestazioneMesi = crea("div", { classe: "mesi" }, tela);
-  intestazioneMesi.style.gridTemplateColumns = `repeat(${mesi.length}, 1fr)`;
-  for (const m of mesi) crea("span", { testo: S.vista === "trimestre" ? m.toLocaleDateString("it-IT", { month: "long", year: "numeric" }) : MESI[m.getMonth()] }, intestazioneMesi);
+  const tela = crea("div", { classe: "tela" }, box);
+  tela.addEventListener("wheel", (e) => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    const r = tela.getBoundingClientRect();
+    const frazione = (e.clientX - r.left - parseFloat(getComputedStyle(tela).getPropertyValue("--colonna-nomi"))) / (r.width - parseFloat(getComputedStyle(tela).getPropertyValue("--colonna-nomi")));
+    const centro = new Date(inizio.getTime() + Math.max(0, Math.min(1, frazione)) * durata);
+    ingrandisci(e.deltaY < 0 ? 1 : -1, centro);
+  }, { passive: false });
+  const intestazione = crea("div", { classe: "mesi" }, tela);
+  intestazione.style.gridTemplateColumns = `repeat(${colonne.length}, 1fr)`;
+  for (const c of colonne) crea("span", { testo: c.testo, classe: c.festivo ? "festivo" : "" }, intestazione);
 
   // Una fascia per campagna; dentro, le sue promozioni su corsie se si sovrappongono.
-  const spazioNome = giorni * 0.16 * 86400000;
+  const spazioNome = durata * 0.16;
   let fasce = 0;
   for (const campagna of S.campagne) {
     const visibili = campagna.promozioni
@@ -1076,11 +1226,14 @@ function disegnaCalendario() {
     if (!visibili.length) continue;
     fasce += 1;
     const fascia = crea("div", { classe: `fascia${S.campagna?.id === campagna.id ? " aperta" : ""}` }, tela);
-    const etichetta = crea("button", { type: "button", classe: "etichetta-fascia", onclick: () => apriCampagna(campagna.id) }, fascia);
+    const etichetta = crea("button", {
+      type: "button", classe: "etichetta-fascia", onclick: () => apriCampagna(campagna.id),
+      "data-aiuto": `Apri la campagna «${campagna.nome}»: destinatari, priorità e l'elenco delle sue promozioni.`,
+    }, fascia);
     crea("span", { classe: "pallino", style: `background:${campagna.colore}` }, etichetta);
     crea("span", { testo: campagna.nome }, etichetta);
     const righe = crea("div", { classe: "righe" }, fascia);
-    righe.style.backgroundSize = `calc(100% / ${mesi.length}) 100%`;
+    righe.style.backgroundSize = `calc(100% / ${colonne.length}) 100%`;
     const corsie = [];
     for (const p of visibili) {
       const i = inizioDi(p);
@@ -1093,14 +1246,14 @@ function disegnaCalendario() {
       if (corsia === -1) { corsia = corsie.length; corsie.push(occupa); } else corsie[corsia] = occupa;
       const barra = crea("button", {
         type: "button", classe: `barra-campagna ${STATI[p.stato]?.classe || ""}${S.promozione?.id === p.id ? " aperta" : ""}`,
-        title: `${campagna.nome} · ${p.nome}\n${periodo(p)}\n${STATI[p.stato]?.testo || ""} · ${p.contenuti.length} immagini`,
-        onclick: () => apriPromozione(campagna.id, p.id),
+        "aria-label": `${p.nome}, ${periodo(p)}`,
+        onclick: (e) => { e.stopPropagation(); apriDettaglio(campagna, p, barra); },
       }, righe);
       Object.assign(barra.style, { left: `${sinistra}%`, width: `${larghezza}%`, top: `${corsia * ALTEZZA_CORSIA}px` });
       barra.style.setProperty("--colore", campagna.colore);
       if (stretta) {
         crea("span", { classe: "numeri", testo: String(p.contenuti.length) }, barra);
-        const nome = crea("button", { type: "button", classe: "nome-accanto", testo: p.nome, onclick: () => apriPromozione(campagna.id, p.id) }, righe);
+        const nome = crea("button", { type: "button", classe: "nome-accanto", testo: p.nome, onclick: (e) => { e.stopPropagation(); apriDettaglio(campagna, p, barra); } }, righe);
         // Verso il bordo destro il nome va a sinistra della barra, per non uscire dal calendario.
         if (sinistra + larghezza > 78) Object.assign(nome.style, { right: `calc(${100 - sinistra}% + 6px)`, top: `${corsia * ALTEZZA_CORSIA}px`, textAlign: "right" });
         else Object.assign(nome.style, { left: `calc(${sinistra + larghezza}% + 6px)`, top: `${corsia * ALTEZZA_CORSIA}px` });
@@ -1120,6 +1273,85 @@ function disegnaCalendario() {
   }
 }
 
+// --- Dettaglio di una promozione (clic sulla barra del calendario) -------------------------------
+
+function chiudiDettaglio() {
+  document.getElementById("dettaglio-promo")?.remove();
+}
+
+function apriDettaglio(campagna, p, ancora) {
+  chiudiDettaglio();
+  const scheda = crea("div", { id: "dettaglio-promo", classe: "dettaglio-promo", role: "dialog", "aria-label": p.nome }, document.body);
+  scheda.style.setProperty("--colore", campagna.colore);
+  const testa = crea("div", { classe: "testa" }, scheda);
+  const titoli = crea("div", {}, testa);
+  const riga = crea("div", { classe: "campagna-riga" }, titoli);
+  crea("span", { classe: "pallino", style: `background:${campagna.colore}` }, riga);
+  crea("span", { testo: campagna.nome }, riga);
+  crea("strong", { classe: "nome", testo: p.nome }, titoli);
+  crea("button", { type: "button", classe: "leggero chiudi-dettaglio", testo: "✕", "aria-label": "Chiudi", onclick: chiudiDettaglio }, testa);
+
+  const info = crea("div", { classe: "info" }, scheda);
+  crea("span", { classe: `stato ${STATI[p.stato].classe}`, testo: STATI[p.stato].testo }, info);
+  crea("span", { testo: periodo(p) }, info);
+  if (p.ora_inizio || p.ora_fine) crea("span", { testo: `dalle ${p.ora_inizio?.slice(0, 5) || "…"} alle ${p.ora_fine?.slice(0, 5) || "…"}` }, info);
+  if (p.giorni.length) crea("span", { testo: p.giorni.map((g) => GIORNI[g]).join(" ") }, info);
+  const raggiunti = destinatari(campagna);
+  const totem = raggiunti.filter((m) => m.orientamento === "verticale").length;
+  crea("span", { testo: raggiunti.length ? `${totem} totem · ${raggiunti.length - totem} monitor` : "nessuno schermo" }, info);
+
+  const contenuti = perId(S.contenuti);
+  const immagini = p.contenuti.map((id) => contenuti.get(id)).filter(Boolean);
+  if (p.stato === "conclusa") {
+    crea("p", { classe: "nota", testo: `Promozione conclusa: ${immagini.length} immagini. Se non servono più, «Promozioni scadute» › «Libera spazio» le cancella.` }, scheda);
+  } else if (!immagini.length) {
+    crea("p", { classe: "nota", testo: "Ancora nessuna immagine: aprila e aggiungile dalla libreria." }, scheda);
+  } else {
+    for (const [chiave, titolo] of [["verticale", "Totem"], ["orizzontale", "Monitor"], ["altro", "Tutti"]]) {
+      const gruppo = immagini.filter((c) => orientamentoDi(c) === chiave);
+      if (!gruppo.length) continue;
+      crea("div", { classe: "titolo-striscia", testo: `${titolo} · ${gruppo.length}` }, scheda);
+      const striscia = crea("div", { classe: `striscia ${chiave}` }, scheda);
+      for (const c of gruppo) {
+        const voce = crea("button", { type: "button", classe: "voce", title: c.nome, onclick: () => apriVisore(c) }, striscia);
+        voce.appendChild(anteprima(c));
+      }
+    }
+  }
+  const azioni = crea("div", { classe: "azioni" }, scheda);
+  crea("button", {
+    type: "button", classe: "primario", testo: "Modifica la promozione",
+    "data-aiuto": "Apre la promozione nel riquadro a destra per cambiarne nome, date e immagini.",
+    onclick: () => { chiudiDettaglio(); apriPromozione(campagna.id, p.id); },
+  }, azioni);
+  crea("button", {
+    type: "button", testo: "Vedi le immagini",
+    "data-aiuto": "Mostra le immagini della promozione nella libreria, a grandezza piena.",
+    onclick: () => {
+      chiudiDettaglio();
+      S.libreria = p.stato === "conclusa" ? "scaduti" : "attivi";
+      S.cartella = p.id;
+      disegnaLibreria();
+      document.getElementById("libreria").scrollIntoView({ behavior: "smooth" });
+    },
+  }, azioni);
+
+  // Vicino alla barra, dentro la finestra.
+  const r = ancora.getBoundingClientRect();
+  const b = scheda.getBoundingClientRect();
+  const x = Math.max(12, Math.min(r.left + r.width / 2 - b.width / 2, window.innerWidth - b.width - 12));
+  let y = r.top - b.height - 10;
+  if (y < 70) y = Math.min(r.bottom + 10, window.innerHeight - b.height - 12);
+  Object.assign(scheda.style, { left: `${x}px`, top: `${Math.max(12, y)}px` });
+}
+
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") chiudiDettaglio(); });
+document.addEventListener("click", (e) => {
+  const scheda = document.getElementById("dettaglio-promo");
+  if (scheda && !scheda.contains(e.target)) chiudiDettaglio();
+});
+window.addEventListener("scroll", chiudiDettaglio, { passive: true });
+
 // --- Importazione CSV ----------------------------------------------------------------------------
 
 const TRACCIATO = [
@@ -1127,7 +1359,7 @@ const TRACCIATO = [
   ["promozione", "obbligatoria", "Nome della promozione: se esiste già nella campagna, viene aggiornata"],
   ["data_inizio", "obbligatoria", "gg/mm/aaaa"],
   ["data_fine", "obbligatoria", "gg/mm/aaaa (compresa)"],
-  ["insegne", "", "Della campagna: nomi delle insegne separati da | (es. Tocal|Tocal Express)"],
+  ["insegne", "", "Della campagna: nomi delle insegne separati da | (es. Insegna A|Insegna B)"],
   ["gruppi", "", "Della campagna: nomi dei gruppi di schermi separati da |"],
   ["monitor", "", "Della campagna: nomi di singoli monitor o totem separati da |"],
   ["ora_inizio", "", "hh:mm, se la promozione va in onda solo in una fascia"],
@@ -1237,6 +1469,7 @@ async function sceltaCliente() {
   crea("option", { value: "", testo: "— scegli —" }, scelta);
   for (const c of clienti) crea("option", { value: c.id, testo: c.nome, selected: c.id === cliente }, scelta);
   scelta.addEventListener("change", () => {
+    ricordaCliente(scelta.value);
     const url = new URL(location.href);
     url.searchParams.set("cliente", scelta.value);
     location.href = url.toString();
@@ -1249,13 +1482,17 @@ async function sceltaCliente() {
 }
 
 async function avvia() {
-  for (const id of ["al-pannello", "torna"]) document.getElementById(id).href = conCliente("/pannello/");
+  document.getElementById("al-pannello").href = conCliente("/pannello/");
   try {
     S.io = await api("GET", "/api/io/");
+    const ruoli = { admin_assoluto: "Administrator Assoluto", tecnico: "Tecnico", admin_cliente: "AdminCliente", user_cliente: "UserCliente" };
+    document.getElementById("utente").textContent = `${S.io.username} · ${ruoli[S.io.ruolo] || ""}`;
   } catch {
     location.href = `/accesso/?next=${encodeURIComponent(location.pathname + location.search)}`;
     return;
   }
+  disegnaMenu(document.getElementById("menu"), { io: S.io, attiva: "palinsesto", cliente });
+  attivaAiuti();
   if (!(await sceltaCliente())) return;
   preparaCaricamento();
   preparaImportazione();

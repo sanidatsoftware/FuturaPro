@@ -130,3 +130,15 @@ input[type="checkbox"] { width: auto; }
 .proprieta .geometria .formato-immagini { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 4px 6px; margin-top: 6px; }
 .proprieta .geometria .formato-immagini > span { grid-column: 1 / -1; font-size: 13px; }
 .proprieta .geometria .formato-immagini input { width: 100%; min-width: 0; box-sizing: border-box; }
+
+/* Spiegazioni al passaggio del mouse (aiuto.js) */
+.aiuto-mouse {
+  position: fixed; z-index: 2000; max-width: 320px; padding: 9px 12px; border-radius: 10px; pointer-events: none;
+  background: #1d2330; color: #f3f5f9; font: 13px/1.45 system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .3); border: 1px solid rgba(255, 255, 255, .12);
+  opacity: 0; transform: translateY(4px); transition: opacity .15s, transform .15s;
+}
+.aiuto-mouse.sopra { transform: translateY(-4px); }
+.aiuto-mouse.visibile { opacity: 1; transform: none; }
+:root[data-tema="scuro"] .aiuto-mouse { background: #2b3550; }
+@media (prefers-color-scheme: dark) { :root[data-tema="auto"] .aiuto-mouse { background: #2b3550; } }

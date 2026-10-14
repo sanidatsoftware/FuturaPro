@@ -1,6 +1,9 @@
 // Il pannello di FuturaPro: una pagina sola sulle API del server.
 // Ogni testo che arriva dai dati passa da textContent, mai da innerHTML.
 
+import { attivaAiuti } from "./aiuto.js";
+import { VOCI, clienteRicordato, disegnaMenu, ricordaCliente } from "./menu.js";
+
 const stato = { io: null, cliente: null, clienti: [], scheda: null };
 
 // --- Strumenti -------------------------------------------------------------------
@@ -112,43 +115,34 @@ const contenuto = document.getElementById("contenuto");
 
 // --- Schede --------------------------------------------------------------------------
 
+// Le schede del pannello; titoli, visibilità e spiegazioni sono in menu.js.
 const SCHEDE = {
-  clienti: { titolo: "Clienti", visibile: () => stato.io.ruolo === "admin_assoluto", serveCliente: false, mostra: schedaClienti },
-  monitor: { titolo: "Monitor", visibile: () => true, mostra: schedaMonitor },
-  palinsesto: { titolo: "Creazione palinsesto", visibile: () => stato.io.ruolo !== "tecnico", collegamento: () => conCliente("/palinsesto/") },
-  contenuti: { titolo: "Contenuti e pubblicazioni", visibile: () => stato.io.ruolo !== "tecnico", mostra: schedaContenuti },
-  reparti: { titolo: "Reparti ed eliminacode", visibile: () => stato.io.ruolo !== "tecnico", mostra: schedaReparti },
-  layout: { titolo: "Layout", visibile: ruoloGestione, collegamento: () => conCliente("/editor/") },
-  banco: { titolo: "Banco", visibile: () => stato.io.ruolo !== "tecnico", collegamento: () => conCliente("/banco/") },
-  sedi: { titolo: "Sedi e gruppi", visibile: ruoloGestione, mostra: schedaSedi },
-  utenti: { titolo: "Utenti", visibile: ruoloGestione, mostra: schedaUtenti },
-  aspetto: { titolo: "Aspetto interfaccia", visibile: () => true, serveCliente: false, mostra: schedaAspetto },
+  clienti: schedaClienti,
+  monitor: schedaMonitor,
+  reparti: schedaReparti,
+  sedi: schedaSedi,
+  utenti: schedaUtenti,
+  aspetto: schedaAspetto,
 };
 
 function disegnaSchede() {
-  const nav = document.getElementById("schede");
-  nav.replaceChildren();
-  for (const [chiave, scheda] of Object.entries(SCHEDE)) {
-    if (!scheda.visibile()) continue;
-    if (scheda.collegamento) {
-      crea("a", { href: scheda.collegamento(), testo: `${scheda.titolo} ↗`, target: "_blank", classe: "scheda" }, nav);
-    } else {
-      crea("button", { testo: scheda.titolo, classe: `scheda${stato.scheda === chiave ? " attiva" : ""}`, onclick: () => mostra(chiave) }, nav);
-    }
-  }
+  disegnaMenu(document.getElementById("schede"), { io: stato.io, attiva: stato.scheda, cliente: stato.cliente, mostra });
 }
 
 async function mostra(chiave) {
+  const voce = VOCI.find((v) => v.chiave === chiave && v.visibile(stato.io) && SCHEDE[v.chiave]);
+  if (!voce) return;
   stato.scheda = chiave;
+  // La scheda resta nell'indirizzo: ricaricando, o tornando dal palinsesto, si riapre.
+  history.replaceState(null, "", `${location.pathname}${location.search}#${chiave}`);
   disegnaSchede();
   contenuto.replaceChildren();
-  const scheda = SCHEDE[chiave];
-  if (scheda.serveCliente !== false && stato.io.di_piattaforma && !stato.cliente) {
+  if (voce.serveCliente !== false && stato.io.di_piattaforma && !stato.cliente) {
     crea("p", { classe: "vuoto", testo: "Scegli il cliente in alto." }, contenuto);
     return;
   }
   try {
-    await scheda.mostra();
+    await SCHEDE[chiave]();
   } catch (errore) {
     avvisa(errore.message);
   }
@@ -244,7 +238,7 @@ async function schedaMonitor() {
     if (gruppi.length) crea("span", { classe: "etichetta", testo: "Gruppi (ricevono le pubblicazioni fatte sul gruppo)" }, abbina);
     const scegliGruppi = spunte(gruppi.map((g) => [g.id, g.nome]), [], abbina);
     crea("button", {
-      classe: "primario", testo: "Abbina",
+      classe: "primario", testo: "Abbina", "data-aiuto": "Collega lo schermo che mostra questo codice: da quel momento riceve layout e promozioni.",
       onclick: () => prova(async () => {
         const m = await api("POST", "/api/monitor/abbina/", { codice: codice.value.replace(/\s/g, ""), nome: nome.value, sede: sede.value, gruppi: scegliGruppi() });
         if (orientamento.value === "verticale") await api("PATCH", `/api/monitor/${m.id}/`, { orientamento: "verticale" });
@@ -254,9 +248,10 @@ async function schedaMonitor() {
 
   const tutti = sezione("Schermi");
   if (!monitor.length) crea("p", { classe: "vuoto", testo: "Nessuno schermo abbinato." }, tutti);
-  const corpo = tabella(["Nome", "Sede", "Stato", "In onda", "Gruppi", "Orientamento", "Rotazione", "Layout", ""], tutti);
+  const corpo = tabella(["Anteprima", "Nome", "Sede", "Stato", "In onda", "Gruppi", "Orientamento", "Rotazione", "Layout", ""], tutti);
   for (const m of monitor) {
     const riga = crea("tr", {}, corpo);
+    const schermo = schermoInMiniatura(m, crea("td", { classe: "cella-schermo" }, riga));
     crea("td", { testo: m.nome }, riga);
     crea("td", { testo: sedi.find((s) => s.id === m.sede)?.nome || "" }, riga);
     const statoCella = crea("td", {}, riga);
@@ -272,6 +267,7 @@ async function schedaMonitor() {
     // Cosa va in onda adesso: se è vuoto, al monitor non arriva nessuna pubblicazione.
     const inOnda = crea("td", { testo: "…" }, riga);
     api("GET", `/api/anteprima/${m.id}/`).then(({ sequenza, aggiornato }) => {
+      schermo.primo(sequenza[0]);
       inOnda.textContent = sequenza.length ? `${sequenza.length} contenut${sequenza.length === 1 ? "o" : "i"}` : "Niente";
       if (!sequenza.length) {
         inOnda.className = "attenzione";
@@ -309,7 +305,6 @@ async function schedaMonitor() {
       crea("td", {}, riga).appendChild(controllo);
     }
     const azioni = crea("td", { classe: "azioni" }, riga);
-    crea("a", { href: conCliente(`/anteprima/${m.id}/`), target: "_blank", testo: "Anteprima" }, azioni);
     if (gestione) {
       crea("button", {
         testo: "Rimuovi", classe: "pericolo",
@@ -319,94 +314,34 @@ async function schedaMonitor() {
   }
 }
 
-// --- Contenuti e pubblicazioni --------------------------------------------------------------
-
-async function schedaContenuti() {
-  const [contenuti, monitor, gruppi, pubblicazioni] = await Promise.all([
-    elenco("/api/contenuti/"), elenco("/api/monitor/"), elenco("/api/gruppi/"), elenco("/api/pubblicazioni/"),
-  ]);
-
-  const carica = sezione("Carica");
-  const file = campo("Immagini o video (JPEG, PNG, GIF, WebP, MP4, MOV, WebM)", crea("input", { type: "file", multiple: true, accept: "image/*,video/*" }), carica);
-  const durata = campo("Durata in secondi (vuoto: 10 s per le immagini, i video fino alla fine)", crea("input", { type: "number", min: 1 }), carica);
-  const avanzamento = crea("p", { classe: "nota" }, carica);
-  crea("button", {
-    classe: "primario", testo: "Carica",
-    onclick: () => prova(async () => {
-      const elenco = [...file.files];
-      for (const [i, f] of elenco.entries()) {
-        avanzamento.textContent = `Caricamento ${i + 1} di ${elenco.length}: ${f.name}…`;
-        const dati = new FormData();
-        dati.append("file", f);
-        if (durata.value) dati.append("durata", durata.value);
-        await api("POST", "/api/contenuti/", dati);
-      }
-    }, "Caricato."),
-  }, carica);
-  const web = crea("details", {}, carica);
-  crea("summary", { testo: "Aggiungi una pagina web" }, web);
-  const url = campo("Indirizzo", crea("input", { type: "url", placeholder: "https://…" }), web);
-  const durataWeb = campo("Durata (secondi)", crea("input", { type: "number", min: 1, value: 30 }), web);
-  crea("button", { testo: "Aggiungi", onclick: () => prova(() => api("POST", "/api/contenuti/", { url: url.value, durata: parseInt(durataWeb.value, 10) }), "Aggiunta.") }, web);
-
-  const libreria = sezione("Libreria");
-  crea("p", { classe: "nota", testo: "Spunta i contenuti da pubblicare, poi scegli gli schermi qui sotto." }, libreria);
-  const scelti = new Set();
-  const griglia = crea("div", { classe: "griglia" }, libreria);
-  for (const c of contenuti) {
-    const scheda = crea("div", { classe: "contenuto-scheda" }, griglia);
-    const anteprima = crea("div", { classe: "miniatura" }, scheda);
-    if (c.tipo === "immagine") crea("img", { src: conCliente(`/api/contenuti/${c.id}/file/`), loading: "lazy", alt: "" }, anteprima);
-    else crea("span", { testo: c.tipo === "video" ? "▶ video" : "🌐 web" }, anteprima);
-    const etichetta = crea("label", { classe: "spunta" }, scheda);
-    crea("input", { type: "checkbox", onchange: (e) => (e.target.checked ? scelti.add(c.id) : scelti.delete(c.id)) }, etichetta);
-    etichetta.append(` ${c.nome}`);
-    crea("button", {
-      testo: "Elimina", classe: "piccolo pericolo",
-      onclick: () => confirm(`Eliminare «${c.nome}»? Sparirà anche dalle playlist.`) && prova(() => api("DELETE", `/api/contenuti/${c.id}/`), "Eliminato."),
-    }, scheda);
-  }
-  if (!contenuti.length) crea("p", { classe: "vuoto", testo: "Nessun contenuto." }, griglia);
-
-  const pubblica = sezione("Pubblica");
-  const nome = campo("Nome (facoltativo)", crea("input", { placeholder: "es. Offerte settimana" }), pubblica);
-  crea("span", { classe: "etichetta", testo: "Schermi" }, pubblica);
-  const sceltiMonitor = spunte(monitor.map((m) => [m.id, m.nome]), [], pubblica);
-  if (gruppi.length) {
-    crea("span", { classe: "etichetta", testo: "Gruppi" }, pubblica);
-  }
-  const sceltiGruppi = spunte(gruppi.map((g) => [g.id, `${g.nome} (gruppo)`]), [], pubblica);
-  const opzioni = crea("details", {}, pubblica);
-  crea("summary", { testo: "Calendario e priorità (facoltativi)" }, opzioni);
-  const riga = crea("div", { classe: "riga" }, opzioni);
-  const dal = campo("Dal", crea("input", { type: "date" }), riga);
-  const al = campo("Al", crea("input", { type: "date" }), riga);
-  const dalle = campo("Dalle", crea("input", { type: "time" }), riga);
-  const alle = campo("Alle", crea("input", { type: "time" }), riga);
-  const priorita = campo("Priorità (più alta = sostituisce le altre)", crea("input", { type: "number", value: 0 }), riga);
-  const giorni = spunte(["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"].map((g, i) => [i, g]), [], opzioni);
-  crea("button", {
-    classe: "primario", testo: "Pubblica",
-    onclick: () => prova(() => api("POST", "/api/pubblica/", {
-      contenuti: [...scelti], monitor: sceltiMonitor(), gruppi: sceltiGruppi(), nome: nome.value || undefined,
-      data_inizio: dal.value || null, data_fine: al.value || null, ora_inizio: dalle.value || null, ora_fine: alle.value || null,
-      giorni: giorni(), priorita: parseInt(priorita.value || "0", 10),
-    }), "Pubblicato: gli schermi lo ricevono entro mezzo minuto."),
-  }, pubblica);
-
-  const attive = sezione("Pubblicazioni");
-  const corpo = tabella(["Nome", "Schermi", "Quando", "Attiva", ""], attive);
-  for (const p of pubblicazioni) {
-    const riga = crea("tr", {}, corpo);
-    crea("td", { testo: p.nome }, riga);
-    const destinatari = [...p.monitor.map((id) => monitor.find((m) => m.id === id)?.nome), ...p.gruppi.map((id) => gruppi.find((g) => g.id === id)?.nome)];
-    crea("td", { testo: destinatari.filter(Boolean).join(", ") }, riga);
-    const quando = [p.data_inizio && `dal ${p.data_inizio}`, p.data_fine && `al ${p.data_fine}`, p.ora_inizio && `${p.ora_inizio.slice(0, 5)}–${(p.ora_fine || "").slice(0, 5)}`, p.priorita ? `priorità ${p.priorita}` : ""];
-    crea("td", { testo: quando.filter(Boolean).join(" ") || "sempre" }, riga);
-    const attiva = crea("input", { type: "checkbox", checked: p.attiva }, crea("td", {}, riga));
-    attiva.addEventListener("change", () => prova(() => api("PATCH", `/api/pubblicazioni/${p.id}/`, { attiva: attiva.checked }), "Salvato."));
-    crea("button", { testo: "Elimina", classe: "pericolo", onclick: () => confirm(`Eliminare «${p.nome}»?`) && prova(() => api("DELETE", `/api/pubblicazioni/${p.id}/`), "Eliminata.") }, crea("td", {}, riga));
-  }
+// Lo schermo disegnato con il suo orientamento. Dentro, la prima immagine in onda; un clic
+// carica l'anteprima vera (layout, orologio, notizie…) e ogni clic successivo la aggiorna.
+function schermoInMiniatura(m, cella) {
+  const verticale = m.orientamento === "verticale";
+  const cornice = crea("button", {
+    type: "button", classe: `mini-schermo ${verticale ? "verticale" : "orizzontale"}`,
+    "data-aiuto": "Clic: mostra qui l'anteprima di ciò che va in onda adesso, con il layout; ogni clic la aggiorna. Doppio clic: la apre a tutto schermo in una scheda nuova.",
+  }, cella);
+  const vetro = crea("div", { classe: "vetro-schermo" }, cornice);
+  crea("span", { classe: "segnaposto", testo: "…" }, vetro);
+  crea("span", { classe: `led-schermo ${m.online ? "acceso" : ""}` }, cornice);
+  if (!verticale) crea("span", { classe: "piedistallo" }, cornice);
+  const indirizzo = conCliente(`/anteprima/${m.id}/`);
+  cornice.addEventListener("click", () => {
+    vetro.replaceChildren();
+    // Un parametro sempre nuovo: l'anteprima si ricarica e riparte da adesso.
+    crea("iframe", { src: `${indirizzo}${indirizzo.includes("?") ? "&" : "?"}t=${Date.now()}`, tabIndex: -1, title: `Anteprima di ${m.nome}` }, vetro);
+    cornice.classList.add("dal-vivo");
+  });
+  cornice.addEventListener("dblclick", () => window.open(indirizzo, "_blank"));
+  return {
+    primo(voce) {
+      if (cornice.classList.contains("dal-vivo")) return;
+      vetro.replaceChildren();
+      if (voce && voce.tipo === "immagine") crea("img", { src: conCliente(`/api/contenuti/${voce.contenuto}/miniatura/`), alt: "" }, vetro);
+      else crea("span", { classe: "segnaposto", testo: voce ? (voce.tipo === "video" ? "▶" : "🌐") : "nessun contenuto" }, vetro);
+    },
+  };
 }
 
 // --- Reparti ----------------------------------------------------------------------------------
@@ -446,6 +381,7 @@ async function schedaReparti() {
     if (gestione) {
       crea("button", {
         testo: r.ha_chiave ? "Nuovo collegamento" : "Crea collegamento",
+        "data-aiuto": "Crea l'indirizzo da aprire sulla bilancia o sulla pulsantiera per chiamare i numeri di questo reparto. Uno nuovo disattiva il precedente.",
         onclick: async () => {
           if (r.ha_chiave && !confirm("Il collegamento attuale smetterà di funzionare. Continuare?")) return;
           try {
@@ -498,7 +434,7 @@ async function schedaSedi() {
     testo: "Facoltative: se l'azienda ha negozi con insegne diverse, assegna l'insegna a ogni sede e potrai pubblicare le campagne per insegna.",
   }, boxInsegne);
   const nuovaInsegna = crea("div", { classe: "riga" }, boxInsegne);
-  const nomeInsegna = campo("Nome", crea("input", { placeholder: "es. Tocal Express" }), nuovaInsegna);
+  const nomeInsegna = campo("Nome", crea("input", { placeholder: "es. Nome insegna" }), nuovaInsegna);
   const coloreInsegna = campo("Colore", crea("input", { type: "color", value: "#ec6a1f" }), nuovaInsegna);
   crea("button", {
     classe: "primario", testo: "Aggiungi",
@@ -547,7 +483,7 @@ async function schedaSedi() {
   }
 
   for (const [titolo, voci, url, segnaposto] of [
-    ["Sedi", sedi, "/api/sedi/", "es. Catania via Etnea"],
+    ["Sedi", sedi, "/api/sedi/", "es. Punto vendita centro"],
     ["Gruppi di schermi", gruppi, "/api/gruppi/", "es. Tutti, Casse, Reparto freschi"],
   ]) {
     const s = sezione(titolo);
@@ -684,11 +620,11 @@ async function caricaClienti() {
 
 function scegliCliente(id, scheda) {
   stato.cliente = id || null;
-  try {
-    localStorage.setItem("futurapro.pannello.cliente", stato.cliente || "");
-  } catch {
-    // Solo una comodità.
-  }
+  ricordaCliente(stato.cliente);
+  const url = new URL(location.href);
+  if (stato.cliente) url.searchParams.set("cliente", stato.cliente);
+  else url.searchParams.delete("cliente");
+  history.replaceState(null, "", url);
   document.getElementById("cliente").value = stato.cliente || "";
   mostra(scheda || stato.scheda);
 }
@@ -699,18 +635,17 @@ async function avvia() {
   document.getElementById("utente").textContent = `${stato.io.username} · ${ruoli[stato.io.ruolo]}`;
   if (stato.io.di_piattaforma) {
     document.getElementById("scelta-cliente").hidden = false;
-    try {
-      stato.cliente = localStorage.getItem("futurapro.pannello.cliente") || null;
-    } catch {
-      stato.cliente = null;
-    }
+    stato.cliente = clienteRicordato();
     await caricaClienti();
     if (!stato.clienti.some((c) => c.id === stato.cliente)) stato.cliente = null;
     document.getElementById("cliente").value = stato.cliente || "";
     document.getElementById("cliente").addEventListener("change", (e) =>
       scegliCliente(e.target.value, stato.scheda === "clienti" && e.target.value ? "monitor" : undefined));
   }
-  await mostra(stato.io.ruolo === "admin_assoluto" && !stato.cliente ? "clienti" : "monitor");
+  attivaAiuti();
+  const richiesta = location.hash.slice(1);
+  const visibile = VOCI.some((v) => v.chiave === richiesta && SCHEDE[richiesta] && v.visibile(stato.io));
+  await mostra(visibile ? richiesta : stato.io.ruolo === "admin_assoluto" && !stato.cliente ? "clienti" : "monitor");
 }
 
 avvia().catch((errore) => avvisa(errore.message));

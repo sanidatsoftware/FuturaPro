@@ -5,6 +5,8 @@
 // server al salvataggio, e gli errori tornano sulla zona che li ha.
 // I testi che arrivano dai dati passano sempre da textContent.
 
+import { attivaAiuti } from "../pannello/aiuto.js";
+
 const parametri = new URLSearchParams(location.search);
 const cliente = parametri.get("cliente");
 const suffisso = cliente ? `?cliente=${encodeURIComponent(cliente)}` : "";
@@ -56,6 +58,18 @@ function avvisa(testo, tipo = "errore") {
   box.className = `messaggio ${tipo}`;
   box.textContent = testo || "";
 }
+
+// Al passaggio del mouse sui pulsanti per aggiungere le zone.
+const SPIEGAZIONI = {
+  slide: "Le immagini e i video in sequenza, con transizione: di solito le promozioni in onda sullo schermo.",
+  orologio: "Ora e data, con colori e dimensioni a scelta.",
+  meteo: "Il tempo di oggi nella località scelta (si aggiorna da solo).",
+  notizie: "Il rullo che scorre con le notizie dei feed RSS scelti e i messaggi del negozio.",
+  testo: "Una scritta fissa, es. un saluto o un orario.",
+  immagine: "Un'immagine sempre ferma, es. il logo del negozio.",
+  coda: "I numeri chiamati dei reparti (eliminacode), con il din-don quando cambiano.",
+  prendi_numero: "I pulsanti del totem per prendere il numero e stampare il biglietto.",
+};
 
 // --- Tipi di zona e loro campi ----------------------------------------------------
 // Rispecchiano server/layout/zone.py: i valori predefiniti li completa il server.
@@ -740,7 +754,7 @@ async function avviaEditor(id) {
   document.getElementById("torna").href = `/editor/${suffisso}`;
   const tavolozza = document.getElementById("tavolozza");
   for (const [tipo, info] of Object.entries(TIPI)) {
-    const b = crea("button", { type: "button", classe: "aggiungi", testo: info.nome }, tavolozza);
+    const b = crea("button", { type: "button", classe: "aggiungi", testo: info.nome, "data-aiuto": SPIEGAZIONI[tipo] }, tavolozza);
     b.style.borderLeftColor = info.colore;
     b.addEventListener("click", () => aggiungi(tipo));
   }
@@ -836,5 +850,6 @@ async function avviaElenco() {
 }
 
 const id = document.body.dataset.layout;
+attivaAiuti();
 if (id) avviaEditor(id);
 else avviaElenco();

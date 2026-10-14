@@ -144,8 +144,13 @@ nulla. I file si scaricano da `/api/player/file/<id>/`, solo se pubblicati su qu
 
 ### Creazione palinsesto: campagne e promozioni
 
-La pagina `/palinsesto/` (scheda «Creazione palinsesto» del pannello) affianca «Contenuti e
-pubblicazioni», che resta com'era.
+La pagina `/palinsesto/` (voce «Creazione palinsesto» del menu) è l'unico punto in cui si
+decide cosa va in onda: la vecchia scheda «Contenuti e pubblicazioni» non c'è più e le
+pubblicazioni fatte con lei sono diventate promozioni, ognuna nella sua campagna (migrazione
+`contenuti.0008`). Calendario con lente (anno, 6 mesi, 3 mesi, mese, 2 settimane; anche
+Ctrl + rotellina); un clic su una promozione ne mostra il dettaglio con le miniature. Le
+promozioni attive e scadute si sfogliano come cartelle. Ogni funzione ha la sua spiegazione
+al passaggio del mouse (`data-aiuto`, `pannello/static/pannello/aiuto.js`).
 
 - **Campagna** (`/api/campagne/`): raggruppa più promozioni e tiene ciò che hanno in comune:
   destinatari (insegne, gruppi, singoli monitor e totem), colore, priorità, secondi per

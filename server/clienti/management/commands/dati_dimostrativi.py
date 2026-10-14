@@ -4,8 +4,8 @@
 
 Crea il cliente «Demo», l'AdminCliente «demo_admin», la sede «Sede principale»
 con tre reparti, il gruppo «Tutti», i layout da supermercato (predefiniti:
-orizzontale con ora, meteo e reparti; totem eliminacode), alcune slide e la
-loro pubblicazione sul gruppo. Basta abbinare uno schermo inserendolo nel
+orizzontale con ora, meteo e reparti; totem eliminacode), alcune slide e una
+campagna che le manda in onda sul gruppo. Basta abbinare uno schermo inserendolo nel
 gruppo «Tutti» per vederlo funzionare.
 """
 
@@ -13,14 +13,16 @@ import hashlib
 import secrets
 import struct
 import zlib
+from datetime import timedelta
 
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand, CommandError
+from django.utils import timezone
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from clienti.models import Abilitazioni, Cliente, Sede
-from contenuti.api import salva_elementi
-from contenuti.models import Contenuto, Playlist, Pubblicazione
+from contenuti import campagne
+from contenuti.models import Campagna, Contenuto, Promozione
 from core.contesto import contesto_cliente, contesto_piattaforma
 from dispositivi.models import GruppoMonitor
 from eliminacode.models import Reparto
@@ -93,10 +95,14 @@ class Command(BaseCommand):
                 contenuto.file.save(f"{nome}.png", ContentFile(dati), save=False)
                 contenuto.save()
                 contenuti.append(contenuto)
-            playlist = Playlist.objects.create(nome="Benvenuto")
-            salva_elementi(playlist, [{"contenuto": c} for c in contenuti])
-            pubblicazione = Pubblicazione.objects.create(nome="Benvenuto", playlist=playlist)
-            pubblicazione.gruppi.add(tutti)
+            campagna = Campagna.objects.create(nome="Benvenuto", colore="#2a6f97")
+            campagna.gruppi.add(tutti)
+            oggi = timezone.localdate()
+            promozione = Promozione.objects.create(
+                campagna=campagna, nome="Slide di benvenuto", data_inizio=oggi, data_fine=oggi + timedelta(days=365)
+            )
+            campagne.salva_contenuti(promozione, contenuti)
+            campagne.sincronizza(promozione)
 
         self.stdout.write(self.style.SUCCESS(f"Cliente «Demo» creato. Accesso: demo_admin / {password}"))
 

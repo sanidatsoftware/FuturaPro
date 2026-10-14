@@ -62,7 +62,7 @@ class Abilitazioni(ModelloCliente):
 
 class Insegna(ModelloCliente):
     """Il marchio con cui si presenta un negozio: un'azienda può averne più d'uno
-    (es. «Tocal» e «Tocal Express»). Facoltativa: serve a pubblicare per insegna."""
+    (es. «Insegna A» e «Insegna B»). Facoltativa: serve a pubblicare per insegna."""
 
     nome = models.CharField(max_length=100)
     colore = models.CharField(max_length=7, default="#ec6a1f")
