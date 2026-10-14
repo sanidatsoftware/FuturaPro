@@ -42,7 +42,8 @@ class CampagneTest(ConFile):
         return {c for elenco in corpo["playlist"].values() for c in (e["contenuto"] for e in elenco)}
 
     def campagna(self, **campi):
-        r = self.client.post("/api/campagne/", {"nome": "Autunno", **campi}, format="json")
+        dati = {"nome": "Autunno", "data_inizio": "2026-01-01", "data_fine": "2026-12-31", **campi}
+        r = self.client.post("/api/campagne/", dati, format="json")
         self.assertEqual(r.status_code, 201, r.content)
         return r.json()
 
@@ -73,9 +74,9 @@ class CampagneTest(ConFile):
         self.assertEqual(self.pubblicati(self.mon_a_milano), {orizzontale})
         self.assertEqual(self.pubblicati(self.mon_a_roma), set())
 
-        # La campagna riassume le sue promozioni.
+        # La campagna ha la sua validità e l'elenco delle sue promozioni.
         c = self.client.get(f"/api/campagne/{campagna['id']}/").json()
-        self.assertEqual((c["data_inizio"], c["data_fine"], len(c["promozioni"])), ("2026-10-06", "2026-10-19", 1))
+        self.assertEqual((c["data_inizio"], c["data_fine"], len(c["promozioni"])), ("2026-01-01", "2026-12-31", 1))
 
         # Cambiando i destinatari della campagna cambiano quelli di tutte le promozioni.
         self.client.patch(f"/api/campagne/{campagna['id']}/", {"insegne": [], "monitor": [str(self.mon_a_roma.id)]}, format="json")
@@ -94,7 +95,8 @@ class CampagneTest(ConFile):
     def test_promozione_senza_destinatari_resta_bozza(self):
         self.come(self.admin_a)
         verticale = self.carica(immagine(248, 350))["id"]
-        r = self.promozione(self.campagna(), contenuti=[verticale], data_inizio="2099-01-01", data_fine="2099-01-10")
+        campagna = self.campagna(data_inizio="2099-01-01", data_fine="2099-12-31")
+        r = self.promozione(campagna, contenuti=[verticale], data_inizio="2099-01-01", data_fine="2099-01-10")
         self.assertEqual((r.status_code, r.json()["stato"], r.json()["pubblicazioni"]), (201, "bozza", []))
 
     def test_date_obbligatorie_e_nomi_unici(self):
@@ -105,6 +107,25 @@ class CampagneTest(ConFile):
         self.assertEqual(self.promozione(campagna).status_code, 201)
         self.assertEqual(self.promozione(campagna, nome="volantino").status_code, 400)
         self.assertEqual(self.promozione(campagna, nome="Altro", data_fine="2026-10-01").status_code, 400)
+
+    def test_validita_della_campagna(self):
+        self.come(self.admin_a)
+        r = self.client.post("/api/campagne/", {"nome": "Senza date"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.campagna(nome="Doppia")
+        r = self.client.post("/api/campagne/", {"nome": "doppia", "data_inizio": "2026-01-01", "data_fine": "2026-12-31"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        campagna = self.campagna(data_inizio="2026-10-01", data_fine="2026-10-31")
+        self.assertEqual((campagna["data_inizio"], campagna["data_fine"]), ("2026-10-01", "2026-10-31"))
+        # Le promozioni stanno dentro la validità.
+        self.assertEqual(self.promozione(campagna, data_fine="2026-11-05").status_code, 400)
+        self.assertEqual(self.promozione(campagna, data_inizio="2026-09-30").status_code, 400)
+        self.assertEqual(self.promozione(campagna).status_code, 201)
+        # E la validità non si stringe lasciandole fuori.
+        r = self.client.patch(f"/api/campagne/{campagna['id']}/", {"data_fine": "2026-10-15"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        r = self.client.patch(f"/api/campagne/{campagna['id']}/", {"data_fine": "2026-12-31"}, format="json")
+        self.assertEqual(r.status_code, 200)
 
     def test_importa_csv_prova_poi_salva(self):
         self.come(self.admin_a)
@@ -128,10 +149,39 @@ class CampagneTest(ConFile):
         self.assertEqual(campagne["Autunno"]["gruppi"], [str(self.tutti.id)])
         self.assertEqual([p["nome"] for p in campagne["Autunno"]["promozioni"]], ["Volantino 1", "Volantino 2"])
         self.assertEqual(campagne["Speciali"]["promozioni"][0]["giorni"], [5, 6])
+        # Senza colonne di validità, la campagna copre le sue promozioni.
+        self.assertEqual((campagne["Autunno"]["data_inizio"], campagne["Autunno"]["data_fine"]), ("2026-10-06", "2026-11-02"))
 
         # Reimportando si aggiornano, non si duplicano.
         r = self.client.post("/api/campagne/importa/", {"file": file(), "prova": "1"}, format="multipart")
         self.assertEqual([x["azione"] for x in r.json()["righe"]], ["aggiorna", "aggiorna", "aggiorna"])
+
+    def test_csv_di_inizio_anno_senza_immagini(self):
+        self.come(self.admin_a)
+        testo = (
+            "campagna;campagna_dal;campagna_al;promozione;data_inizio;data_fine;gruppi\n"
+            "Volantini 2026;01/01/2026;31/12/2026;Gennaio;02/01/2026;15/01/2026;Tutti\n"
+            "Volantini 2026;01/01/2026;31/12/2026;Febbraio;01/02/2026;14/02/2026;Tutti\n"
+        )
+        r = self.client.post("/api/campagne/importa/", {"file": SimpleUploadedFile("c.csv", testo.encode())}, format="multipart")
+        self.assertEqual((r.status_code, r.json()["salvate"]), (201, 2), r.content)
+        self.assertTrue(all(not riga["errori"] for riga in r.json()["righe"]))
+        campagna = self.client.get("/api/campagne/").json()["results"][0]
+        self.assertEqual((campagna["data_inizio"], campagna["data_fine"]), ("2026-01-01", "2026-12-31"))
+        # Senza immagini sono bozze (o già concluse): nessun errore, si riempiono più avanti.
+        self.assertTrue({p["stato"] for p in campagna["promozioni"]} <= {"bozza", "conclusa"})
+
+    def test_immagine_di_riserva_quando_non_c_e_nulla(self):
+        self.come(self.admin_a)
+        logo = self.carica(immagine(192, 108))["id"]
+        r = self.client.patch(f"/api/monitor/{self.mon_a_milano.id}/", {"immagine_riserva": logo}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        with contesto_cliente(self.a.id):
+            corpo = palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))
+        self.assertEqual(corpo["riserva"], logo)
+        self.assertIn(logo, corpo["contenuti"])
+        # Le immagini di riserva non si cancellano con la pulizia.
+        self.assertNotIn(logo, [str(i) for i in self.client.get("/api/contenuti/pulizia/").json()["id"]])
 
     def test_csv_con_errori_non_salva_nulla(self):
         self.come(self.admin_a)
@@ -151,8 +201,9 @@ class CampagneTest(ConFile):
         attuale = self.carica(immagine(248, 350))["id"]
         condivisa = self.carica(immagine(192, 108))["id"]
         libera = self.carica(immagine(192, 108))["id"]
-        campagna = self.campagna(insegne=[str(self.insegna.id)])
         ieri = timezone.localdate() - timedelta(days=1)
+        campagna = self.campagna(insegne=[str(self.insegna.id)], data_inizio=str(ieri - timedelta(days=30)),
+                                 data_fine=str(ieri + timedelta(days=30)))
         self.promozione(campagna, nome="Scaduta", data_inizio=str(ieri - timedelta(days=10)), data_fine=str(ieri),
                         contenuti=[vecchia, condivisa])
         self.promozione(campagna, nome="In corso", data_inizio=str(ieri), data_fine=str(ieri + timedelta(days=10)),
@@ -170,15 +221,17 @@ class CampagneTest(ConFile):
         campagna = self.campagna()
         self.come(self.admin_b)
         self.assertEqual(self.promozione(campagna).status_code, 400)
-        r = self.client.post("/api/campagne/", {"nome": "X", "insegne": [str(self.insegna.id)]}, format="json")
+        r = self.client.post("/api/campagne/", {"nome": "X", "data_inizio": "2026-01-01", "data_fine": "2026-12-31",
+                                                "insegne": [str(self.insegna.id)]}, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertEqual(self.client.get("/api/insegne/").json()["results"], [])
 
     def test_utente_limitato_solo_monitor_delle_sue_sedi(self):
         self.come(self.user_a_milano)
-        r = self.client.post("/api/campagne/", {"nome": "X", "insegne": [str(self.insegna.id)]}, format="json")
+        anno = {"data_inizio": "2026-01-01", "data_fine": "2026-12-31"}
+        r = self.client.post("/api/campagne/", {"nome": "X", "insegne": [str(self.insegna.id)], **anno}, format="json")
         self.assertEqual(r.status_code, 403)
-        r = self.client.post("/api/campagne/", {"nome": "Y", "monitor": [str(self.mon_a_roma.id)]}, format="json")
+        r = self.client.post("/api/campagne/", {"nome": "Y", "monitor": [str(self.mon_a_roma.id)], **anno}, format="json")
         self.assertEqual(r.status_code, 400)
         campagna = self.campagna(nome="Z", monitor=[str(self.mon_a_milano.id)])
         self.assertEqual(self.promozione(campagna).status_code, 201)

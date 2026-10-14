@@ -54,6 +54,10 @@ class Monitor(ModelloCliente):
     rotazione = models.PositiveSmallIntegerField(choices=[(0, "0°"), (90, "90°"), (180, "180°"), (270, "270°")], default=0)
     # Vuoto: il layout predefinito del cliente per il suo orientamento.
     layout = models.ForeignKey("layout.Layout", on_delete=models.SET_NULL, null=True, blank=True, related_name="monitor")
+    # Cosa mostrano le slide quando non c'è nulla in onda (es. il logo del negozio): mai uno schermo vuoto.
+    immagine_riserva = models.ForeignKey(
+        "contenuti.Contenuto", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
 
     class Meta:
         ordering = ["nome"]

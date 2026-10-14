@@ -38,6 +38,8 @@ const S = {
   campagna: null, // la campagna aperta (copia modificabile)
   promozione: null, // la promozione aperta, dentro la campagna aperta
   modificata: false,
+  creaCampagna: false, // il modulo «Nuova campagna» è aperto
+  impostazioniAperte: false,
   zoom: 0, // livello del calendario (LIVELLI)
   inizioVista: new Date(new Date().getFullYear(), 0, 1),
   libreria: "da_assegnare",
@@ -624,18 +626,28 @@ function preparaCaricamento() {
 
 // --- Nuova promozione: in quale campagna? --------------------------------------------------
 
-function nuovaCampagnaVuota(nome = "") {
+// Una campagna nuova vale di solito per tutto l'anno in corso.
+function annoInCorso() {
+  const anno = new Date().getFullYear();
+  return { data_inizio: `${anno}-01-01`, data_fine: `${anno}-12-31` };
+}
+
+function nuovaCampagnaVuota(valori = {}) {
   return {
-    nome, codice: "", colore: "#ec6a1f", note: "", priorita: 0, durata: 10,
-    insegne: [], gruppi: [], monitor: [], promozioni: [], stato: "bozza",
+    nome: "", ...annoInCorso(), codice: "", colore: "#ec6a1f", note: "", priorita: 0, durata: 10,
+    insegne: [], gruppi: [], monitor: [], promozioni: [], stato: "bozza", ...valori,
   };
 }
 
-function nuovaPromozioneVuota(valori = {}) {
-  const inizio = new Date();
-  const fine = new Date(inizio.getTime() + 13 * 86400000);
+// Due settimane da oggi, ma dentro la validità della campagna.
+function nuovaPromozioneVuota(campagna, valori = {}) {
+  let inizio = isoLocale(new Date());
+  if (campagna.data_inizio && inizio < campagna.data_inizio) inizio = campagna.data_inizio;
+  if (campagna.data_fine && inizio > campagna.data_fine) inizio = campagna.data_fine;
+  let fine = isoLocale(new Date(new Date(`${inizio}T00:00:00`).getTime() + 13 * 86400000));
+  if (campagna.data_fine && fine > campagna.data_fine) fine = campagna.data_fine;
   return {
-    nome: "", data_inizio: isoLocale(inizio), data_fine: isoLocale(fine),
+    nome: "", data_inizio: inizio, data_fine: fine,
     ora_inizio: null, ora_fine: null, giorni: [], contenuti: [], stato: "bozza", ...valori,
   };
 }
@@ -655,8 +667,12 @@ function chiediNuovaPromozione(valori) {
   crea("option", { value: "", testo: "+ Nuova campagna…" }, scelta);
   for (const c of S.campagne) crea("option", { value: c.id, testo: `${c.nome}${c.promozioni.length ? ` · ${c.promozioni.length} promozioni` : ""}` }, scelta);
   if (S.campagne.length) scelta.value = S.campagne[S.campagne.length - 1].id;
-  const nome = crea("input", { placeholder: "Nome della nuova campagna, es. Autunno 2026", maxLength: 200 }, corpo);
-  const aggiornaNome = () => (nome.hidden = Boolean(scelta.value));
+  const nuova = crea("div", { classe: "nuova-campagna-dialogo" }, corpo);
+  const nome = campoIn(nuova, "Nome della nuova campagna", crea("input", { placeholder: "es. Volantini 2026", maxLength: 200 }), "largo");
+  const anno = annoInCorso();
+  const dal = campoIn(nuova, "Valida dal", crea("input", { type: "date", value: anno.data_inizio }));
+  const al = campoIn(nuova, "al", crea("input", { type: "date", value: anno.data_fine }));
+  const aggiornaNome = () => (nuova.hidden = Boolean(scelta.value));
   scelta.addEventListener("change", aggiornaNome);
   aggiornaNome();
   const azioni = crea("div", { classe: "azioni" }, corpo);
@@ -665,8 +681,11 @@ function chiediNuovaPromozione(valori) {
     type: "button", classe: "primario", testo: "Continua",
     onclick: () => {
       if (!scelta.value && !nome.value.trim()) { nome.focus(); return; }
+      if (!scelta.value && (!dal.value || !al.value || al.value < dal.value)) { avvisa("Indica la validità della campagna: dal … al …."); return; }
       finestra.close();
-      S.campagna = scelta.value ? structuredClone(S.campagne.find((c) => c.id === scelta.value)) : nuovaCampagnaVuota(nome.value.trim());
+      S.campagna = scelta.value
+        ? structuredClone(S.campagne.find((c) => c.id === scelta.value))
+        : nuovaCampagnaVuota({ nome: nome.value.trim(), data_inizio: dal.value, data_fine: al.value });
       apriNuovaPromozione(valori);
     },
   }, azioni);
@@ -674,7 +693,7 @@ function chiediNuovaPromozione(valori) {
 }
 
 function apriNuovaPromozione(valori) {
-  S.promozione = nuovaPromozioneVuota(valori);
+  S.promozione = nuovaPromozioneVuota(S.campagna, valori);
   S.modificata = true;
   S.selezione.clear();
   disegna();
@@ -745,37 +764,72 @@ function destinatari(campagna) {
 // --- Pannello di destra: campagna o promozione -------------------------------------------------
 
 function disegnaPannello() {
-  const box = document.getElementById("campagna");
-  box.replaceChildren();
-
-  const testa = crea("div", { classe: "testa-campagna" }, box);
-  const scelta = crea("select", { "aria-label": "Campagna" }, testa);
-  crea("option", { value: "", testo: S.campagna && !S.campagna.id ? `${S.campagna.nome || "Nuova campagna"} (non salvata)` : "— scegli una campagna —" }, scelta);
-  for (const c of S.campagne) {
-    crea("option", { value: c.id, testo: `${c.nome} · ${c.promozioni.length} promo · ${STATI[c.stato]?.testo || ""}`, selected: c.id === S.campagna?.id }, scelta);
-  }
-  scelta.addEventListener("change", () => (scelta.value ? apriCampagna(scelta.value) : null));
-  crea("button", {
-    type: "button", classe: "primario", testo: "+ Campagna", "data-aiuto": "Crea una campagna vuota: un contenitore di promozioni con gli stessi destinatari.",
-    onclick: () => {
-      if (!confermaAbbandono()) return;
-      S.campagna = nuovaCampagnaVuota();
-      S.promozione = null;
-      S.modificata = true;
-      disegna();
-      document.getElementById("nome-campagna")?.focus();
-    },
-  }, testa);
-
+  const colonna = document.getElementById("campagna");
+  colonna.replaceChildren();
+  disegnaRiquadroCampagne(crea("section", { classe: "riquadro-destra riquadro-campagne" }, colonna));
+  const box = crea("section", { classe: "riquadro-destra riquadro-corrente" }, colonna);
   if (!S.campagna) {
     const vuoto = crea("div", { classe: "invito" }, box);
     crea("div", { classe: "illustrazione", testo: "▭ ▯ ▭" }, vuoto);
-    crea("h3", { testo: "Prepara una promozione" }, vuoto);
-    crea("p", { testo: "Trascina la cartella del volantino nella libreria, oppure seleziona le immagini e scegli «Nuova promozione con queste immagini». Le promozioni si raggruppano in campagne, che decidono dove vanno in onda." }, vuoto);
+    crea("h3", { testo: "Scegli o crea una campagna" }, vuoto);
+    crea("p", { testo: "Una campagna (es. «Volantini 2026», valida dal 1° gennaio al 31 dicembre) raggruppa le promozioni e decide dove vanno in onda. Poi aggiungi le promozioni, ognuna con le sue date e le sue immagini." }, vuoto);
     return;
   }
   if (S.promozione) disegnaPromozione(box);
   else disegnaCampagna(box);
+}
+
+// Primo riquadro: quale campagna, oppure una nuova.
+function disegnaRiquadroCampagne(box) {
+  const testa = crea("div", { classe: "titolo-sezione" }, box);
+  crea("h3", { testo: "Campagne", "data-aiuto": "Le campagne raggruppano le promozioni: ognuna ha una validità (es. tutto l'anno) e i suoi schermi." }, testa);
+  const apri = crea("button", {
+    type: "button", classe: S.creaCampagna ? "leggero" : "primario", testo: S.creaCampagna ? "Annulla" : "＋ Nuova campagna",
+    "data-aiuto": "Crea una campagna: nome e validità (dal … al …). Destinatari e promozioni si aggiungono subito dopo.",
+    onclick: () => { S.creaCampagna = !S.creaCampagna; disegnaPannello(); },
+  }, testa);
+  if (S.creaCampagna) {
+    const modulo = crea("div", { classe: "campi nuova-campagna" }, box);
+    const anno = annoInCorso();
+    const nome = campoIn(modulo, "Nome della campagna", crea("input", { placeholder: "es. Volantini 2026", maxLength: 200 }), "largo");
+    const dal = campoIn(modulo, "Valida dal", crea("input", { type: "date", value: anno.data_inizio }), "", "Il primo giorno in cui possono andare in onda le sue promozioni.");
+    const al = campoIn(modulo, "al (compreso)", crea("input", { type: "date", value: anno.data_fine }), "", "L'ultimo giorno: nessuna sua promozione può andare oltre.");
+    const colore = campoIn(modulo, "Colore", crea("input", { type: "color", value: "#ec6a1f" }), "stretto", "Il colore della campagna nel calendario e sulle cartelle.");
+    crea("button", {
+      type: "button", classe: "primario largo-pulsante", testo: "Crea la campagna",
+      onclick: async () => {
+        if (!nome.value.trim()) { nome.focus(); return; }
+        try {
+          const creata = await api("POST", "/api/campagne/", {
+            nome: nome.value.trim(), data_inizio: dal.value || null, data_fine: al.value || null, colore: colore.value,
+          });
+          S.creaCampagna = false;
+          S.modificata = false;
+          await caricaTutto();
+          S.campagna = structuredClone(S.campagne.find((c) => c.id === creata.id) || creata);
+          S.promozione = null;
+          S.impostazioniAperte = true;
+          avvisa(`Campagna «${creata.nome}» creata: scegli dove va in onda, poi aggiungi le promozioni.`, "ok");
+          disegna();
+        } catch (errore) {
+          avvisa(errore.message);
+        }
+      },
+    }, modulo);
+    nome.focus();
+    return;
+  }
+  if (!S.campagne.length) {
+    crea("p", { classe: "vuoto", testo: "Ancora nessuna campagna: creane una, oppure importale da CSV." }, box);
+    return;
+  }
+  const scelta = crea("select", { "aria-label": "Campagna", classe: "scelta-campagna" }, box);
+  crea("option", { value: "", testo: S.campagna && !S.campagna.id ? `${S.campagna.nome || "Nuova campagna"} (non salvata)` : "— scegli una campagna —" }, scelta);
+  for (const c of S.campagne) {
+    const validita = c.data_inizio ? ` · ${data(c.data_inizio)} → ${data(c.data_fine)}` : "";
+    crea("option", { value: c.id, testo: `${c.nome}${validita} · ${c.promozioni.length} promo`, selected: c.id === S.campagna?.id }, scelta);
+  }
+  scelta.addEventListener("change", () => (scelta.value ? apriCampagna(scelta.value) : chiudi()));
 }
 
 function campoIn(contenitore, etichetta, controllo, classe = "", aiuto = null) {
@@ -788,40 +842,66 @@ function campoIn(contenitore, etichetta, controllo, classe = "", aiuto = null) {
 function disegnaCampagna(box) {
   const c = S.campagna;
   const stato = STATI[c.stato] || STATI.bozza;
-  const intestazione = crea("div", { classe: "intestazione" }, box);
-  crea("span", { classe: "tipo", testo: "Campagna" }, intestazione);
-  crea("span", { classe: `stato ${stato.classe}`, testo: c.id ? stato.testo : "Nuova" }, intestazione);
-  if (c.data_inizio) crea("span", { classe: "periodo", testo: periodo(c) }, intestazione);
-  // In evidenza, in cima: la cosa che si fa più spesso con una campagna.
-  crea("button", {
-    type: "button", classe: "primario nuova-promo", testo: "＋ Nuova promozione in questa campagna",
-    "data-aiuto": "Aggiunge una promozione a questa campagna: dai nome e date, poi aggiungi le immagini dalla libreria (+ su ogni immagine, o selezionale e «Aggiungi»).",
-    onclick: () => (confermaAbbandono() ? apriNuovaPromozione({}) : null),
-  }, box);
+  const intestazione = crea("div", { classe: "intestazione-campagna" }, box);
+  intestazione.style.setProperty("--colore", c.colore);
+  const riga = crea("div", { classe: "riga-titolo" }, intestazione);
+  crea("span", { classe: "pallino grande", style: `background:${c.colore}` }, riga);
+  crea("strong", { classe: "nome-campagna", testo: c.nome || "Nuova campagna" }, riga);
+  crea("span", { classe: `stato ${stato.classe}`, testo: c.id ? stato.testo : "Nuova" }, riga);
+  const validita = crea("div", { classe: "validita", "data-aiuto": "La validità della campagna: le sue promozioni devono stare dentro queste date." }, intestazione);
+  crea("span", { classe: "tenue", testo: "Valida" }, validita);
+  crea("strong", { testo: c.data_inizio ? `dal ${data(c.data_inizio)} al ${data(c.data_fine)}` : "senza date" }, validita);
+  const raggiunti = destinatari(c);
+  const totem = raggiunti.filter((m) => m.orientamento === "verticale").length;
+  crea("div", {
+    classe: `dove${raggiunti.length ? "" : " attenzione"}`,
+    testo: raggiunti.length ? `In onda su ${totem} totem e ${raggiunti.length - totem} monitor` : "Nessuno schermo scelto: apri «Impostazioni e destinatari»",
+  }, intestazione);
 
-  const campi = crea("div", { classe: "campi" }, box);
-  const nome = campoIn(campi, "Nome della campagna", crea("input", { id: "nome-campagna", value: c.nome, placeholder: "es. Autunno 2026", maxLength: 200 }), "largo", "Il nome che raggruppa le promozioni, es. la stagione o il tipo di offerte.");
+  // Impostazioni: chiuse di solito, aperte se mancano i destinatari o appena creata.
+  const impostazioni = crea("details", { classe: "impostazioni", open: Boolean(S.impostazioniAperte || !raggiunti.length) }, box);
+  impostazioni.addEventListener("toggle", () => (S.impostazioniAperte = impostazioni.open));
+  crea("summary", { testo: "Impostazioni e destinatari", "data-aiuto": "Nome, validità, colore, secondi per immagine, priorità e gli schermi su cui vanno in onda tutte le promozioni della campagna." }, impostazioni);
+  const campi = crea("div", { classe: "campi" }, impostazioni);
+  const nome = campoIn(campi, "Nome della campagna", crea("input", { id: "nome-campagna", value: c.nome, placeholder: "es. Volantini 2026", maxLength: 200 }), "largo", "Il nome che raggruppa le promozioni, es. l'anno o il tipo di offerte.");
   nome.addEventListener("input", () => { c.nome = nome.value; segnaModificata(); });
+  const dal = campoIn(campi, "Valida dal", crea("input", { type: "date", value: c.data_inizio || "" }), "", "Il primo giorno in cui possono andare in onda le sue promozioni.");
+  dal.addEventListener("change", () => { c.data_inizio = dal.value || null; segnaModificata(); });
+  const al = campoIn(campi, "al (compreso)", crea("input", { type: "date", value: c.data_fine || "" }), "", "L'ultimo giorno: nessuna sua promozione può andare oltre.");
+  al.addEventListener("change", () => { c.data_fine = al.value || null; segnaModificata(); });
   const colore = campoIn(campi, "Colore", crea("input", { type: "color", value: c.colore || "#ec6a1f" }), "stretto", "Il colore della campagna nel calendario e sulle cartelle.");
   colore.addEventListener("input", () => { c.colore = colore.value; segnaModificata(); });
   const durata = campoIn(campi, "Secondi per immagine", crea("input", { type: "number", min: 1, max: 3600, value: c.durata || "", placeholder: "10" }), "", "Quanto resta sullo schermo ogni immagine delle promozioni di questa campagna. I video vanno sempre fino alla fine.");
   durata.addEventListener("change", () => { c.durata = parseInt(durata.value, 10) || null; segnaModificata(); });
   const priorita = campoIn(campi, "Priorità", crea("input", { type: "number", min: -100, max: 100, value: c.priorita || 0 }), "", "Di solito 0: le promozioni dello stesso periodo si alternano. Con un numero più alto questa campagna, quando è in onda, sostituisce tutte le altre (es. un'offerta lampo).");
   priorita.addEventListener("change", () => { c.priorita = parseInt(priorita.value, 10) || 0; segnaModificata(); });
-  const codice = campoIn(campi, "Codice", crea("input", { value: c.codice || "", placeholder: "es. AUT26", maxLength: 50 }), "", "Un riferimento interno libero, es. il numero del volantino.");
+  const codice = campoIn(campi, "Codice", crea("input", { value: c.codice || "", placeholder: "es. V26", maxLength: 50 }), "", "Un riferimento interno libero.");
   codice.addEventListener("input", () => { c.codice = codice.value; segnaModificata(); });
+  disegnaDestinatari(impostazioni, c);
+  const piede = crea("div", { classe: "piede-campagna" }, impostazioni);
+  crea("button", { type: "button", classe: `primario${S.modificata ? " pulsa" : ""}`, testo: c.id ? "Salva la campagna" : "Crea la campagna", onclick: salvaCampagna }, piede);
+  if (c.id) {
+    crea("button", {
+      type: "button", classe: "pericolo", testo: "Elimina la campagna",
+      onclick: async () => {
+        if (!confirm(`Eliminare la campagna «${c.nome}» con tutte le sue ${c.promozioni.length} promozioni? Le immagini restano nella libreria.`)) return;
+        try {
+          await api("DELETE", `/api/campagne/${c.id}/`);
+          S.campagna = null;
+          S.modificata = false;
+          avvisa("Campagna eliminata.", "ok");
+          await ricarica();
+        } catch (errore) {
+          avvisa(errore.message);
+        }
+      },
+    }, piede);
+  }
 
-  disegnaDestinatari(box, c);
-
+  // Le promozioni della campagna, e il pulsante per aggiungerne.
   const sezione = crea("section", { classe: "elenco-promo" }, box);
-  const titolo = crea("div", { classe: "titolo-sezione" }, sezione);
-  crea("h3", { testo: `Promozioni (${c.promozioni.length})` }, titolo);
-  crea("button", {
-    type: "button", classe: "leggero", testo: "+ Nuova promozione", "data-aiuto": "Aggiunge una promozione a questa campagna: nome, date e poi le immagini dalla libreria.",
-    onclick: () => (confermaAbbandono() ? apriNuovaPromozione({}) : null),
-  }, titolo);
-  if (!c.id) crea("p", { classe: "vuoto", testo: "Salva la campagna, poi aggiungi le sue promozioni (o seleziona le immagini nella libreria)." }, sezione);
-  else if (!c.promozioni.length) crea("p", { classe: "vuoto", testo: "Nessuna promozione: seleziona le immagini nella libreria e scegli «Nuova promozione con queste immagini»." }, sezione);
+  crea("h3", { testo: `Promozioni (${c.promozioni.length})`, "data-aiuto": "Le promozioni di questa campagna, in ordine di data. Clic per aprirne una." }, sezione);
+  if (!c.promozioni.length) crea("p", { classe: "vuoto", testo: "Nessuna promozione ancora." }, sezione);
   const contenuti = perId(S.contenuti);
   for (const p of c.promozioni) {
     const info = STATI[p.stato] || STATI.bozza;
@@ -837,27 +917,15 @@ function disegnaCampagna(box) {
     crea("span", { classe: "numeri", testo: `${vert} totem · ${oriz} monitor` }, testo);
     crea("span", { classe: `stato ${info.classe}`, testo: info.testo }, scheda);
   }
-
-  const piede = crea("div", { classe: "piede-campagna" }, box);
-  crea("button", { type: "button", classe: `primario grande${S.modificata ? " pulsa" : ""}`, testo: c.id ? "Salva la campagna" : "Crea la campagna", onclick: salvaCampagna }, piede);
-  if (c.id) {
-    crea("button", {
-      type: "button", classe: "pericolo", testo: "Elimina",
-      onclick: async () => {
-        if (!confirm(`Eliminare la campagna «${c.nome}» con tutte le sue ${c.promozioni.length} promozioni? Le immagini restano nella libreria.`)) return;
-        try {
-          await api("DELETE", `/api/campagne/${c.id}/`);
-          S.campagna = null;
-          S.modificata = false;
-          avvisa("Campagna eliminata.", "ok");
-          await ricarica();
-        } catch (errore) {
-          avvisa(errore.message);
-        }
-      },
-    }, piede);
-  }
-  crea("button", { type: "button", classe: "leggero", testo: "Chiudi", onclick: chiudi }, piede);
+  crea("button", {
+    type: "button", classe: "primario nuova-promo", testo: "＋ Nuova promozione",
+    disabled: !c.id,
+    "data-aiuto": c.id
+      ? "Aggiunge una promozione a questa campagna: nome e date (dentro la validità della campagna), poi le immagini dalla libreria."
+      : "Salva prima la campagna.",
+    onclick: () => (confermaAbbandono() ? apriNuovaPromozione({}) : null),
+  }, sezione);
+  crea("button", { type: "button", classe: "leggero chiudi-campagna", testo: "Chiudi la campagna", onclick: chiudi }, box);
 }
 
 function disegnaDestinatari(box, c) {
@@ -933,9 +1001,9 @@ function disegnaPromozione(box) {
   const campi = crea("div", { classe: "campi" }, box);
   const nome = campoIn(campi, "Nome della promozione", crea("input", { id: "nome-promozione", value: p.nome, placeholder: "es. Volantino 6-19 ottobre", maxLength: 200 }), "largo", "Il nome della promozione, es. il volantino del periodo.");
   nome.addEventListener("input", () => { p.nome = nome.value; segnaModificata(); });
-  const dal = campoIn(campi, "Dal", crea("input", { type: "date", value: p.data_inizio || "", required: true }), "", "Il primo giorno in cui la promozione va in onda.");
+  const dal = campoIn(campi, "Dal", crea("input", { type: "date", value: p.data_inizio || "", required: true, min: c.data_inizio || "", max: c.data_fine || "" }), "", "Il primo giorno in cui la promozione va in onda.");
   dal.addEventListener("change", () => { p.data_inizio = dal.value || null; segnaModificata(); });
-  const al = campoIn(campi, "Al (compreso)", crea("input", { type: "date", value: p.data_fine || "", required: true }), "", "L'ultimo giorno in onda, compreso. Dal giorno dopo la promozione è conclusa e sparisce dagli schermi da sola.");
+  const al = campoIn(campi, "Al (compreso)", crea("input", { type: "date", value: p.data_fine || "", required: true, min: c.data_inizio || "", max: c.data_fine || "" }), "", "L'ultimo giorno in onda, compreso. Dal giorno dopo la promozione è conclusa e sparisce dagli schermi da sola.");
   al.addEventListener("change", () => { p.data_fine = al.value || null; segnaModificata(); });
 
   const avanzate = crea("details", { classe: "avanzate", open: Boolean(p.ora_inizio || p.ora_fine || p.giorni.length) }, box);
@@ -1041,7 +1109,8 @@ function disegnaContenutiPromozione(box, p) {
 
 function datiCampagna(c) {
   return {
-    nome: c.nome.trim(), codice: c.codice || "", colore: c.colore, note: c.note || "",
+    nome: c.nome.trim(), data_inizio: c.data_inizio || null, data_fine: c.data_fine || null,
+    codice: c.codice || "", colore: c.colore, note: c.note || "",
     priorita: c.priorita || 0, durata: c.durata || null,
     insegne: c.insegne, gruppi: c.gruppi, monitor: c.monitor,
   };
@@ -1058,6 +1127,7 @@ async function salvaCampagna() {
     const salvata = c.id ? await api("PATCH", `/api/campagne/${c.id}/`, datiCampagna(c)) : await api("POST", "/api/campagne/", datiCampagna(c));
     S.campagna = structuredClone(salvata);
     S.modificata = false;
+    S.impostazioniAperte = false;
     avvisa(c.id ? "Campagna salvata: le sue promozioni seguono i nuovi destinatari entro un minuto." : "Campagna creata: ora aggiungi le sue promozioni.", "ok");
     await ricarica();
   } catch (errore) {
@@ -1356,6 +1426,8 @@ window.addEventListener("scroll", chiudiDettaglio, { passive: true });
 
 const TRACCIATO = [
   ["campagna", "obbligatoria", "Nome della campagna: le righe con lo stesso nome finiscono nella stessa campagna"],
+  ["campagna_dal", "", "Validità della campagna, gg/mm/aaaa (es. 01/01/2026). Vuota: dalla prima promozione"],
+  ["campagna_al", "", "Validità della campagna, gg/mm/aaaa (es. 31/12/2026). Vuota: fino all'ultima promozione"],
   ["promozione", "obbligatoria", "Nome della promozione: se esiste già nella campagna, viene aggiornata"],
   ["data_inizio", "obbligatoria", "gg/mm/aaaa"],
   ["data_fine", "obbligatoria", "gg/mm/aaaa (compresa)"],
@@ -1451,7 +1523,7 @@ function mostraEsito(box, risposta) {
   for (const r of risposta.righe) {
     const tr = crea("tr", { classe: r.errori.length ? "con-errori" : "" }, corpo);
     crea("td", { testo: String(r.riga) }, tr);
-    crea("td", { testo: `${r.campagna}${r.campagna_nuova ? " (nuova)" : ""}` }, tr);
+    crea("td", { testo: `${r.campagna}${r.campagna_nuova ? " (nuova)" : ""}${r.campagna_dal ? ` · ${data(r.campagna_dal)} → ${data(r.campagna_al)}` : ""}` }, tr);
     crea("td", { testo: r.promozione }, tr);
     crea("td", { testo: r.data_inizio ? `${data(r.data_inizio)} → ${data(r.data_fine)}` : "" }, tr);
     crea("td", { testo: [...(r.insegne || []), ...(r.gruppi || []), ...(r.monitor || [])].join(", ") }, tr);

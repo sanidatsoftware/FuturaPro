@@ -130,7 +130,11 @@ def contenuti_scaduti(oggi: date):
             .values("elementi__contenuto_id")
         ).values("id")
     )
+    from dispositivi.models import Monitor
+
     nei_layout = set(Layout.objects.exclude(immagine_sfondo__isnull=True).values_list("immagine_sfondo_id", flat=True))
+    # Anche le immagini di riserva degli schermi restano.
+    nei_layout |= set(Monitor.objects.exclude(immagine_riserva__isnull=True).values_list("immagine_riserva_id", flat=True))
     for configurazione in Zona.objects.filter(tipo="immagine").values_list("configurazione", flat=True):
         if configurazione.get("contenuto"):
             nei_layout.add(configurazione["contenuto"])
@@ -146,7 +150,7 @@ def contenuti_scaduti(oggi: date):
 
 # Una riga per promozione. Le colonne della campagna valgono per tutte le sue righe.
 COLONNE = [
-    "campagna", "promozione", "data_inizio", "data_fine", "insegne", "gruppi", "monitor",
+    "campagna", "campagna_dal", "campagna_al", "promozione", "data_inizio", "data_fine", "insegne", "gruppi", "monitor",
     "ora_inizio", "ora_fine", "giorni", "priorita", "durata", "colore", "codice", "note",
 ]
 OBBLIGATORIE = {"campagna", "promozione", "data_inizio", "data_fine"}
@@ -154,10 +158,10 @@ GIORNI = {"lun": 0, "mar": 1, "mer": 2, "gio": 3, "ven": 4, "sab": 5, "dom": 6}
 
 MODELLO = (
     ";".join(COLONNE) + "\r\n"
-    "Autunno 2026;Volantino 6-19 ottobre;06/10/2026;19/10/2026;Insegna A;;;;;;0;10;#ec6a1f;AUT26;\r\n"
-    "Autunno 2026;Volantino 20 ott - 2 nov;20/10/2026;02/11/2026;Insegna A;;;;;;0;10;#ec6a1f;AUT26;\r\n"
-    "Speciali;Black Friday;25/11/2026;30/11/2026;Insegna A|Insegna B;;;08:00;21:00;;5;8;#111111;BF;\r\n"
-    "Speciali;Weekend griglia;01/06/2026;30/06/2026;;;;;;sab|dom;5;8;#111111;;Solo sabato e domenica\r\n"
+    "Volantini 2026;01/01/2026;31/12/2026;Volantino 6-19 ottobre;06/10/2026;19/10/2026;Insegna A;;;;;;0;10;#ec6a1f;V26;\r\n"
+    "Volantini 2026;01/01/2026;31/12/2026;Volantino 20 ott - 2 nov;20/10/2026;02/11/2026;Insegna A;;;;;;0;10;#ec6a1f;V26;\r\n"
+    "Speciali 2026;01/01/2026;31/12/2026;Black Friday;25/11/2026;30/11/2026;Insegna A|Insegna B;;;08:00;21:00;;5;8;#111111;SP26;\r\n"
+    "Speciali 2026;01/01/2026;31/12/2026;Weekend griglia;01/06/2026;30/06/2026;;;;;;sab|dom;5;8;#111111;;Solo sabato e domenica\r\n"
 )
 
 
@@ -265,6 +269,14 @@ def leggi_csv(testo: str, insegne, gruppi, monitor) -> list[dict]:
                 raise ErroreRiga("date di inizio e fine obbligatorie")
             if fine < inizio:
                 raise ErroreRiga("la data di fine precede quella di inizio")
+            dal, al = _data(valori["campagna_dal"]), _data(valori["campagna_al"])
+            if bool(dal) != bool(al):
+                raise ErroreRiga("validità della campagna: indica sia campagna_dal sia campagna_al, o nessuna delle due")
+            if dal and al < dal:
+                raise ErroreRiga("validità della campagna: la fine precede l'inizio")
+            if dal and (inizio < dal or fine > al):
+                raise ErroreRiga("la promozione esce dalla validità della campagna")
+            riga["validita"] = (dal, al) if dal else None
             colore = valori["colore"] or None
             if colore and not re.fullmatch(r"#[0-9a-fA-F]{6}", colore):
                 raise ErroreRiga(f"colore «{colore}» non valido (es. #ec6a1f)")
@@ -327,6 +339,17 @@ def importa(righe) -> tuple[int, int]:
         promozioni += 1
 
     for chiave, campagna in toccate.items():
+        # Validità: quella del file se c'è, comunque tale da contenere tutte le promozioni.
+        dal = [r["validita"][0] for r in righe if r["campagna"].casefold() == chiave and r["validita"]]
+        al = [r["validita"][1] for r in righe if r["campagna"].casefold() == chiave and r["validita"]]
+        date = list(campagna.promozioni.values_list("data_inizio", "data_fine"))
+        inizi = dal or ([campagna.data_inizio] if campagna.data_inizio else [])
+        fini = al or ([campagna.data_fine] if campagna.data_fine else [])
+        inizi += [i for i, _ in date if i]
+        fini += [f for _, f in date if f]
+        campagna.data_inizio = min(inizi) if inizi else None
+        campagna.data_fine = max(fini) if fini else None
+        campagna.save(update_fields=["data_inizio", "data_fine"])
         # Un file senza destinatari per una campagna non cancella quelli già scelti.
         for campo, valori in destinatari[chiave].items():
             if valori:

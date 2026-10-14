@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 
 from audit.models import registra
 from clienti.models import Abilitazioni, Sede
+from contenuti.models import Contenuto
 from layout.models import Layout
 from core.api import RiferimentoCliente, ViewSetCliente, sedi_visibili
 from core.contesto import contesto_cliente
@@ -43,12 +44,13 @@ class MonitorSerializer(serializers.ModelSerializer):
     sede = RiferimentoCliente(Sede)
     gruppi = RiferimentoCliente(GruppoMonitor, many=True, required=False)
     layout = RiferimentoCliente(Layout, required=False, allow_null=True)
+    immagine_riserva = RiferimentoCliente(Contenuto, required=False, allow_null=True)
     online = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Monitor
         fields = [
-            "id", "nome", "sede", "gruppi", "orientamento", "rotazione", "layout", "piattaforma",
+            "id", "nome", "sede", "gruppi", "orientamento", "rotazione", "layout", "immagine_riserva", "piattaforma",
             "versione_player", "ultimo_contatto", "online", "abbinato_il",
         ]
         read_only_fields = ["piattaforma", "versione_player", "ultimo_contatto", "abbinato_il"]
@@ -58,6 +60,9 @@ class MonitorSerializer(serializers.ModelSerializer):
         layout = dati["layout"] if "layout" in dati else getattr(self.instance, "layout", None)
         if layout is not None and layout.orientamento != orientamento:
             raise serializers.ValidationError({"layout": f"Il layout è {layout.orientamento}, il monitor {orientamento}."})
+        riserva = dati.get("immagine_riserva")
+        if riserva is not None and riserva.tipo != "immagine":
+            raise serializers.ValidationError({"immagine_riserva": "Dev'essere un'immagine."})
         return dati
 
 

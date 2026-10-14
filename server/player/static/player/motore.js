@@ -122,7 +122,10 @@ class ZonaSlide {
     if (this.config.sorgente && this.config.sorgente !== "palinsesto") {
       return m.playlist[this.config.sorgente] || [];
     }
-    return inOnda(m.pubblicazioni, istanteNelFuso(m.fuso_orario)).flatMap((p) => m.playlist[p.playlist] || []);
+    const inSequenza = inOnda(m.pubblicazioni, istanteNelFuso(m.fuso_orario)).flatMap((p) => m.playlist[p.playlist] || []);
+    // Niente in onda: l'immagine di riserva dello schermo (es. il logo), se c'è.
+    if (!inSequenza.length && m.riserva && m.contenuti[m.riserva]) return [{ contenuto: m.riserva, durata: 30 }];
+    return inSequenza;
   }
 
   async ciclo() {

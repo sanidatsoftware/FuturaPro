@@ -30,6 +30,17 @@ async function api(metodo, url, dati) {
 
 const elenco = async (url) => (await api("GET", url)).results;
 
+// Tutte le pagine di un elenco lungo (la libreria può superare le 100 voci).
+async function tutteLePagine(url) {
+  const risultati = [];
+  for (let prossima = url; prossima; ) {
+    const pagina = await api("GET", prossima);
+    risultati.push(...pagina.results);
+    prossima = pagina.next ? new URL(pagina.next).pathname + new URL(pagina.next).search : null;
+  }
+  return risultati;
+}
+
 // Gli errori di validazione del server, in una riga leggibile.
 function spiega(corpo) {
   if (!corpo) return "";
@@ -223,7 +234,16 @@ async function abilitazioni(cliente, cella) {
 // --- Monitor ----------------------------------------------------------------------------
 
 async function schedaMonitor() {
-  const [monitor, sedi, gruppi, layout] = await Promise.all([elenco("/api/monitor/"), elenco("/api/sedi/"), elenco("/api/gruppi/"), elenco("/api/layout/")]);
+  const [monitor, sedi, gruppi, layout, contenuti] = await Promise.all([
+    elenco("/api/monitor/"), elenco("/api/sedi/"), elenco("/api/gruppi/"), elenco("/api/layout/"), tutteLePagine("/api/contenuti/"),
+  ]);
+  const immagini = contenuti.filter((c) => c.tipo === "immagine");
+  // Per un totem le immagini verticali, per un monitor le orizzontali (le altre in fondo).
+  const opzioniRiserva = (orientamento) => [
+    ["", "— schermo nero —"],
+    ...[...immagini].sort((a, b) => (b.orientamento === orientamento) - (a.orientamento === orientamento) || a.nome.localeCompare(b.nome))
+      .map((c) => [c.id, `${c.nome}${c.orientamento && c.orientamento !== orientamento ? ` (${c.orientamento})` : ""}`]),
+  ];
   const gestione = ruoloGestione();
 
   if (gestione) {
@@ -246,9 +266,30 @@ async function schedaMonitor() {
     }, abbina);
   }
 
+  if (gestione && monitor.length) {
+    const riserva = sezione("Immagine di riserva");
+    crea("p", {
+      classe: "nota",
+      testo: "Quello che mostrano le slide quando non c'è nessuna promozione in onda (es. tra un volantino e l'altro): di solito il logo del negozio. Si può scegliere per ogni schermo nella tabella qui sotto, o per tutti insieme.",
+    }, riserva);
+    const riga = crea("div", { classe: "riga" }, riserva);
+    const perTotem = campo("Per tutti i totem", scelta(opzioniRiserva("verticale")), riga);
+    const perMonitor = campo("Per tutti i monitor", scelta(opzioniRiserva("orizzontale")), riga);
+    crea("button", {
+      classe: "primario", testo: "Applica a tutti",
+      "data-aiuto": "Imposta l'immagine di riserva scelta su tutti i totem e su tutti i monitor del cliente.",
+      onclick: () => prova(async () => {
+        for (const m of monitor) {
+          const valore = m.orientamento === "verticale" ? perTotem.value : perMonitor.value;
+          await api("PATCH", `/api/monitor/${m.id}/`, { immagine_riserva: valore || null });
+        }
+      }, "Immagine di riserva impostata: gli schermi la ricevono entro un minuto."),
+    }, riga);
+  }
+
   const tutti = sezione("Schermi");
   if (!monitor.length) crea("p", { classe: "vuoto", testo: "Nessuno schermo abbinato." }, tutti);
-  const corpo = tabella(["Anteprima", "Nome", "Sede", "Stato", "In onda", "Gruppi", "Orientamento", "Rotazione", "Layout", ""], tutti);
+  const corpo = tabella(["Anteprima", "Nome", "Sede", "Stato", "In onda", "Gruppi", "Orientamento", "Rotazione", "Layout", "Se non c'è nulla in onda", ""], tutti);
   for (const m of monitor) {
     const riga = crea("tr", {}, corpo);
     const schermo = schermoInMiniatura(m, crea("td", { classe: "cella-schermo" }, riga));
@@ -260,16 +301,18 @@ async function schedaMonitor() {
     const salva = (dati) => prova(() => api("PATCH", `/api/monitor/${m.id}/`, dati), "Salvato.");
     const orientamento = scelta([["orizzontale", "Orizzontale"], ["verticale", "Verticale (totem)"]], m.orientamento);
     const rotazione = scelta([[0, "0°"], [90, "90°"], [180, "180°"], [270, "270°"]], m.rotazione);
+    const sceltaRiserva = scelta(opzioniRiserva(m.orientamento), m.immagine_riserva || "");
+    sceltaRiserva.classList.add("riserva");
     const sceltaLayout = scelta(
       [["", "Predefinito"], ...layout.filter((l) => l.orientamento === m.orientamento).map((l) => [l.id, l.nome])],
       m.layout || "",
     );
     // Cosa va in onda adesso: se è vuoto, al monitor non arriva nessuna pubblicazione.
     const inOnda = crea("td", { testo: "…" }, riga);
-    api("GET", `/api/anteprima/${m.id}/`).then(({ sequenza, aggiornato }) => {
-      schermo.primo(sequenza[0]);
-      inOnda.textContent = sequenza.length ? `${sequenza.length} contenut${sequenza.length === 1 ? "o" : "i"}` : "Niente";
-      if (!sequenza.length) {
+    api("GET", `/api/anteprima/${m.id}/`).then(({ sequenza, riserva, aggiornato }) => {
+      schermo.primo(sequenza[0] || (riserva ? { tipo: "immagine", contenuto: riserva } : null));
+      inOnda.textContent = sequenza.length ? `${sequenza.length} contenut${sequenza.length === 1 ? "o" : "i"}` : riserva ? "Immagine di riserva" : "Niente";
+      if (!sequenza.length && !riserva) {
         inOnda.className = "attenzione";
         inOnda.title = "Nessuna pubblicazione valida adesso per questo schermo o per i suoi gruppi.";
       }
@@ -294,7 +337,7 @@ async function schedaMonitor() {
       l.append(` ${g.nome}`);
     }
     if (!gruppi.length) cellaGruppi.textContent = "—";
-    for (const [controllo, chiave] of [[orientamento, "orientamento"], [rotazione, "rotazione"], [sceltaLayout, "layout"]]) {
+    for (const [controllo, chiave] of [[orientamento, "orientamento"], [rotazione, "rotazione"], [sceltaLayout, "layout"], [sceltaRiserva, "immagine_riserva"]]) {
       controllo.disabled = !gestione;
       controllo.addEventListener("change", () => {
         // Cambiando orientamento il layout assegnato non vale più: si torna al predefinito.

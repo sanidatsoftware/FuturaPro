@@ -360,6 +360,15 @@ class PromozioneSerializer(serializers.ModelSerializer):
         if valore("data_fine") < valore("data_inizio"):
             raise serializers.ValidationError({"data_fine": "Precede la data di inizio."})
         campagna = valore("campagna")
+        # Le date della promozione stanno dentro la validità della sua campagna.
+        if campagna.data_inizio and valore("data_inizio") < campagna.data_inizio:
+            raise serializers.ValidationError(
+                {"data_inizio": f"La campagna «{campagna.nome}» è valida dal {campagna.data_inizio:%d/%m/%Y}."}
+            )
+        if campagna.data_fine and valore("data_fine") > campagna.data_fine:
+            raise serializers.ValidationError(
+                {"data_fine": f"La campagna «{campagna.nome}» è valida fino al {campagna.data_fine:%d/%m/%Y}."}
+            )
         nome = valore("nome")
         doppione = Promozione.objects.filter(campagna=campagna, nome__iexact=nome)
         if corrente is not None:
@@ -395,14 +404,14 @@ class CampagnaSerializer(serializers.ModelSerializer):
     colore = serializers.RegexField(r"^#[0-9a-fA-F]{6}$", required=False)
     promozioni = serializers.SerializerMethodField()
     stato = serializers.SerializerMethodField()
-    data_inizio = serializers.SerializerMethodField()
-    data_fine = serializers.SerializerMethodField()
+    data_inizio = serializers.DateField(required=False, allow_null=True)
+    data_fine = serializers.DateField(required=False, allow_null=True)
 
     class Meta:
         model = Campagna
         fields = [
-            "id", "nome", "codice", "colore", "note", "priorita", "durata", "insegne", "gruppi", "monitor",
-            "stato", "data_inizio", "data_fine", "promozioni", "creata", "modificata",
+            "id", "nome", "data_inizio", "data_fine", "codice", "colore", "note", "priorita", "durata",
+            "insegne", "gruppi", "monitor", "stato", "promozioni", "creata", "modificata",
         ]
         read_only_fields = ["creata", "modificata"]
         extra_kwargs = {"durata": {"min_value": 1, "max_value": 3600}, "priorita": {"min_value": -100, "max_value": 100}}
@@ -420,15 +429,35 @@ class CampagnaSerializer(serializers.ModelSerializer):
     def get_stato(self, campagna):
         return campagne.stato_campagna([p["stato"] for p in self._promozioni(campagna)])
 
-    def get_data_inizio(self, campagna):
-        date = [p["data_inizio"] for p in self._promozioni(campagna) if p["data_inizio"]]
-        return min(date) if date else None
-
-    def get_data_fine(self, campagna):
-        date = [p["data_fine"] for p in self._promozioni(campagna) if p["data_fine"]]
-        return max(date) if date else None
-
     def validate(self, dati):
+        corrente = self.instance
+
+        def valore(campo):
+            return dati[campo] if campo in dati else getattr(corrente, campo, None)
+
+        nome = valore("nome")
+        doppione = Campagna.objects.filter(nome__iexact=nome)
+        if corrente is not None:
+            doppione = doppione.exclude(id=corrente.id)
+        if nome and doppione.exists():
+            raise serializers.ValidationError({"nome": f"Esiste già una campagna «{nome}»."})
+        inizio, fine = valore("data_inizio"), valore("data_fine")
+        if corrente is None and (not inizio or not fine):
+            raise serializers.ValidationError("Indica la validità della campagna: dal … al ….")
+        if inizio and fine and fine < inizio:
+            raise serializers.ValidationError({"data_fine": "Precede la data di inizio."})
+        if corrente is not None:
+            # Non si stringe la validità lasciando fuori promozioni che già ci sono.
+            fuori = corrente.promozioni.all()
+            fuori = [
+                p for p in fuori
+                if (inizio and p.data_inizio and p.data_inizio < inizio) or (fine and p.data_fine and p.data_fine > fine)
+            ]
+            if fuori:
+                nomi = ", ".join(f"«{p.nome}»" for p in fuori[:3])
+                raise serializers.ValidationError(
+                    {"data_inizio": f"Con queste date restano fuori delle promozioni: {nomi}. Cambia prima le loro date."}
+                )
         utente = self.context["request"].user
         limitate = sedi_visibili(utente)
         if limitate is not None:
@@ -519,6 +548,8 @@ class CampagneViewSet(ViewSetCliente):
                 voce["campagna_nuova"] = r["campagna"].casefold() not in campagne_esistenti
                 voce.update(
                     data_inizio=r["promo"]["data_inizio"], data_fine=r["promo"]["data_fine"],
+                    campagna_dal=r["validita"][0] if r["validita"] else None,
+                    campagna_al=r["validita"][1] if r["validita"] else None,
                     insegne=[i.nome for i in r["insegne"]], gruppi=[g.nome for g in r["gruppi"]],
                     monitor=[m.nome for m in r["monitor"]],
                 )
@@ -645,7 +676,8 @@ class AnteprimaView(VistaConContesto, APIView):
                 )
         # Il player ha già l'ultima versione? (la dichiara a ogni segnale periodico)
         aggiornato = bool(monitor.manifest_ricevuto) and monitor.manifest_ricevuto == palinsesto.manifest(monitor)["versione"]
-        return Response({"monitor": monitor.id, "quando": istante, "sequenza": sequenza, "aggiornato": aggiornato})
+        riserva = monitor.immagine_riserva_id
+        return Response({"monitor": monitor.id, "quando": istante, "sequenza": sequenza, "riserva": riserva, "aggiornato": aggiornato})
 
 
 class AnteprimaManifestView(VistaConContesto, APIView):

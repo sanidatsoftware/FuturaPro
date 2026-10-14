@@ -153,8 +153,9 @@ promozioni attive e scadute si sfogliano come cartelle. Ogni funzione ha la sua 
 al passaggio del mouse (`data-aiuto`, `pannello/static/pannello/aiuto.js`).
 
 - **Campagna** (`/api/campagne/`): raggruppa più promozioni e tiene ciò che hanno in comune:
-  destinatari (insegne, gruppi, singoli monitor e totem), colore, priorità, secondi per
-  immagine, codice. Le sue date sono quelle delle sue promozioni (dalla prima all'ultima).
+  validità dal/al (obbligatoria, es. tutto l'anno), destinatari (insegne, gruppi, singoli
+  monitor e totem), colore, priorità, secondi per immagine, codice. Le date delle promozioni
+  devono stare dentro la validità, che non si può stringere lasciandone fuori qualcuna.
 - **Promozione** (`/api/promozioni/`): appartiene a una campagna; ha nome, date dal/al
   (obbligatorie), eventuali orari e giorni, e le sue immagini in ordine. Il server la traduce
   in una pubblicazione per orientamento: le immagini verticali vanno solo ai totem, le
@@ -171,6 +172,10 @@ al passaggio del mouse (`data-aiuto`, `pannello/static/pannello/aiuto.js`).
   delle playlist fatte a mano (anche quelle fisse delle zone slide) e dei layout.
 - **Cartelle.** Si trascina o si sceglie un'intera cartella: i file vengono caricati tre alla
   volta e viene proposta una promozione con il nome della cartella (si sceglie la campagna).
+- **Immagine di riserva** (campo `immagine_riserva` del monitor, scheda Monitor): quando non
+  c'è nessuna promozione in onda le slide mostrano questa immagine (es. il logo) invece del
+  nero. Va nel manifest (`riserva`) e la pulizia non la cancella mai. Le promozioni importate da
+  CSV senza immagini sono bozze: nessun errore, e fino ad allora va in onda la riserva.
 - **Insegne** (`/api/insegne/`, facoltative): ogni sede può avere un'insegna; una campagna su
   un'insegna raggiunge tutti i monitor e totem delle sue sedi.
 - **Calendario**: anno o tre mesi, una fascia per campagna con le sue promozioni colorate per
@@ -184,6 +189,7 @@ con i nomi delle colonne; UTF-8 o Windows-1252.
 | Colonna | | Formato |
 |---|---|---|
 | `campagna` | obbligatoria | le righe con lo stesso nome vanno nella stessa campagna |
+| `campagna_dal`, `campagna_al` | | validità della campagna; vuote: dalla prima all'ultima promozione |
 | `promozione` | obbligatoria | se la campagna ha già una promozione con questo nome, viene aggiornata |
 | `data_inizio`, `data_fine` | obbligatorie | `gg/mm/aaaa` (anche `aaaa-mm-gg`), fine compresa |
 | `insegne`, `gruppi`, `monitor` | della campagna | nomi esistenti separati da `\|`; le righe di una campagna si sommano |

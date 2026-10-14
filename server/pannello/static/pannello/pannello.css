@@ -108,3 +108,5 @@ td.attenzione { color: var(--errore); font-weight: 600; cursor: help; }
 .aiuto-mouse.visibile { opacity: 1; transform: none; }
 :root[data-tema="scuro"] .aiuto-mouse { background: #2b3550; }
 @media (prefers-color-scheme: dark) { :root[data-tema="auto"] .aiuto-mouse { background: #2b3550; } }
+select.riserva { max-width: 190px; }
+td select { max-width: 190px; }

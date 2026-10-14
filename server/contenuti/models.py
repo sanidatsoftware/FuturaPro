@@ -102,10 +102,13 @@ class Campagna(ModelloCliente):
     """Un insieme di promozioni (es. «Autunno 2026» con i volantini di ottobre e novembre).
 
     Tiene ciò che le promozioni hanno in comune: destinatari, colore, priorità e
-    secondi per immagine. Le date sono di ogni promozione.
+    secondi per immagine, e ha una sua validità (es. tutto il 2026) dentro la quale
+    stanno le date delle sue promozioni.
     """
 
     nome = models.CharField(max_length=200)
+    data_inizio = models.DateField(null=True, blank=True)
+    data_fine = models.DateField(null=True, blank=True)
     codice = models.CharField(max_length=50, blank=True, help_text="Riferimento interno.")
     colore = models.CharField(max_length=7, default="#3d6fb6")
     note = models.CharField(max_length=500, blank=True)

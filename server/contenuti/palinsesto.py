@@ -136,7 +136,8 @@ def manifest(monitor) -> dict:
     )
 
     playlist = {}
-    contenuti = {str(c.id): c for c in Contenuto.objects.filter(id__in=immagini_layout)}
+    riserva = str(monitor.immagine_riserva_id) if monitor.immagine_riserva_id else None
+    contenuti = {str(c.id): c for c in Contenuto.objects.filter(id__in=immagini_layout | ({riserva} if riserva else set()))}
     for elemento in elementi:
         playlist.setdefault(str(elemento.playlist_id), []).append(
             {"contenuto": str(elemento.contenuto_id), "durata": durata_effettiva(elemento)}
@@ -164,6 +165,8 @@ def manifest(monitor) -> dict:
             for p in pubblicazioni
         ],
         "playlist": playlist,
+        # Quando non c'è nulla in onda le slide mostrano questa immagine, invece del nero.
+        "riserva": riserva,
         "contenuti": {chiave: _voce(contenuto) for chiave, contenuto in contenuti.items()},
         "code": code_del_monitor(monitor, layout),
     }

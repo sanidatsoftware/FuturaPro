@@ -188,11 +188,29 @@ a { color: var(--blu); }
 .didascalia span { font-size: 11.5px; color: var(--tenue); }
 
 /* --- Pannello di destra: campagna e promozione --- */
-.campagna {
-  position: sticky; top: 74px; max-height: calc(100vh - 92px); overflow-y: auto; padding: 18px;
-  border-radius: 18px; background: var(--pannello); border: 1px solid var(--linea);
+.campagna { position: sticky; top: 74px; max-height: calc(100vh - 92px); overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-bottom: 4px; }
+.riquadro-destra {
+  padding: 16px 18px; border-radius: 18px; background: var(--pannello); border: 1px solid var(--linea);
   box-shadow: var(--ombra-forte); backdrop-filter: blur(10px);
 }
+.riquadro-campagne .titolo-sezione h3 { margin: 0; }
+.riquadro-campagne .titolo-sezione { margin-bottom: 10px; }
+.scelta-campagna { width: 100%; }
+.nuova-campagna { margin-top: 4px; }
+.largo-pulsante { grid-column: 1 / -1; }
+.intestazione-campagna { padding: 2px 0 12px 12px; border-left: 4px solid var(--colore); margin-bottom: 12px; }
+.riga-titolo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pallino.grande { width: 14px; height: 14px; }
+.nome-campagna { font-size: 20px; }
+.validita { display: flex; gap: 6px; align-items: baseline; margin-top: 6px; font-size: 14px; }
+.dove { margin-top: 4px; font-size: 13px; color: var(--verde); }
+.dove.attenzione { color: var(--ambra); }
+.impostazioni { margin: 0 0 6px; padding: 10px 12px; border-radius: 12px; background: var(--carta-forte); border: 1px solid var(--linea); }
+.impostazioni > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.impostazioni[open] > summary { margin-bottom: 12px; }
+.impostazioni .piede-campagna { border-top: 0; padding-top: 4px; }
+.chiudi-campagna { width: 100%; margin-top: 10px; }
+.nuova-campagna-dialogo { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .testa-campagna { display: flex; gap: 8px; margin-bottom: 14px; }
 .testa-campagna select { flex: 1; min-width: 0; }
 .invito { text-align: center; padding: 30px 12px; color: var(--tenue); }
@@ -367,6 +385,7 @@ code { background: var(--carta-forte); padding: 1px 6px; border-radius: 5px; }
 .menu .scheda:hover { color: var(--testo); background: none; }
 .menu .scheda.attiva { color: var(--testo); border-bottom-color: var(--accento); font-weight: 600; }
 .campagna { top: 116px; max-height: calc(100vh - 134px); }
+@media (max-width: 1100px) { .campagna { max-height: none; } }
 .tenue { color: var(--tenue); }
 
 /* Libreria: cartelle delle promozioni */
@@ -411,4 +430,4 @@ code { background: var(--carta-forte); padding: 1px 6px; border-radius: 5px; }
 .dettaglio-promo .striscia .voce { padding: 0; cursor: zoom-in; }
 .dettaglio-promo .azioni { display: flex; gap: 8px; margin-top: 12px; }
 .dettaglio-promo .azioni .primario { flex: 1; }
-.nuova-promo { width: 100%; margin: 0 0 14px; padding: 11px; }
+.nuova-promo { width: 100%; margin: 6px 0 0; padding: 12px; font-size: 15px; }
