@@ -29,7 +29,6 @@ input[type="checkbox"] { width: auto; }
 .barra .nome { max-width: 320px; font-weight: 600; }
 .barra .spazio { flex: 1; }
 .barra .campo-barra { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-.barra input.pixel { width: 72px; }
 .barra .etichetta { font-size: 13px; opacity: .85; white-space: nowrap; }
 
 .messaggio { margin: 8px 14px 0; padding: 8px 12px; border-radius: 8px; }
@@ -95,7 +94,7 @@ input[type="checkbox"] { width: auto; }
 .proprieta .geometria { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; border: 1px solid var(--linea); border-radius: 8px; margin: 0 0 10px; }
 .proprieta .geometria legend { font-size: 12px; color: var(--tenue); }
 .proprieta .geometria .campo { margin: 0; }
-.proprieta .geometria .pixel, .proprieta .geometria .confronto-formato, .proprieta .geometria .formato { grid-column: 1 / -1; margin: 2px 0 0; }
+.proprieta .geometria .pixel, .proprieta .geometria .confronto-formato, .proprieta .geometria .formato, .proprieta .geometria .formato-immagini { grid-column: 1 / -1; margin: 2px 0 0; }
 .proprieta .azioni { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
 .proprieta .spunta { display: flex; align-items: center; gap: 6px; }
 .proprieta .riga-colore { display: flex; align-items: center; gap: 10px; }
@@ -120,3 +119,6 @@ input[type="checkbox"] { width: auto; }
   .editor { grid-template-columns: 1fr; grid-template-rows: auto 60vh auto; }
   .tavolozza, .proprieta { border: 0; }
 }
+.proprieta .geometria .formato-immagini { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 4px 6px; margin-top: 6px; }
+.proprieta .geometria .formato-immagini > span { grid-column: 1 / -1; font-size: 13px; }
+.proprieta .geometria .formato-immagini input { width: 100%; min-width: 0; box-sizing: border-box; }

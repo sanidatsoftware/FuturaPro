@@ -343,9 +343,9 @@ function aggiornaGeometria(zona) {
   if (confronto) confronto.textContent = confrontaFormato(zona);
 }
 
+// Il formato è del layout (vale per tutte le sue zone), ma si imposta dalle zone che mostrano immagini.
 function formato() {
-  const l = parseInt(document.getElementById("formato_larghezza").value, 10);
-  const a = parseInt(document.getElementById("formato_altezza").value, 10);
+  const { formato_larghezza: l, formato_altezza: a } = stato.formato;
   return l > 0 && a > 0 ? [l, a] : FORMATO_PREDEFINITO[stato.layout.orientamento];
 }
 
@@ -527,6 +527,20 @@ function mostraProprieta() {
   }
   crea("p", { classe: "nota pixel" }, geometria);
   if (zona.tipo === "slide" || zona.tipo === "immagine") {
+    const riga = crea("div", { classe: "formato-immagini", title: "Misura in pixel delle immagini che prepari di solito" }, geometria);
+    crea("span", { testo: "Formato immagini (pixel, vale per tutto il layout)" }, riga);
+    formato().forEach((valore, i) => {
+      const chiave = i ? "formato_altezza" : "formato_larghezza";
+      if (i) crea("b", { testo: "×" }, riga);
+      const input = crea("input", { type: "number", min: 100, max: 20000, value: valore }, riga);
+      input.setAttribute("aria-label", i ? "Altezza in pixel" : "Larghezza in pixel");
+      input.addEventListener("input", () => {
+        const [l, a] = formato();
+        stato.formato = { formato_larghezza: l, formato_altezza: a, [chiave]: parseInt(input.value, 10) || null };
+        segnaModificato();
+        aggiornaGeometria(zona);
+      });
+    });
     crea("p", { classe: "nota confronto-formato" }, geometria);
     crea("button", { type: "button", classe: "formato", testo: "Proporzioni del formato immagini" }, geometria)
       .addEventListener("click", () => proporzioniDelFormato(zona));
@@ -662,9 +676,7 @@ function caricaLayout(layout) {
   document.getElementById("nome").value = layout.nome;
   document.getElementById("sfondo").value = layout.sfondo;
   document.getElementById("predefinito").checked = layout.predefinito;
-  const [fl, fa] = FORMATO_PREDEFINITO[layout.orientamento];
-  document.getElementById("formato_larghezza").value = layout.formato_larghezza ?? fl;
-  document.getElementById("formato_altezza").value = layout.formato_altezza ?? fa;
+  stato.formato = { formato_larghezza: layout.formato_larghezza, formato_altezza: layout.formato_altezza };
   document.getElementById("orientamento").textContent =
     layout.orientamento === "verticale" ? "Verticale · totem 1080×1920" : "Orizzontale · monitor 1920×1080";
   adattaPalco();
@@ -703,8 +715,8 @@ async function salva() {
     nome: document.getElementById("nome").value.trim() || stato.layout.nome,
     sfondo: document.getElementById("sfondo").value,
     predefinito: document.getElementById("predefinito").checked,
-    formato_larghezza: parseInt(document.getElementById("formato_larghezza").value, 10) || null,
-    formato_altezza: parseInt(document.getElementById("formato_altezza").value, 10) || null,
+    ...(stato.formato.formato_larghezza > 0 && stato.formato.formato_altezza > 0
+      ? stato.formato : { formato_larghezza: null, formato_altezza: null }),
     zone: inviate.map(({ tipo, nome, x, y, larghezza, altezza, livello, configurazione }) => ({
       tipo, nome, x, y, larghezza, altezza, livello, configurazione,
     })),
@@ -732,14 +744,10 @@ async function avviaEditor(id) {
     b.style.borderLeftColor = info.colore;
     b.addEventListener("click", () => aggiungi(tipo));
   }
-  for (const id of ["nome", "sfondo", "predefinito", "formato_larghezza", "formato_altezza"]) {
+  for (const id of ["nome", "sfondo", "predefinito"]) {
     document.getElementById(id).addEventListener("input", () => {
       segnaModificato();
       if (id === "sfondo") palco.style.background = document.getElementById("sfondo").value;
-      if (id.startsWith("formato")) {
-        const zona = stato.zone.find((z) => z._chiave === stato.selezionata);
-        if (zona) aggiornaGeometria(zona);
-      }
     });
   }
   document.getElementById("salva").addEventListener("click", salva);
