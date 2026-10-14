@@ -36,9 +36,9 @@ class Cliente(models.Model):
 
 
 class Abilitazioni(ModelloCliente):
-    """Cosa l'Administrator Assoluto concede al cliente.
+    """Cosa il SystemAdministrator concede al cliente.
 
-    L'AdminCliente la legge ma non la modifica: amministra il proprio parco
+    L'Administrator la legge ma non la modifica: amministra il proprio parco
     dentro questi limiti.
     """
 
@@ -46,13 +46,13 @@ class Abilitazioni(ModelloCliente):
     max_utenti = models.PositiveIntegerField(default=5)
     spazio_mb = models.PositiveIntegerField(default=10_240)
     admin_gestisce_utenti = models.BooleanField(
-        default=True, help_text="L'AdminCliente può creare e modificare gli utenti del cliente."
+        default=True, help_text="L'Administrator può creare e modificare gli utenti del cliente."
     )
     admin_gestisce_dispositivi = models.BooleanField(
-        default=True, help_text="L'AdminCliente può abbinare, rinominare e rimuovere monitor."
+        default=True, help_text="L'Administrator può abbinare, rinominare e rimuovere monitor."
     )
     admin_gestisce_layout = models.BooleanField(
-        default=True, help_text="L'AdminCliente può creare e modificare i layout grafici."
+        default=True, help_text="L'Administrator può creare e modificare i layout grafici."
     )
 
     class Meta:

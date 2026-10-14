@@ -46,7 +46,7 @@ from teleassistenza.api import SessioniViewSet
 from utenti.api import IoView, UtentiClienteViewSet, UtentiPiattaformaViewSet
 
 router = DefaultRouter()
-# Piattaforma: solo Administrator Assoluto (e tecnici, in lettura, per l'elenco clienti).
+# Piattaforma: solo SystemAdministrator (e tecnici, in lettura, per l'elenco clienti).
 router.register("piattaforma/clienti", ClientiViewSet, basename="clienti")
 router.register("piattaforma/utenti", UtentiPiattaformaViewSet, basename="utenti-piattaforma")
 router.register("piattaforma/audit", AuditPiattaformaViewSet, basename="audit-piattaforma")

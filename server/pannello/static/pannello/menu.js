@@ -42,7 +42,7 @@ export const VOCI = [
   { chiave: "email", gruppo: "Impostazioni", titolo: "Email (server di posta)", visibile: gestione,
     aiuto: "Il server di posta dell'azienda da cui partono allarmi e rapporti: ogni azienda usa il suo dominio e la sua casella." },
   { chiave: "aspetto", gruppo: "Impostazioni", titolo: "Aspetto interfaccia", visibile: () => true, serveCliente: false,
-    aiuto: "Tema chiaro, scuro o automatico delle pagine. L'Administrator Assoluto qui sceglie anche nome e logo della piattaforma." },
+    aiuto: "Tema chiaro, scuro o automatico delle pagine. Il SystemAdministrator qui sceglie anche nome e logo della piattaforma." },
 ];
 
 function conCliente(url, cliente) {

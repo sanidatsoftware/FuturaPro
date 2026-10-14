@@ -171,14 +171,14 @@ async function mostra(chiave) {
   }
 }
 
-// --- Clienti (solo Administrator Assoluto) ----------------------------------------------
+// --- Clienti (solo SystemAdministrator) ----------------------------------------------
 
 async function schedaClienti() {
   const nuovo = sezione("Nuovo cliente");
   const nome = campo("Nome", crea("input", { required: true }), nuovo);
   const ragione = campo("Ragione sociale", crea("input"), nuovo);
   const piva = campo("Partita IVA", crea("input"), nuovo);
-  crea("h3", { testo: "Primo AdminCliente" }, nuovo);
+  crea("h3", { testo: "Primo Administrator" }, nuovo);
   const utente = campo("Nome utente", crea("input"), nuovo);
   const password = campo("Password (almeno 10 caratteri)", crea("input", { type: "password", autocomplete: "new-password" }), nuovo);
   crea("button", {
@@ -222,7 +222,7 @@ async function abilitazioni(cliente, cella) {
       [["max_monitor", "Monitor max"], ["max_utenti", "Utenti max"], ["spazio_mb", "Spazio (MB)"]].map(([k, t]) => [k, campo(t, crea("input", { type: "number", value: a[k] }), box)]),
     );
     const flag = Object.fromEntries(
-      [["admin_gestisce_utenti", "L'AdminCliente gestisce gli utenti"], ["admin_gestisce_dispositivi", "…i monitor"], ["admin_gestisce_layout", "…i layout"]]
+      [["admin_gestisce_utenti", "L'Administrator gestisce gli utenti"], ["admin_gestisce_dispositivi", "…i monitor"], ["admin_gestisce_layout", "…i layout"]]
         .map(([k, t]) => {
           const l = crea("label", { classe: "spunta" }, box);
           const c = crea("input", { type: "checkbox", checked: a[k] }, l);
@@ -886,7 +886,7 @@ async function schedaUtenti() {
   const riga = crea("div", { classe: "riga" }, nuovo);
   const nome = campo("Nome utente", crea("input", { autocomplete: "off" }), riga);
   const password = campo("Password (almeno 10 caratteri)", crea("input", { type: "password", autocomplete: "new-password" }), riga);
-  const ruolo = campo("Ruolo", scelta([["user_cliente", "UserCliente (contenuti e banco)"], ["admin_cliente", "AdminCliente"]]), riga);
+  const ruolo = campo("Ruolo", scelta([["user_cliente", "UserCliente (contenuti e banco)"], ["admin_cliente", "Administrator"]]), riga);
   crea("span", { classe: "etichetta", testo: "Limitato alle sedi (nessuna = tutte)" }, nuovo);
   const sediScelte = spunte(sedi.map((s) => [s.id, s.nome]), [], nuovo);
   crea("button", {
@@ -899,7 +899,7 @@ async function schedaUtenti() {
   for (const u of utenti) {
     const r = crea("tr", {}, corpo);
     crea("td", { testo: u.username }, r);
-    crea("td", { testo: u.ruolo === "admin_cliente" ? "AdminCliente" : "UserCliente" }, r);
+    crea("td", { testo: u.ruolo === "admin_cliente" ? "Administrator" : "UserCliente" }, r);
     const attivo = crea("input", { type: "checkbox", checked: u.is_active, disabled: u.id === stato.io.id }, crea("td", {}, r));
     attivo.addEventListener("change", () => prova(() => api("PATCH", `/api/utenti/${u.id}/`, { is_active: attivo.checked }), "Salvato."));
     const azioni = crea("td", { classe: "azioni" }, r);
@@ -937,7 +937,7 @@ function scegliCliente(id, scheda) {
 
 async function avvia() {
   stato.io = await api("GET", "/api/io/");
-  const ruoli = { admin_assoluto: "Administrator Assoluto", tecnico: "Tecnico", admin_cliente: "AdminCliente", user_cliente: "UserCliente" };
+  const ruoli = { admin_assoluto: "SystemAdministrator", tecnico: "Tecnico", admin_cliente: "Administrator", user_cliente: "UserCliente" };
   document.getElementById("utente").textContent = `${stato.io.username} · ${ruoli[stato.io.ruolo]}`;
   if (stato.io.di_piattaforma) {
     document.getElementById("scelta-cliente").hidden = false;

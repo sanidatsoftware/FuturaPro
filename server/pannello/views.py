@@ -88,7 +88,7 @@ class AspettoSerializer(serializers.ModelSerializer):
 
 
 class AspettoView(VistaConContesto, RetrieveUpdateAPIView):
-    """Nome e logo della piattaforma: li cambia solo l'Administrator Assoluto."""
+    """Nome e logo della piattaforma: li cambia solo il SystemAdministrator."""
 
     ambito = "piattaforma"
     ruoli_lettura = TUTTI

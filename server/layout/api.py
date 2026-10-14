@@ -105,7 +105,7 @@ class DaModelloSerializer(serializers.Serializer):
 
 
 class LayoutViewSet(ViewSetCliente):
-    """I layout del cliente. L'AdminCliente li gestisce se l'Administrator Assoluto lo consente."""
+    """I layout del cliente. L'Administrator li gestisce se il SystemAdministrator lo consente."""
 
     ruoli_scrittura = GESTIONE
     serializer_class = LayoutSerializer

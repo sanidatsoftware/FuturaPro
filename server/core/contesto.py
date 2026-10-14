@@ -28,7 +28,7 @@ from django.db import connection, transaction
 class Contesto:
     # Il cliente su cui si opera; None solo nel contesto di piattaforma.
     cliente_id: UUID | None
-    # True solo per le operazioni dell'Administrator Assoluto che riguardano
+    # True solo per le operazioni del SystemAdministrator che riguardano
     # tutta la piattaforma (anagrafica clienti, utenti di piattaforma).
     piattaforma: bool = False
 

@@ -87,7 +87,7 @@ class IoView(APIView):
 
 
 class UtentiClienteViewSet(ViewSetCliente):
-    """Gli utenti di un cliente. L'AdminCliente li gestisce solo se l'Administrator Assoluto lo consente."""
+    """Gli utenti di un cliente. L'Administrator li gestisce solo se il SystemAdministrator lo consente."""
 
     ruoli_lettura = GESTIONE
     ruoli_scrittura = GESTIONE
@@ -123,7 +123,7 @@ class UtentiClienteViewSet(ViewSetCliente):
 
 
 class UtentiPiattaformaViewSet(ViewSetCliente):
-    """Administrator Assoluti e tecnici di teleassistenza: li designa solo l'Administrator Assoluto."""
+    """SystemAdministrator e tecnici di teleassistenza: li designa solo il SystemAdministrator."""
 
     ambito = "piattaforma"
     ruoli_lettura = SOLO_ASSOLUTO

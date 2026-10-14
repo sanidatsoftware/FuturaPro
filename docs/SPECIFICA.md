@@ -44,22 +44,22 @@ teleassistenza.
 
 | Ruolo | Livello | Può |
 |---|---|---|
-| **Administrator Assoluto** | Piattaforma (Sanidat) | Tutto. Sceglie l'azienda dal selettore e opera nel suo contesto; crea clienti, AdminCliente, tecnici; decide le abilitazioni di ogni cliente. |
-| **Tecnico Teleassistenza** | Piattaforma | Designato dall'Administrator Assoluto. Apre sessioni remote sui player di **tutti** i clienti; legge l'elenco clienti e i monitor. Non gestisce contenuti né configurazioni. |
-| **AdminCliente** | Un cliente | Amministra il proprio parco **entro le abilitazioni concesse**: sedi, gruppi, monitor, contenuti, utenti del cliente. Legge le abilitazioni e il registro di audit e teleassistenza del cliente. Non avvia la teleassistenza. |
+| **SystemAdministrator** | Piattaforma (Sanidat) | Tutto. Sceglie l'azienda dal selettore e opera nel suo contesto; crea clienti, Administrator, tecnici; decide le abilitazioni di ogni cliente. |
+| **Tecnico Teleassistenza** | Piattaforma | Designato dal SystemAdministrator. Apre sessioni remote sui player di **tutti** i clienti; legge l'elenco clienti e i monitor. Non gestisce contenuti né configurazioni. |
+| **Administrator** | Un cliente | Amministra il proprio parco **entro le abilitazioni concesse**: sedi, gruppi, monitor, contenuti, utenti del cliente. Legge le abilitazioni e il registro di audit e teleassistenza del cliente. Non avvia la teleassistenza. |
 | **UserCliente** | Un cliente | Gestisce contenuti, playlist e programmazione. Facoltativamente limitato a certe sedi: allora vede solo quelle e i loro monitor. |
 
-**Abilitazioni** (per cliente, le imposta solo l'Administrator Assoluto): numero massimo di
-monitor e di utenti, spazio disponibile, se l'AdminCliente può gestire gli utenti, se può
+**Abilitazioni** (per cliente, le imposta solo il SystemAdministrator): numero massimo di
+monitor e di utenti, spazio disponibile, se l'Administrator può gestire gli utenti, se può
 abbinare/modificare/rimuovere i monitor. Si estenderanno con le funzioni (widget, video
 wall, …) man mano che arrivano.
 
 **Registro.** Ogni modifica finisce nel registro di audit del cliente, comprese quelle fatte
 dalla piattaforma per suo conto (marcate `per_conto_piattaforma`). Ogni sessione di
-teleassistenza è visibile all'AdminCliente: chi, quando, su quale monitor, perché.
+teleassistenza è visibile all'Administrator: chi, quando, su quale monitor, perché.
 
-Nelle installazioni presso il cliente l'Administrator Assoluto resta Sanidat; il cliente ha
-il proprio AdminCliente.
+Nelle installazioni presso il cliente il SystemAdministrator resta Sanidat; il cliente ha
+il proprio Administrator.
 
 ## 4. Isolamento tra clienti
 
@@ -266,7 +266,7 @@ scheda «Aspetto interfaccia» (`PATCH /api/io/`); vale per pannello, editor e p
 
 **Aspetto della piattaforma.** Nome dell'applicazione, frase, colore e logo (PNG, JPEG, GIF o
 WebP; niente SVG) della pagina di accesso `/accesso/` e del pannello. Li cambia solo
-l'Administrator Assoluto, nella scheda «Aspetto interfaccia» (`/api/piattaforma/aspetto/`).
+il SystemAdministrator, nella scheda «Aspetto interfaccia» (`/api/piattaforma/aspetto/`).
 
 ### Schermi: accensione, stato e allarmi
 
@@ -330,7 +330,7 @@ e li tiene per l'uso senza rete.
 
 ## 6. Layout grafici
 
-Ogni cliente ha i propri layout; l'AdminCliente li gestisce se l'Administrator Assoluto glielo
+Ogni cliente ha i propri layout; l'Administrator li gestisce se il SystemAdministrator glielo
 concede (abilitazione `admin_gestisce_layout`).
 
 **Schermo.** Il layout ha un orientamento: orizzontale (palco 1920×1080) o verticale per i totem
@@ -371,7 +371,7 @@ Per la località del meteo il pannello cerca la città per nome (`/api/meteo/loc
 qualunque sia il numero di monitor, e i player non devono raggiungere internet. Meteo da
 Open-Meteo (senza chiave, aggiornato ogni 15 minuti); notizie dai feed indicati, letti con
 `defusedxml`. Se una fonte non risponde resta l'ultimo dato buono (fino a 48 ore). I feed non
-possono puntare a indirizzi non pubblici, nemmeno attraverso un redirect: un AdminCliente non può
+possono puntare a indirizzi non pubblici, nemmeno attraverso un redirect: un Administrator non può
 usarli per sondare la rete del server.
 
 ## 7. Eliminacode
@@ -512,7 +512,7 @@ stessi risultati dei test Python.
    protetto del sistema (Android Keystore / Windows DPAPI-TPM).
 2. `POST /api/player/abbinamento/` con token e piattaforma → riceve un codice di 6 cifre valido
    15 minuti e lo mostra a schermo (anche come QR). Il server conserva solo l'impronta SHA-256.
-3. L'AdminCliente (o l'Administrator Assoluto) inserisce il codice nel pannello, sceglie nome e
+3. L'Administrator (o il SystemAdministrator) inserisce il codice nel pannello, sceglie nome e
    sede: `POST /api/monitor/abbina/`.
 4. Il player interroga `GET /api/player/stato/` con `Authorization: Device <token>` e scopre di
    essere abbinato.
@@ -539,8 +539,8 @@ collegati.
 
 ## 9. Teleassistenza
 
-**Chi.** Solo Administrator Assoluto e Tecnici Teleassistenza, su tutti i clienti. Accesso al
-pannello con 2FA obbligatoria (WebAuthn, in alternativa TOTP). L'AdminCliente vede il registro,
+**Chi.** Solo SystemAdministrator e Tecnici Teleassistenza, su tutti i clienti. Accesso al
+pannello con 2FA obbligatoria (WebAuthn, in alternativa TOTP). L'Administrator vede il registro,
 non avvia sessioni. Già implementati: permessi, registro delle sessioni, audit.
 
 **Come** (da fare):
@@ -592,28 +592,28 @@ piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
 | Metodo e percorso | Chi |
 |---|---|
 | `GET /api/io/` | tutti gli autenticati |
-| `GET/POST/PATCH /api/piattaforma/clienti/` | lettura: Assoluto, Tecnico — scrittura: Assoluto |
-| `GET/POST/PATCH/DELETE /api/piattaforma/utenti/` | Assoluto |
-| `GET /api/piattaforma/audit/` | Assoluto |
-| `GET/PATCH /api/abilitazioni/` | lettura: Assoluto, AdminCliente — scrittura: Assoluto |
-| `/api/sedi/`, `/api/gruppi/` | lettura: tutti — scrittura: Assoluto, AdminCliente |
-| `GET/PATCH/DELETE /api/monitor/`, `POST /api/monitor/abbina/` | lettura: tutti — scrittura: Assoluto, AdminCliente (se abilitato) |
-| `/api/utenti/` | Assoluto, AdminCliente (se abilitato) |
-| `GET /api/audit/` | Assoluto, AdminCliente |
-| `GET /api/teleassistenza/sessioni/` | Assoluto, Tecnico, AdminCliente |
-| `POST /api/teleassistenza/sessioni/`, `POST …/{id}/chiudi/` | Assoluto, Tecnico |
-| `/api/contenuti/` (upload multipart), `GET /api/contenuti/{id}/file/` | lettura: tutti — scrittura: Assoluto, AdminCliente, UserCliente |
-| `/api/playlist/`, `/api/pubblicazioni/` | lettura: tutti — scrittura: Assoluto, AdminCliente, UserCliente |
-| `POST /api/pubblica/` | Assoluto, AdminCliente, UserCliente |
+| `GET/POST/PATCH /api/piattaforma/clienti/` | lettura: SystemAdministrator, Tecnico — scrittura: SystemAdministrator |
+| `GET/POST/PATCH/DELETE /api/piattaforma/utenti/` | SystemAdministrator |
+| `GET /api/piattaforma/audit/` | SystemAdministrator |
+| `GET/PATCH /api/abilitazioni/` | lettura: SystemAdministrator, Administrator — scrittura: SystemAdministrator |
+| `/api/sedi/`, `/api/gruppi/` | lettura: tutti — scrittura: SystemAdministrator, Administrator |
+| `GET/PATCH/DELETE /api/monitor/`, `POST /api/monitor/abbina/` | lettura: tutti — scrittura: SystemAdministrator, Administrator (se abilitato) |
+| `/api/utenti/` | SystemAdministrator, Administrator (se abilitato) |
+| `GET /api/audit/` | SystemAdministrator, Administrator |
+| `GET /api/teleassistenza/sessioni/` | SystemAdministrator, Tecnico, Administrator |
+| `POST /api/teleassistenza/sessioni/`, `POST …/{id}/chiudi/` | SystemAdministrator, Tecnico |
+| `/api/contenuti/` (upload multipart), `GET /api/contenuti/{id}/file/` | lettura: tutti — scrittura: Assoluto, Administrator, UserCliente |
+| `/api/playlist/`, `/api/pubblicazioni/` | lettura: tutti — scrittura: Assoluto, Administrator, UserCliente |
+| `POST /api/pubblica/` | Assoluto, Administrator, UserCliente |
 | `GET /api/anteprima/{monitor}/?quando=` | tutti |
-| `/api/layout/`, `POST /api/layout/da-modello/`, `GET /api/layout/modelli/` | lettura: tutti — scrittura: Assoluto, AdminCliente (se abilitato) |
+| `/api/layout/`, `POST /api/layout/da-modello/`, `GET /api/layout/modelli/` | lettura: tutti — scrittura: Assoluto, Administrator (se abilitato) |
 | `GET /api/zone/{id}/dati/`, `GET /api/anteprima/{monitor}/manifest/` | tutti (anteprima) |
-| `GET /api/meteo/localita/?nome=` | Assoluto, AdminCliente |
+| `GET /api/meteo/localita/?nome=` | Assoluto, Administrator |
 | `POST /api/player/abbinamento/`, `GET /api/player/stato/`, `POST /api/player/heartbeat/` | player |
 | `GET /api/player/zone/{id}/dati/`, `POST /api/player/zone/{id}/emetti/` | player |
-| `/api/reparti/` | lettura: tutti — scrittura: Assoluto, AdminCliente |
-| `POST /api/reparti/{id}/avanti/` (anche `indietro`, `ripeti`, `imposta`, `azzera`, `emetti`) | Assoluto, AdminCliente, UserCliente |
-| `POST/DELETE /api/reparti/{id}/chiave/` | Assoluto, AdminCliente |
+| `/api/reparti/` | lettura: tutti — scrittura: Assoluto, Administrator |
+| `POST /api/reparti/{id}/avanti/` (anche `indietro`, `ripeti`, `imposta`, `azzera`, `emetti`) | Assoluto, Administrator, UserCliente |
+| `POST/DELETE /api/reparti/{id}/chiave/` | Assoluto, Administrator |
 | `GET /api/eliminacode/pulsante/`, `POST /api/eliminacode/pulsante/{avanti,indietro,ripeti}/` | chiave del reparto |
 | `GET /api/player/palinsesto/`, `GET /api/player/file/{id}/` | player |
 

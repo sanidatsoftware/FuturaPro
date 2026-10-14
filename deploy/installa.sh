@@ -189,7 +189,7 @@ echo
 
 # --- 6. Primo amministratore -----------------------------------------------------------
 if [ "$(docker compose exec -T app python manage.py shell -c 'from utenti.models import Utente; print(Utente.objects.filter(ruolo="admin_assoluto").count())' < /dev/null | tail -1)" = "0" ]; then
-    blu "Crea l'Administrator Assoluto (l'utente con cui entri nel pannello)"
+    blu "Crea il SystemAdministrator (l'utente con cui entri nel pannello)"
     amministratore=${FP_ADMIN:-}
     [ -n "$amministratore" ] || read -rp "Nome utente [admin]: " amministratore
     if [ -n "${FP_ADMIN_PASSWORD:-}" ]; then

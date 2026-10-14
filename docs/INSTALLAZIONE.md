@@ -67,7 +67,7 @@ Lo script installa Docker (se manca) e poi chiede:
 | Indirizzo | l'IP della VM (proposto) o il nome di dominio |
 | Email per Let's Encrypt | solo con un dominio: un indirizzo a cui arrivano gli avvisi sul certificato |
 | Banco in HTTP per la rete locale | **S** se usi le bilance DIGI (vedi sezione 4) |
-| Administrator Assoluto | nome utente e password (almeno 10 caratteri) con cui entri nel pannello |
+| SystemAdministrator | nome utente e password (almeno 10 caratteri) con cui entri nel pannello |
 | Cliente dimostrativo | **s** per avere subito reparti, layout e slide di prova |
 
 La prima volta ci vogliono alcuni minuti. Alla fine lo script mostra:
@@ -76,12 +76,12 @@ La prima volta ci vogliono alcuni minuti. Alla fine lo script mostra:
 - il **comando per installare i PC Windows**;
 - con il certificato interno, la sua **impronta**: **annotala**, la confronterai su ogni PC Windows.
 
-Apri `https://SERVER/pannello/` ed entra con l'Administrator Assoluto. Con il certificato interno il
+Apri `https://SERVER/pannello/` ed entra con il SystemAdministrator. Con il certificato interno il
 browser del tuo PC mostrerà un avviso finché non installi il certificato anche lì (vedi sotto).
 
 ### Primo giro nel pannello
 
-1. **Clienti**: crea il cliente (es. «Nome azienda») e il suo primo AdminCliente.
+1. **Clienti**: crea il cliente (es. «Nome azienda») e il suo primo Administrator.
 2. In alto scegli il cliente, poi **Sedi e gruppi**: crea la sede (es. «Catania via Etnea») e un
    gruppo «Tutti».
 3. **Reparti ed eliminacode**: crea Salumeria, Macelleria, Gastronomia… con i loro colori.

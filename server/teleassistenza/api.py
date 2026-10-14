@@ -30,7 +30,7 @@ class SessioniViewSet(
 ):
     """Sessioni remote sui player del cliente selezionato.
 
-    Le aprono e le chiudono solo l'Administrator Assoluto e i tecnici; l'AdminCliente
+    Le aprono e le chiudono solo il SystemAdministrator e i tecnici; l'Administrator
     vede il registro (chi, quando, su quale monitor e perché) ma non può avviarle.
     """
 

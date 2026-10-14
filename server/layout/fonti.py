@@ -5,7 +5,7 @@ mostrano la stessa località o lo stesso feed, e i player non devono poter
 raggiungere internet. Se la fonte non risponde si continua a mostrare l'ultimo
 dato buono.
 
-Gli indirizzi dei feed li scrive l'AdminCliente: prima di collegarsi si
+Gli indirizzi dei feed li scrive l'Administrator: prima di collegarsi si
 controlla che non puntino alla rete interna del server (anche dopo i
 redirect), altrimenti un feed potrebbe servire a sondarla.
 """

@@ -12,7 +12,7 @@ class Stato(models.TextChoices):
 class SessioneTeleassistenza(ModelloCliente):
     """Una sessione remota su un player.
 
-    La aprono solo l'Administrator Assoluto e i tecnici che designa; l'AdminCliente
+    La aprono solo il SystemAdministrator e i tecnici che designa; l'Administrator
     la vede nel registro ma non può avviarla. Il collegamento vero (segnalazione
     WebRTC, relay TURN, certificati dei dispositivi) arriva nella fase dedicata:
     qui ci sono i permessi e il registro, che non cambieranno.

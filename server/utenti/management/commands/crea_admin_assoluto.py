@@ -8,7 +8,7 @@ from utenti.models import Ruolo, Utente
 
 
 class Command(BaseCommand):
-    help = "Crea un Administrator Assoluto (il primo serve per entrare nel pannello)."
+    help = "Crea un SystemAdministrator (il primo serve per entrare nel pannello)."
 
     def add_arguments(self, parser):
         parser.add_argument("username")
@@ -27,4 +27,4 @@ class Command(BaseCommand):
         utente = Utente(username=username, email=email, ruolo=Ruolo.ADMIN_ASSOLUTO)
         utente.set_password(password)
         utente.save()
-        self.stdout.write(self.style.SUCCESS(f"Administrator Assoluto {username} creato."))
+        self.stdout.write(self.style.SUCCESS(f"SystemAdministrator {username} creato."))

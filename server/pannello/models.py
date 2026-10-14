@@ -6,7 +6,7 @@ from core.models import ModelloCliente
 class Aspetto(models.Model):
     """Nome e logo della piattaforma: pagina di accesso, pannello, titoli delle pagine.
 
-    Uno solo per installazione, di nessun cliente: lo cambia l'Administrator Assoluto.
+    Uno solo per installazione, di nessun cliente: lo cambia il SystemAdministrator.
     """
 
     nome_app = models.CharField(max_length=60, default="FuturaPro")

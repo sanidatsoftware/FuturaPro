@@ -6,9 +6,9 @@ from django.db.models import Q
 
 
 class Ruolo(models.TextChoices):
-    ADMIN_ASSOLUTO = "admin_assoluto", "Administrator Assoluto"
+    ADMIN_ASSOLUTO = "admin_assoluto", "SystemAdministrator"
     TECNICO = "tecnico", "Tecnico Teleassistenza"
-    ADMIN_CLIENTE = "admin_cliente", "AdminCliente"
+    ADMIN_CLIENTE = "admin_cliente", "Administrator"
     USER_CLIENTE = "user_cliente", "UserCliente"
 
 

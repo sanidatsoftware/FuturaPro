@@ -2,7 +2,7 @@
 
     python manage.py dati_dimostrativi --password "…"
 
-Crea il cliente «Demo», l'AdminCliente «demo_admin», la sede «Sede principale»
+Crea il cliente «Demo», l'Administrator «demo_admin», la sede «Sede principale»
 con tre reparti, il gruppo «Tutti», i layout da supermercato (predefiniti:
 orizzontale con ora, meteo e reparti; totem eliminacode), alcune slide e una
 campagna che le manda in onda sul gruppo. Basta abbinare uno schermo inserendolo nel

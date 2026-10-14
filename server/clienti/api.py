@@ -45,11 +45,11 @@ class ClientiViewSet(
 class AbilitazioniSerializer(serializers.ModelSerializer):
     class Meta:
         model = Abilitazioni
-        fields = ["max_monitor", "max_utenti", "spazio_mb", "admin_gestisce_utenti", "admin_gestisce_dispositivi"]
+        fields = ["max_monitor", "max_utenti", "spazio_mb", "admin_gestisce_utenti", "admin_gestisce_dispositivi", "admin_gestisce_layout"]
 
 
 class AbilitazioniView(VistaConContesto, generics.RetrieveUpdateAPIView):
-    """Cosa è concesso al cliente: l'AdminCliente lo legge, solo l'Administrator Assoluto lo cambia."""
+    """Cosa è concesso al cliente: l'Administrator lo legge, solo il SystemAdministrator lo cambia."""
 
     ruoli_lettura = GESTIONE
     ruoli_scrittura = SOLO_ASSOLUTO
