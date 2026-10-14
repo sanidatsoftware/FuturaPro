@@ -123,7 +123,8 @@ const data = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("it-
 const periodo = (c) => (c.data_inizio || c.data_fine ? `${data(c.data_inizio) || "…"} → ${data(c.data_fine) || "…"}` : "Senza date");
 const peso = (byte) => (byte > 1048576 ? `${(byte / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(byte / 1024))} KB`);
 const perId = (elenco) => new Map(elenco.map((v) => [v.id, v]));
-const orientamentoDi = (c) => c.orientamento || "altro";
+const orientamentoDi = (c) => (c.tipo === "diretta" ? "diretta" : c.orientamento || "altro");
+const minuti = (secondi) => Math.max(1, Math.round((secondi || 300) / 60));
 const promozioni = () => S.campagne.flatMap((c) => c.promozioni.map((p) => ({ ...p, campagnaDati: c })));
 
 function confermaAbbandono() {
@@ -214,6 +215,15 @@ function anteprima(contenuto, classe = "") {
     const v = crea("video", { src: `${conCliente(`/api/contenuti/${contenuto.id}/file/`)}#t=0.5`, muted: true, preload: "metadata", classe });
     v.playsInline = true;
     return v;
+  }
+  if (contenuto.tipo === "diretta") {
+    const tile = crea("div", { classe: `web diretta ${classe}` });
+    if (contenuto.logo_url) {
+      const logo = crea("img", { src: contenuto.logo_url, alt: "", loading: "lazy", referrerPolicy: "no-referrer", draggable: false }, tile);
+      logo.addEventListener("error", () => logo.replaceWith(crea("span", { testo: "📡" })));
+    } else crea("span", { testo: "📡" }, tile);
+    crea("span", { classe: "live", testo: "LIVE" }, tile);
+    return tile;
   }
   const web = crea("div", { classe: `web ${classe}` });
   crea("span", { testo: "🌐" }, web);
@@ -366,6 +376,7 @@ function disegnaGallerie(box, visibili, uso) {
   const gruppi = [
     ["verticale", "Verticali", "per i totem", "▯"],
     ["orizzontale", "Orizzontali", "per i monitor", "▭"],
+    ["diretta", "Dirette", "streaming in tempo reale: vanno ai monitor, ognuno con la sua connessione", "📡"],
     ["altro", "Altri contenuti", "pagine web e video senza misure: vanno a tutti", "◇"],
   ];
   for (const [chiave, titolo, sottotitolo, simbolo] of gruppi) {
@@ -414,7 +425,11 @@ function disegnaGallerie(box, visibili, uso) {
       }
       const didascalia = crea("div", { classe: "didascalia" }, scheda);
       crea("strong", { testo: c.nome }, didascalia);
-      crea("span", { testo: [c.larghezza && `${c.larghezza}×${c.altezza}`, c.tipo === "video" ? "video" : null, c.dimensione ? peso(c.dimensione) : null].filter(Boolean).join(" · ") }, didascalia);
+      crea("span", {
+        testo: c.tipo === "diretta"
+          ? `diretta · ${minuti(c.durata)} min come intermezzo${c.autorizzata_da ? ` · autorizzata da ${c.autorizzata_da}` : ""}`
+          : [c.larghezza && `${c.larghezza}×${c.altezza}`, c.tipo === "video" ? "video" : null, c.dimensione ? peso(c.dimensione) : null].filter(Boolean).join(" · "),
+      }, didascalia);
       const scegli = () => {
         S.selezione.has(c.id) ? S.selezione.delete(c.id) : S.selezione.add(c.id);
         scheda.classList.toggle("scelta", S.selezione.has(c.id));
@@ -648,7 +663,7 @@ function nuovaPromozioneVuota(campagna, valori = {}) {
   if (campagna.data_fine && fine > campagna.data_fine) fine = campagna.data_fine;
   return {
     nome: "", data_inizio: inizio, data_fine: fine,
-    ora_inizio: null, ora_fine: null, giorni: [], contenuti: [], stato: "bozza", ...valori,
+    ora_inizio: null, ora_fine: null, giorni: [], contenuti: [], durate: {}, stato: "bozza", ...valori,
   };
 }
 
@@ -693,6 +708,7 @@ function chiediNuovaPromozione(valori) {
 }
 
 function apriNuovaPromozione(valori) {
+  if (valori.contenuti && !confermaDirette(valori.contenuti)) return;
   S.promozione = nuovaPromozioneVuota(S.campagna, valori);
   S.modificata = true;
   S.selezione.clear();
@@ -738,7 +754,20 @@ function segnaModificata() {
   document.querySelector(".piede-campagna .primario")?.classList.add("pulsa");
 }
 
+// Prima di mettere in onda una diretta si ricorda che va autorizzata.
+function confermaDirette(ids) {
+  const contenuti = perId(S.contenuti);
+  const dirette = ids.map((id) => contenuti.get(id)).filter((c) => c?.tipo === "diretta");
+  if (!dirette.length) return true;
+  return confirm(
+    `Stai mettendo in onda ${dirette.length === 1 ? `la diretta «${dirette[0].nome}»` : `${dirette.length} dirette`}.\n\n`
+    + "Prima di trasmetterla in un locale aperto al pubblico verifica che sia autorizzata: canone RAI speciale, "
+    + "licenze SIAE/SCF, abbonamenti o permessi dell'editore.\n\nProcedere?",
+  );
+}
+
 function aggiungiAllaPromozione(ids) {
+  if (!confermaDirette(ids)) return;
   const presenti = new Set(S.promozione.contenuti);
   for (const id of ids) if (!presenti.has(id)) S.promozione.contenuti.push(id);
   segnaModificata();
@@ -1078,7 +1107,7 @@ function disegnaContenutiPromozione(box, p) {
     return;
   }
   const contenuti = perId(S.contenuti);
-  for (const [chiave, titolo] of [["verticale", "Totem"], ["orizzontale", "Monitor"], ["altro", "Tutti"]]) {
+  for (const [chiave, titolo] of [["verticale", "Totem"], ["orizzontale", "Monitor"], ["diretta", "Dirette (monitor)"], ["altro", "Tutti"]]) {
     const ids = p.contenuti.filter((id) => contenuti.has(id) && orientamentoDi(contenuti.get(id)) === chiave);
     if (!ids.length) continue;
     crea("div", { classe: "titolo-striscia", testo: `${titolo} · ${ids.length}` }, sezione);
@@ -1089,6 +1118,19 @@ function disegnaContenutiPromozione(box, p) {
       voce.appendChild(anteprima(x));
       crea("span", { classe: "posizione", testo: String(posizione + 1) }, voce);
       crea("button", { type: "button", classe: "togli", title: "Togli", testo: "✕", onclick: () => togliDallaPromozione(id) }, voce);
+      if (x.tipo === "diretta") {
+        // Quanto dura l'intermezzo: da solo nella promozione, la diretta resta per tutta la fascia.
+        p.durate ??= {};
+        const durata = crea("label", { classe: "durata-diretta", "data-aiuto": "Minuti di diretta a ogni giro, tra un'immagine e l'altra. Se la diretta è l'unica voce della promozione resta in onda di continuo." }, voce);
+        const input = crea("input", { type: "number", min: 1, max: 1440, value: minuti(p.durate[id] || x.durata) }, durata);
+        durata.append(" min");
+        input.addEventListener("click", (e) => e.stopPropagation());
+        input.addEventListener("change", () => {
+          const valore = Math.max(1, parseInt(input.value, 10) || 5);
+          p.durate[id] = valore * 60;
+          segnaModificata();
+        });
+      }
       voce.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/futurapro", id); voce.classList.add("trascinata"); });
       voce.addEventListener("dragend", () => voce.classList.remove("trascinata"));
       voce.addEventListener("dragover", (e) => { e.preventDefault(); voce.classList.add("bersaglio"); });
@@ -1160,6 +1202,8 @@ async function salvaPromozione() {
     const dati = {
       campagna: c.id, nome: p.nome.trim(), data_inizio: p.data_inizio, data_fine: p.data_fine,
       ora_inizio: p.ora_inizio || null, ora_fine: p.ora_fine || null, giorni: p.giorni, contenuti: p.contenuti,
+      // Solo per le voci ancora nella promozione.
+      durate: Object.fromEntries(Object.entries(p.durate || {}).filter(([id]) => p.contenuti.includes(id))),
     };
     const salvata = p.id ? await api("PATCH", `/api/promozioni/${p.id}/`, dati) : await api("POST", "/api/promozioni/", dati);
     S.promozione = structuredClone(salvata);
@@ -1377,7 +1421,7 @@ function apriDettaglio(campagna, p, ancora) {
   } else if (!immagini.length) {
     crea("p", { classe: "nota", testo: "Ancora nessuna immagine: aprila e aggiungile dalla libreria." }, scheda);
   } else {
-    for (const [chiave, titolo] of [["verticale", "Totem"], ["orizzontale", "Monitor"], ["altro", "Tutti"]]) {
+    for (const [chiave, titolo] of [["verticale", "Totem"], ["orizzontale", "Monitor"], ["diretta", "Dirette"], ["altro", "Tutti"]]) {
       const gruppo = immagini.filter((c) => orientamentoDi(c) === chiave);
       if (!gruppo.length) continue;
       crea("div", { classe: "titolo-striscia", testo: `${titolo} · ${gruppo.length}` }, scheda);
@@ -1531,6 +1575,112 @@ function mostraEsito(box, risposta) {
   }
 }
 
+// --- Dirette: lista M3U o indirizzo a mano -----------------------------------------------------
+
+function preparaDirette() {
+  const finestra = document.getElementById("dirette");
+  const elenco = document.getElementById("elenco-canali");
+  const conferma = document.getElementById("conferma-dirette");
+  const aggiungi = document.getElementById("aggiungi-dirette");
+  const scelti = new Map(); // url → canale
+  let canali = [];
+
+  const aggiorna = () => {
+    const manuale = document.getElementById("url-diretta").value.trim();
+    const quanti = scelti.size + (manuale ? 1 : 0);
+    aggiungi.disabled = !quanti || !conferma.checked;
+    aggiungi.textContent = quanti ? `Aggiungi ${quanti} ${quanti === 1 ? "canale" : "canali"} alla libreria` : "Aggiungi alla libreria";
+  };
+
+  const disegnaCanali = () => {
+    elenco.replaceChildren();
+    if (!canali.length) return;
+    const filtri = crea("div", { classe: "filtri-canali" }, elenco);
+    const cerca = crea("input", { type: "search", placeholder: `Cerca tra ${canali.length} canali…` }, filtri);
+    const gruppi = [...new Set(canali.map((c) => c.gruppo).filter(Boolean))].sort();
+    const gruppo = crea("select", {}, filtri);
+    crea("option", { value: "", testo: "Tutte le categorie" }, gruppo);
+    for (const g of gruppi) crea("option", { value: g, testo: g }, gruppo);
+    const lista = crea("div", { classe: "lista-canali" }, elenco);
+    const riempi = () => {
+      lista.replaceChildren();
+      const testo = cerca.value.trim().toLowerCase();
+      const visibili = canali.filter((c) => (!testo || c.nome.toLowerCase().includes(testo)) && (!gruppo.value || c.gruppo === gruppo.value));
+      for (const c of visibili.slice(0, 400)) {
+        const voce = crea("label", { classe: `canale${c.presente ? " presente" : ""}` }, lista);
+        crea("input", {
+          type: "checkbox", checked: scelti.has(c.url),
+          onchange: (e) => { e.target.checked ? scelti.set(c.url, c) : scelti.delete(c.url); aggiorna(); },
+        }, voce);
+        const logo = crea("span", { classe: "logo-canale" }, voce);
+        if (c.logo) {
+          const img = crea("img", { src: c.logo, alt: "", loading: "lazy", referrerPolicy: "no-referrer" }, logo);
+          img.addEventListener("error", () => img.remove());
+        }
+        const testi = crea("span", { classe: "testi-canale" }, voce);
+        crea("strong", { testo: c.nome }, testi);
+        crea("small", { testo: [c.gruppo, c.presente ? "già in libreria" : ""].filter(Boolean).join(" · ") }, testi);
+      }
+      if (visibili.length > 400) crea("p", { classe: "nota", testo: `Mostrati 400 canali su ${visibili.length}: usa la ricerca.` }, lista);
+    };
+    cerca.addEventListener("input", riempi);
+    gruppo.addEventListener("change", riempi);
+    riempi();
+  };
+
+  document.getElementById("apri-dirette").addEventListener("click", () => {
+    conferma.checked = false;
+    aggiorna();
+    finestra.showModal();
+  });
+  conferma.addEventListener("change", aggiorna);
+  document.getElementById("url-diretta").addEventListener("input", aggiorna);
+
+  const leggi = async (dati) => {
+    try {
+      const risposta = await api("POST", "/api/contenuti/m3u/", dati);
+      canali = risposta.canali;
+      scelti.clear();
+      disegnaCanali();
+      aggiorna();
+    } catch (errore) {
+      elenco.replaceChildren(crea("p", { classe: "errore", testo: errore.message }));
+    }
+  };
+  document.getElementById("leggi-m3u").addEventListener("click", () => {
+    const url = document.getElementById("url-m3u").value.trim();
+    if (!url) { document.getElementById("url-m3u").focus(); return; }
+    leggi({ url });
+  });
+  document.getElementById("file-m3u").addEventListener("change", (e) => {
+    if (!e.target.files[0]) return;
+    const dati = new FormData();
+    dati.append("file", e.target.files[0]);
+    leggi(dati);
+    e.target.value = "";
+  });
+
+  aggiungi.addEventListener("click", async () => {
+    const elencoScelti = [...scelti.values()].map((c) => ({ nome: c.nome, url: c.url, logo: c.logo }));
+    const manuale = document.getElementById("url-diretta").value.trim();
+    if (manuale) elencoScelti.push({ nome: document.getElementById("nome-diretta").value.trim() || manuale, url: manuale, logo: "" });
+    try {
+      const creati = await api("POST", "/api/contenuti/dirette/", { canali: elencoScelti, autorizzazione: conferma.checked });
+      finestra.close();
+      document.getElementById("url-diretta").value = "";
+      document.getElementById("nome-diretta").value = "";
+      S.libreria = "tutti";
+      await ricarica();
+      for (const c of creati) S.selezione.add(c.id);
+      disegnaLibreria();
+      disegnaSelezione();
+      avvisa(`${creati.length} dirette nella libreria e già selezionate: mettile in una promozione (da sole o tra le immagini).`, "ok");
+    } catch (errore) {
+      avvisa(errore.message);
+    }
+  });
+}
+
 // --- Avvio -------------------------------------------------------------------------------------
 
 async function sceltaCliente() {
@@ -1568,6 +1718,7 @@ async function avvia() {
   if (!(await sceltaCliente())) return;
   preparaCaricamento();
   preparaImportazione();
+  preparaDirette();
   document.getElementById("cerca").addEventListener("input", (e) => { S.cerca = e.target.value; disegnaLibreria(); });
   window.addEventListener("beforeunload", (e) => { if (S.modificata) e.preventDefault(); });
   try {

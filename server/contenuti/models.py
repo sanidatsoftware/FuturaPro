@@ -11,6 +11,9 @@ class Tipo(models.TextChoices):
     IMMAGINE = "immagine", "Immagine"
     VIDEO = "video", "Video"
     WEB = "web", "Pagina web"
+    # Un flusso in tempo reale (HLS .m3u8 o video via internet): lo scarica ogni player
+    # con la sua connessione, il server non lo tocca.
+    DIRETTA = "diretta", "Diretta (streaming)"
 
 
 def percorso_file(contenuto, nome_originale):
@@ -31,6 +34,11 @@ class Contenuto(ModelloCliente):
     # Vuota: le immagini restano DURATA_IMMAGINE secondi, i video vanno fino alla fine.
     durata = models.PositiveIntegerField(null=True, blank=True)
     caricato_da = models.CharField(max_length=150, blank=True)
+    # Dirette: il logo del canale (dalla lista M3U) e chi ha confermato che la
+    # riproduzione in pubblico è autorizzata (canone, licenze, abbonamenti).
+    logo_url = models.URLField(max_length=500, blank=True)
+    autorizzata_da = models.CharField(max_length=150, blank=True)
+    autorizzata_il = models.DateTimeField(null=True, blank=True)
     # Misure in pixel: le immagini le legge il server, i video le manda il pannello.
     larghezza = models.PositiveIntegerField(null=True, blank=True)
     altezza = models.PositiveIntegerField(null=True, blank=True)
@@ -161,6 +169,8 @@ class ContenutoPromozione(ModelloCliente):
     promozione = models.ForeignKey(Promozione, on_delete=models.CASCADE, related_name="voci")
     contenuto = models.ForeignKey(Contenuto, on_delete=models.CASCADE, related_name="+")
     ordine = models.PositiveIntegerField()
+    # Secondi in onda di questa voce (es. 5 minuti di diretta); vuota: quella della campagna.
+    durata = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         ordering = ["promozione", "ordine"]

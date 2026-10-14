@@ -55,11 +55,11 @@ class _RedirectControllati(HTTPRedirectHandler):
 _apri = build_opener(_RedirectControllati).open
 
 
-def scarica(url: str) -> bytes:
+def scarica(url: str, massimo: int = MASSIMO_BYTE) -> bytes:
     verifica_indirizzo(url)
     with _apri(Request(url, headers={"User-Agent": AGENTE}), timeout=TIMEOUT) as risposta:
-        dati = risposta.read(MASSIMO_BYTE + 1)
-    if len(dati) > MASSIMO_BYTE:
+        dati = risposta.read(massimo + 1)
+    if len(dati) > massimo:
         raise ValueError(f"{url}: risposta troppo grande")
     return dati
 

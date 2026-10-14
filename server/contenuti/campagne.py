@@ -14,15 +14,19 @@ from datetime import date, datetime, time
 
 from django.db.models import Q
 
-from .models import Campagna, Contenuto, ContenutoPromozione, Orientamento, Playlist, Promozione, Pubblicazione
+from .models import Campagna, Contenuto, ContenutoPromozione, Orientamento, Playlist, Promozione, Pubblicazione, Tipo
 
 ETICHETTE = {Orientamento.VERTICALE: "totem", Orientamento.ORIZZONTALE: "monitor", "": "tutti"}
 
 
-def salva_contenuti(promozione, contenuti):
+def salva_contenuti(promozione, contenuti, durate=None):
+    """Le voci della promozione in ordine; ``durate`` (id → secondi) per quelle con una durata propria."""
+    durate = durate or {}
     ContenutoPromozione.objects.filter(promozione=promozione).delete()
     ContenutoPromozione.objects.bulk_create(
-        ContenutoPromozione(cliente_id=promozione.cliente_id, promozione=promozione, contenuto=c, ordine=i)
+        ContenutoPromozione(
+            cliente_id=promozione.cliente_id, promozione=promozione, contenuto=c, ordine=i, durata=durate.get(str(c.id))
+        )
         for i, c in enumerate(contenuti)
     )
 
@@ -49,7 +53,9 @@ def sincronizza(promozione):
     from .api import salva_elementi
 
     campagna = promozione.campagna
-    contenuti = [v.contenuto for v in promozione.voci.select_related("contenuto").order_by("ordine")]
+    voci = list(promozione.voci.select_related("contenuto").order_by("ordine"))
+    contenuti = [v.contenuto for v in voci]
+    durate = {v.contenuto_id: v.durata for v in voci}
     gruppi = gruppi_per_orientamento(contenuti)
     # Senza destinatari la promozione è una bozza: nessuna pubblicazione.
     if not ha_destinatari(campagna):
@@ -77,7 +83,17 @@ def sincronizza(promozione):
         pubblicazione.insegne.set(campagna.insegne.all())
         pubblicazione.gruppi.set(campagna.gruppi.all())
         pubblicazione.monitor.set(campagna.monitor.all())
-        salva_elementi(pubblicazione.playlist, [{"contenuto": c, "durata": campagna.durata} for c in elenco])
+        salva_elementi(pubblicazione.playlist, [{"contenuto": c, "durata": durata_voce(c, durate.get(c.id), campagna)} for c in elenco])
+
+
+def durata_voce(contenuto, propria, campagna):
+    """Quanto resta in onda una voce: la sua durata, altrimenti quella del contenuto per le
+    dirette (es. 5 minuti), altrimenti i secondi per immagine della campagna."""
+    if propria:
+        return propria
+    if contenuto.tipo == Tipo.DIRETTA:
+        return contenuto.durata or 300
+    return campagna.durata
 
 
 def sincronizza_campagna(campagna):
@@ -139,7 +155,8 @@ def contenuti_scaduti(oggi: date):
         if configurazione.get("contenuto"):
             nei_layout.add(configurazione["contenuto"])
     return (
-        Contenuto.objects.filter(id__in=usati_in_promozioni)
+        # I canali in diretta non occupano spazio: restano in libreria per le prossime promozioni.
+        Contenuto.objects.filter(id__in=usati_in_promozioni).exclude(tipo=Tipo.DIRETTA)
         .exclude(id__in=ancora_validi)
         .exclude(id__in=in_playlist_manuali)
         .exclude(id__in=[str(i) for i in nei_layout])

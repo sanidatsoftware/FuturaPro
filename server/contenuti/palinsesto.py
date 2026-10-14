@@ -83,6 +83,8 @@ def _voce(contenuto) -> dict:
     voce = {"tipo": contenuto.tipo, "nome": contenuto.nome}
     if contenuto.tipo == Tipo.WEB:
         voce["url"] = contenuto.url
+    elif contenuto.tipo == Tipo.DIRETTA:
+        voce.update(url=contenuto.url, logo=contenuto.logo_url)
     else:
         voce.update(
             url=reverse("player-file", args=[contenuto.id]),

@@ -32,6 +32,7 @@
         </div>
         <div class="pulsanti">
           <label class="pulsante" data-aiuto="Scegli una o più immagini o video dal computer. Restano selezionati, pronti per una nuova promozione.">Scegli file<input type="file" id="scegli-file" multiple accept="image/*,video/mp4,video/webm,video/quicktime" hidden></label>
+          <button type="button" class="pulsante" id="apri-dirette" data-aiuto="Facoltativo: canali in diretta (streaming) da una lista M3U o da un indirizzo. Ogni schermo li riceve con la sua connessione a internet.">📡 Dirette</button>
           <label class="pulsante" data-aiuto="Scegli un'intera cartella (es. il volantino della settimana): tutte le sue immagini vengono caricate e diventano una promozione con il nome della cartella.">Scegli cartella<input type="file" id="scegli-cartella" webkitdirectory multiple hidden></label>
         </div>
         <div class="avanzamento" id="avanzamento" hidden></div>
@@ -59,6 +60,32 @@
     <input type="file" id="file-csv" accept=".csv,text/csv">
     <div id="esito-csv"></div>
     <div class="azioni"><button type="button" id="conferma-csv" class="primario" disabled>Importa</button></div>
+  </dialog>
+
+  <dialog id="dirette" class="finestra">
+    <form method="dialog" class="chiudi"><button aria-label="Chiudi">✕</button></form>
+    <h2>📡 Dirette in streaming</h2>
+    <p>Aggiungi alla libreria dei canali in diretta, da mettere in una promozione da soli (tutto il tempo) o come intermezzo di qualche minuto tra le immagini. Ogni monitor riceve lo streaming con la <strong>sua</strong> connessione a internet: non passa dal server né dalla sua sede. Senza internet, il monitor salta la diretta e continua con le immagini.</p>
+    <div class="avviso-legale">
+      <strong>⚠ Prima di mandare in onda una diretta in un locale aperto al pubblico</strong>
+      <p>«Gratis da vedere a casa» non vuol dire «libero da trasmettere in negozio». Di solito servono il canone RAI speciale per esercizi pubblici, le licenze SIAE/SCF per musica e programmi, e per alcuni canali l'abbonamento o il permesso dell'editore. Verifica con il tuo consulente: la responsabilità è di chi pubblica.</p>
+    </div>
+    <div class="schede-dirette">
+      <label class="campo largo">Indirizzo di una lista (.m3u o .m3u8) o di un canale (.m3u8)
+        <input id="url-m3u" type="url" placeholder="https://…/lista.m3u"></label>
+      <label class="pulsante">oppure scegli un file .m3u<input type="file" id="file-m3u" accept=".m3u,.m3u8,audio/x-mpegurl,application/vnd.apple.mpegurl" hidden></label>
+      <button type="button" id="leggi-m3u" class="primario">Leggi la lista</button>
+    </div>
+    <p class="nota">Una raccolta pubblica di canali che si trasmettono liberamente su internet è il progetto iptv-org (es. per l'Italia <code>https://iptv-org.github.io/iptv/countries/it.m3u</code>): gli indirizzi cambiano spesso, rileggi la lista quando un canale smette di funzionare.</p>
+    <details class="manuale-diretta"><summary>Oppure aggiungi un solo canale a mano</summary>
+      <div class="campi">
+        <label class="campo">Nome<input id="nome-diretta" placeholder="es. Canale aziendale"></label>
+        <label class="campo">Indirizzo (.m3u8 o video)<input id="url-diretta" type="url" placeholder="https://…/live.m3u8"></label>
+      </div>
+    </details>
+    <div id="elenco-canali"></div>
+    <label class="conferma-legale"><input type="checkbox" id="conferma-dirette"> Confermo che la riproduzione in pubblico dei canali scelti è autorizzata (canone, licenze, abbonamenti o permessi).</label>
+    <div class="azioni"><button type="button" id="aggiungi-dirette" class="primario" disabled>Aggiungi alla libreria</button></div>
   </dialog>
 
   <dialog id="scegli-campagna" class="finestra piccola">

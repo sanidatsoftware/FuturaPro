@@ -382,7 +382,7 @@ function schermoInMiniatura(m, cella) {
       if (cornice.classList.contains("dal-vivo")) return;
       vetro.replaceChildren();
       if (voce && voce.tipo === "immagine") crea("img", { src: conCliente(`/api/contenuti/${voce.contenuto}/miniatura/`), alt: "" }, vetro);
-      else crea("span", { classe: "segnaposto", testo: voce ? (voce.tipo === "video" ? "▶" : "🌐") : "nessun contenuto" }, vetro);
+      else crea("span", { classe: "segnaposto", testo: voce ? ({ video: "▶ video", diretta: "📡 diretta" }[voce.tipo] || "🌐") : "nessun contenuto" }, vetro);
     },
   };
 }

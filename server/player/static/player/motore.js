@@ -97,6 +97,72 @@ const TRANSIZIONI = {
 };
 const NEUTRO = { opacity: 1, transform: "none" };
 
+// --- Dirette in streaming ------------------------------------------------------------
+// Ogni player le scarica con la sua connessione a internet. L'HLS (.m3u8) lo legge
+// hls.js, caricato solo la prima volta che serve; gli altri formati il browser da solo.
+
+const ATTESA_DIRETTA = 15000; // se in questo tempo non parte, si passa oltre
+let promessaHls = null;
+
+function caricaHls() {
+  if (window.Hls) return Promise.resolve(window.Hls);
+  promessaHls ??= new Promise((ok, ko) => {
+    const script = document.createElement("script");
+    script.src = new URL("./vendor/hls.min.js", import.meta.url).href;
+    script.onload = () => (window.Hls ? ok(window.Hls) : ko(new Error("hls.js")));
+    script.onerror = () => { promessaHls = null; ko(new Error("hls.js non caricato")); };
+    document.head.appendChild(script);
+  });
+  return promessaHls;
+}
+
+// Avvia la diretta nell'elemento video. Restituisce { pronta, interrotta, chiudi }:
+// «pronta» si risolve (true/false) quando parte o non parte, «interrotta» se cade dopo.
+async function avviaDiretta(video, url) {
+  let hls = null;
+  let segnalaFine;
+  let fallita;
+  const interrotta = new Promise((ok) => (segnalaFine = ok));
+  // Un errore certo (es. formato non supportato) fa saltare subito, senza aspettare.
+  const errore = new Promise((ok) => (fallita = () => ok(false)));
+  const chiudi = () => {
+    hls?.destroy();
+    hls = null;
+    video.removeAttribute("src");
+    video.load();
+  };
+  const isHls = /\.m3u8($|\?)/i.test(url) || /m3u8/i.test(url);
+  try {
+    if (isHls && !video.canPlayType("application/vnd.apple.mpegurl")) {
+      const Hls = await caricaHls();
+      if (!Hls.isSupported()) return { pronta: Promise.resolve(false), interrotta, chiudi };
+      hls = new Hls({ lowLatencyMode: false, backBufferLength: 30 });
+      hls.on(Hls.Events.ERROR, (_, dati) => {
+        if (!dati.fatal) return;
+        fallita();
+        segnalaFine();
+      });
+      hls.loadSource(url);
+      hls.attachMedia(video);
+    } else {
+      video.src = url;
+    }
+  } catch {
+    return { pronta: Promise.resolve(false), interrotta, chiudi };
+  }
+  video.addEventListener("error", () => segnalaFine(), { once: true });
+  video.addEventListener("ended", () => segnalaFine(), { once: true });
+  // Pronta appena ha il primo fotogramma (il video non è ancora sullo schermo).
+  const pronta = Promise.race([
+    new Promise((ok) => video.addEventListener("loadeddata", () => ok(true), { once: true })),
+    new Promise((ok) => video.addEventListener("error", () => ok(false), { once: true })),
+    errore,
+    attendi(ATTESA_DIRETTA).then(() => false),
+  ]);
+  video.play().catch(() => {});
+  return { pronta, interrotta, chiudi };
+}
+
 class ZonaSlide {
   constructor(el, zona, px, motore) {
     Object.assign(this, { el, zona, motore, config: zona.configurazione });
@@ -113,6 +179,7 @@ class ZonaSlide {
   ferma() {
     this.attivo = false;
     this.strato?.querySelector("video")?.pause();
+    this.strato?.chiudi?.();
   }
 
   // La sequenza si ricalcola a ogni passaggio: le regole del palinsesto valgono
@@ -155,6 +222,7 @@ class ZonaSlide {
   }
 
   svuota() {
+    this.strato?.chiudi?.();
     this.strato?.remove();
     this.strato = null;
     this.corrente = null;
@@ -166,6 +234,25 @@ class ZonaSlide {
   async mostraElemento(elemento, voce) {
     const strato = crea("div", "strato");
     let media;
+    if (voce.tipo === "diretta") {
+      media = crea("video", "media", strato);
+      Object.assign(media, { muted: true, playsInline: true, autoplay: true });
+      adatta(media, this.config.adattamento === "riempi" ? "riempi" : "adatta", voce.url);
+      const diretta = await avviaDiretta(media, voce.url);
+      const partita = await diretta.pronta;
+      if (!partita || !this.attivo) {
+        diretta.chiudi();
+        return null; // canale non raggiungibile: si passa al contenuto successivo
+      }
+      strato.chiudi = diretta.chiudi; // via dallo schermo: si smette anche di scaricare
+      this.entra(strato);
+      this.corrente = elemento.contenuto;
+      media.play().catch(() => {});
+      // Se la diretta cade, al giro dopo si riprova (anche quando è l'unica voce in onda).
+      diretta.interrotta.then(() => { if (this.strato === strato) this.corrente = null; });
+      const fine = Promise.race([diretta.interrotta, attendi((elemento.durata || 300) * 1000)]);
+      return { fine };
+    }
     if (voce.tipo === "web") {
       media = crea("iframe", "media", strato);
       media.setAttribute("sandbox", "allow-scripts allow-same-origin");
@@ -210,6 +297,7 @@ class ZonaSlide {
     this.strato = nuovo;
     if (!transizione || !durata) {
       this.el.appendChild(nuovo);
+      vecchio?.chiudi?.();
       vecchio?.remove();
       return;
     }
@@ -223,6 +311,7 @@ class ZonaSlide {
     Object.assign(vecchio.style, transizione.esce);
     setTimeout(() => {
       vecchio.querySelector("video")?.pause();
+      vecchio.chiudi?.();
       vecchio.remove();
     }, durata + 50);
   }

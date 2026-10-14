@@ -176,6 +176,20 @@ al passaggio del mouse (`data-aiuto`, `pannello/static/pannello/aiuto.js`).
   c'è nessuna promozione in onda le slide mostrano questa immagine (es. il logo) invece del
   nero. Va nel manifest (`riserva`) e la pulizia non la cancella mai. Le promozioni importate da
   CSV senza immagini sono bozze: nessun errore, e fino ad allora va in onda la riserva.
+- **Dirette in streaming** (facoltative; tipo di contenuto `diretta`). Si aggiungono dal
+  pulsante «📡 Dirette»: da una lista M3U/M3U8 (indirizzo o file; `POST /api/contenuti/m3u/`
+  la legge e restituisce i canali senza salvarli) o da un singolo indirizzo `.m3u8`/video.
+  Per aggiungerle va confermato che la riproduzione in pubblico è autorizzata (canone RAI
+  speciale, SIAE/SCF, abbonamenti o permessi): `POST /api/contenuti/dirette/` con
+  `autorizzazione: true`, registrato nel contenuto (`autorizzata_da`, `autorizzata_il`) e
+  nell'audit; anche metterle in una promozione chiede conferma. In una promozione la diretta
+  è una voce con la sua durata in minuti (`durate` della promozione, predefinita 5 minuti):
+  da sola resta in onda di continuo, tra le immagini fa da intermezzo. Il server legge solo
+  la lista: lo streaming lo scarica ogni player con la sua connessione a internet. Il player
+  usa hls.js (`player/static/player/vendor`, licenza Apache 2.0) per l'HLS; se il canale non
+  parte entro 15 secondi, o dà un errore certo, passa alla voce successiva; se cade durante
+  la riproduzione si passa oltre e al giro dopo si riprova. L'audio resta disattivato. Le
+  dirette vanno ai monitor orizzontali e la pulizia non le cancella.
 - **Insegne** (`/api/insegne/`, facoltative): ogni sede può avere un'insegna; una campagna su
   un'insegna raggiunge tutti i monitor e totem delle sue sedi.
 - **Calendario**: anno o tre mesi, una fascia per campagna con le sue promozioni colorate per

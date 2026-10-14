@@ -431,3 +431,35 @@ code { background: var(--carta-forte); padding: 1px 6px; border-radius: 5px; }
 .dettaglio-promo .azioni { display: flex; gap: 8px; margin-top: 12px; }
 .dettaglio-promo .azioni .primario { flex: 1; }
 .nuova-promo { width: 100%; margin: 6px 0 0; padding: 12px; font-size: 15px; }
+
+/* Dirette */
+.galleria.diretta .griglia { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+.galleria.diretta .media .cornice { aspect-ratio: 16 / 9; }
+.web.diretta { position: relative; background: radial-gradient(circle at 50% 40%, #233150, #0d1320); }
+.web.diretta img { max-width: 70%; max-height: 60%; object-fit: contain; }
+.web.diretta .live { position: absolute; top: 6px; right: 6px; font-size: 10px; font-weight: 800; letter-spacing: .6px; color: #fff; background: #e53935; padding: 2px 6px; border-radius: 4px; }
+.striscia.diretta .voce { width: 128px; aspect-ratio: 16 / 9; }
+.durata-diretta { position: absolute; left: 4px; right: 4px; bottom: 4px; display: flex; align-items: center; gap: 4px; font-size: 11px; color: #fff; background: rgba(0, 0, 0, .65); padding: 2px 4px; border-radius: 6px; }
+.durata-diretta input { width: 46px; padding: 1px 4px; font-size: 11px; border-radius: 4px; }
+.striscia.diretta .posizione { display: none; }
+.avviso-legale { margin: 12px 0; padding: 12px 14px; border-radius: 12px; background: var(--ambra-tenue); border: 1px solid color-mix(in srgb, var(--ambra) 45%, transparent); }
+.avviso-legale strong { color: var(--ambra); }
+.avviso-legale p { margin: 6px 0 0; color: var(--testo); font-size: 13.5px; }
+.schede-dirette { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: end; }
+.schede-dirette .campo input { width: 100%; }
+.manuale-diretta { margin: 10px 0; }
+.manuale-diretta summary { cursor: pointer; color: var(--blu); }
+.manuale-diretta .campi { margin-top: 10px; }
+.filtri-canali { display: flex; gap: 8px; margin: 12px 0 8px; }
+.filtri-canali input { flex: 1; }
+.lista-canali { max-height: 300px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 4px; padding: 4px; border: 1px solid var(--linea); border-radius: 10px; }
+.canale { display: grid; grid-template-columns: auto 40px 1fr; gap: 8px; align-items: center; padding: 6px; border-radius: 8px; cursor: pointer; }
+.canale:hover { background: var(--carta-hover); }
+.canale.presente { opacity: .6; }
+.logo-canale { width: 40px; height: 28px; display: grid; place-items: center; background: #fff; border-radius: 4px; overflow: hidden; }
+.logo-canale img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.testi-canale { display: flex; flex-direction: column; min-width: 0; }
+.testi-canale strong { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.testi-canale small { font-size: 11px; color: var(--tenue); }
+.conferma-legale { display: flex; gap: 8px; align-items: flex-start; margin-top: 14px; font-size: 14px; font-weight: 600; }
+@media (max-width: 700px) { .schede-dirette { grid-template-columns: 1fr; } }

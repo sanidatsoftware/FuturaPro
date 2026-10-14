@@ -21,7 +21,7 @@ from dispositivi.models import GruppoMonitor, Monitor
 
 from . import palinsesto
 from .file import crea_miniatura, impronta_e_dimensione, misure_immagine, riconosci
-from . import campagne
+from . import campagne, dirette
 from .models import Campagna, Contenuto, ElementoPlaylist, Playlist, Promozione, Pubblicazione, Tipo
 
 MB = 1024 * 1024
@@ -45,9 +45,9 @@ class ContenutoSerializer(serializers.ModelSerializer):
         model = Contenuto
         fields = [
             "id", "nome", "tipo", "file", "url", "mime", "dimensione", "sha256", "durata",
-            "larghezza", "altezza", "orientamento", "caricato_da", "creato",
+            "larghezza", "altezza", "orientamento", "logo_url", "autorizzata_da", "autorizzata_il", "caricato_da", "creato",
         ]
-        read_only_fields = ["tipo", "mime", "dimensione", "sha256", "caricato_da", "creato"]
+        read_only_fields = ["tipo", "mime", "dimensione", "sha256", "logo_url", "autorizzata_da", "autorizzata_il", "caricato_da", "creato"]
         extra_kwargs = {
             "nome": {"required": False},
             "durata": {"min_value": 1},
@@ -112,6 +112,62 @@ class ContenutiViewSet(ViewSetCliente):
     @action(detail=True, methods=["get"])
     def file(self, request, pk=None):
         return _servi(self.get_object())
+
+    @action(detail=False, methods=["post"])
+    def m3u(self, request):
+        """Legge una lista M3U (da un indirizzo o da un file) e ne restituisce i canali, senza salvarli."""
+        file = request.FILES.get("file")
+        try:
+            if file is not None:
+                if file.size > dirette.MASSIMO_LISTA:
+                    raise exceptions.ValidationError({"file": "Lista troppo grande."})
+                grezzo = file.read()
+                testo = grezzo.decode("utf-8-sig", errors="replace")
+            else:
+                indirizzo = (request.data.get("url") or "").strip()
+                if not indirizzo:
+                    raise exceptions.ValidationError({"url": "Indica l'indirizzo della lista o scegli un file."})
+                testo = dirette.scarica_lista(indirizzo)
+                # L'indirizzo è già un canale (.m3u8 HLS), non un elenco: lo si propone così.
+                if dirette.e_flusso_hls(testo):
+                    nome = indirizzo.rstrip("/").rsplit("/", 2)[-2 if indirizzo.endswith("index.m3u8") else -1][:200]
+                    gia = Contenuto.objects.filter(tipo=Tipo.DIRETTA, url=indirizzo).exists()
+                    return Response({"canali": [{"nome": nome, "url": indirizzo, "logo": "", "gruppo": "", "presente": gia}]})
+        except exceptions.ValidationError:
+            raise
+        except Exception:
+            raise exceptions.ValidationError({"url": "Non riesco a scaricare la lista: controlla l'indirizzo."})
+        canali = dirette.leggi_m3u(testo)
+        if not canali:
+            raise exceptions.ValidationError({"url": "Nessun canale trovato: non sembra una lista M3U."})
+        gia = set(Contenuto.objects.filter(tipo=Tipo.DIRETTA).values_list("url", flat=True))
+        return Response({"canali": [{**c, "presente": c["url"] in gia} for c in canali]})
+
+    @action(detail=False, methods=["post"])
+    def dirette(self, request):
+        """Aggiunge canali in diretta alla libreria. Va confermato che la riproduzione è autorizzata."""
+        if request.data.get("autorizzazione") is not True:
+            raise exceptions.ValidationError({
+                "autorizzazione": "Conferma che la riproduzione in pubblico di questi canali è autorizzata "
+                                  "(canone RAI speciale, licenze SIAE/SCF, abbonamenti o permessi dell'editore).",
+            })
+        canali = request.data.get("canali")
+        if not isinstance(canali, list) or not canali or len(canali) > 500:
+            raise exceptions.ValidationError({"canali": "Scegli da 1 a 500 canali."})
+        validi = []
+        for canale in canali:
+            url = str((canale or {}).get("url", "")).strip()
+            if not url.lower().startswith(("http://", "https://")) or len(url) > 1000:
+                raise exceptions.ValidationError({"canali": f"Indirizzo non valido: {url[:80]}"})
+            logo = str(canale.get("logo") or "")
+            validi.append({
+                "url": url,
+                "nome": str(canale.get("nome") or "").strip()[:200],
+                "logo": logo if logo.lower().startswith(("http://", "https://")) else "",
+            })
+        creati = dirette.crea_dirette(validi, request.user)
+        registra(request.user, "dirette_aggiunte", None, canali=len(creati), autorizzazione_confermata=True)
+        return Response(ContenutoSerializer(creati, many=True).data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["get", "post"])
     def pulizia(self, request):
@@ -319,6 +375,8 @@ def verifica_campagna_modificabile(utente, campagna):
 class PromozioneSerializer(serializers.ModelSerializer):
     campagna = RiferimentoCliente(Campagna)
     contenuti = RiferimentoCliente(Contenuto, many=True, required=False)
+    # Durata propria di alcune voci, in secondi (es. {"<id diretta>": 300}).
+    durate = serializers.DictField(child=serializers.IntegerField(min_value=1, max_value=86400), required=False)
     giorni = serializers.ListField(child=serializers.IntegerField(min_value=0, max_value=6), required=False)
     data_inizio = serializers.DateField()
     data_fine = serializers.DateField()
@@ -329,7 +387,7 @@ class PromozioneSerializer(serializers.ModelSerializer):
         model = Promozione
         fields = [
             "id", "campagna", "nome", "data_inizio", "data_fine", "ora_inizio", "ora_fine", "giorni",
-            "contenuti", "stato", "pubblicazioni", "creata", "modificata",
+            "contenuti", "durate", "stato", "pubblicazioni", "creata", "modificata",
         ]
         read_only_fields = ["creata", "modificata"]
 
@@ -345,7 +403,9 @@ class PromozioneSerializer(serializers.ModelSerializer):
     def to_representation(self, promozione):
         dati = super().to_representation(promozione)
         # Nell'ordine della promozione, non in quello del database.
-        dati["contenuti"] = [str(v.contenuto_id) for v in promozione.voci.order_by("ordine")]
+        voci = list(promozione.voci.order_by("ordine"))
+        dati["contenuti"] = [str(v.contenuto_id) for v in voci]
+        dati["durate"] = {str(v.contenuto_id): v.durata for v in voci if v.durata}
         return dati
 
     def validate_giorni(self, giorni):
@@ -378,20 +438,24 @@ class PromozioneSerializer(serializers.ModelSerializer):
         verifica_campagna_modificabile(self.context["request"].user, campagna)
         return dati
 
-    def _salva(self, promozione, contenuti):
-        if contenuti is not None:
-            campagne.salva_contenuti(promozione, contenuti)
+    def _salva(self, promozione, contenuti, durate):
+        if contenuti is not None or durate is not None:
+            if contenuti is None:
+                contenuti = [v.contenuto for v in promozione.voci.select_related("contenuto").order_by("ordine")]
+            if durate is None:
+                durate = {str(v.contenuto_id): v.durata for v in promozione.voci.all() if v.durata}
+            campagne.salva_contenuti(promozione, contenuti, durate)
         campagne.sincronizza(promozione)
         return promozione
 
     def create(self, dati):
-        contenuti = dati.pop("contenuti", None)
-        return self._salva(super().create(dati), contenuti)
+        contenuti, durate = dati.pop("contenuti", None), dati.pop("durate", None)
+        return self._salva(super().create(dati), contenuti, durate)
 
     def update(self, promozione, dati):
-        contenuti = dati.pop("contenuti", None)
+        contenuti, durate = dati.pop("contenuti", None), dati.pop("durate", None)
         vecchia_campagna = promozione.campagna
-        promozione = self._salva(super().update(promozione, dati), contenuti)
+        promozione = self._salva(super().update(promozione, dati), contenuti, durate)
         if vecchia_campagna.id != promozione.campagna_id:
             verifica_campagna_modificabile(self.context["request"].user, vecchia_campagna)
         return promozione
