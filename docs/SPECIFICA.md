@@ -268,6 +268,22 @@ scheda «Aspetto interfaccia» (`PATCH /api/io/`); vale per pannello, editor e p
 WebP; niente SVG) della pagina di accesso `/accesso/` e del pannello. Li cambia solo
 l'Administrator Assoluto, nella scheda «Aspetto interfaccia» (`/api/piattaforma/aspetto/`).
 
+### Schermi: accensione, stato e allarmi
+
+- **Accensione e spegnimento** (facoltativi; `/api/orari/`). Un orario ha fasce per giorno della
+  settimana (anche oltre la mezzanotte) e giorni di chiusura (con le festività nazionali pronte),
+  e vale per insegne, gruppi o schermi; vince il più preciso (schermo, poi gruppo, poi insegna).
+  Il manifest lo porta in `accensione`; il player lo controlla ogni secondo anche offline e fuori
+  orario riposa: schermo nero, niente audio né dirette, e libera il blocco dello schermo (Wake
+  Lock), così il sistema può spegnere il monitor se le impostazioni di risparmio lo prevedono.
+  Un evento straordinario lo riaccende. Senza orario: sempre acceso.
+- **Stato e allarmi** (`/api/stato-schermi/`). Ogni segnale periodico (uno al minuto) aggiunge
+  un minuto allo storico del giorno (`PresenzaSchermo`, con i minuti a riposo a parte): la
+  disponibilità è il tempo in linea sul tempo in cui lo schermo doveva essere acceso. Gli allarmi
+  email sono facoltativi (indirizzi, dopo quanti minuti, solo in orario, avviso di ritorno):
+  li controlla `manage.py controlla_schermi --ciclo` nel servizio `pianificatore`, una email per
+  scollegamento; lo storico (`EventoSchermo`) resta anche senza server email.
+
 ## 6. Layout grafici
 
 Ogni cliente ha i propri layout; l'AdminCliente li gestisce se l'Administrator Assoluto glielo

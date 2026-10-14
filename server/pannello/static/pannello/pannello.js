@@ -3,7 +3,7 @@
 
 import { attivaAiuti } from "./aiuto.js";
 import { VOCI, clienteRicordato, disegnaMenu, ricordaCliente } from "./menu.js";
-import { preparaSchedeSchermi, schedaAccensione } from "./schede-schermi.js";
+import { preparaSchedeSchermi, schedaAccensione, schedaStato } from "./schede-schermi.js";
 
 const stato = { io: null, cliente: null, clienti: [], scheda: null };
 
@@ -132,6 +132,7 @@ const SCHEDE = {
   clienti: schedaClienti,
   monitor: schedaMonitor,
   accensione: schedaAccensione,
+  stato: schedaStato,
   reparti: schedaReparti,
   sedi: schedaSedi,
   utenti: schedaUtenti,

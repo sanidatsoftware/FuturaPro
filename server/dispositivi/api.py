@@ -1,7 +1,7 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 from django.core.files.storage import default_storage
-from django.db.models import Q
+from django.db.models import F, Q
 from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import authentication, exceptions, serializers, status
@@ -16,12 +16,16 @@ from clienti.models import Abilitazioni, Sede
 from contenuti.models import Contenuto
 from layout.models import Layout
 from clienti.models import Insegna
-from core.api import GESTIONE, RiferimentoCliente, ViewSetCliente, sedi_visibili
+from core.api import GESTIONE, RiferimentoCliente, VistaConContesto, ViewSetCliente, sedi_visibili
 from core.contesto import contesto_cliente
 from utenti.models import Ruolo
 
 from . import schermate
-from .models import CredenzialeDispositivo, GruppoMonitor, Monitor, OrarioSchermi, Piattaforma, RichiestaAbbinamento, impronta
+from .models import (
+    acceso_secondo_orario, orario_del_monitor,
+    CredenzialeDispositivo, EventoSchermo, GruppoMonitor, ImpostazioniAllarmi, Monitor, OrarioSchermi, Piattaforma,
+    PresenzaSchermo, RichiestaAbbinamento, impronta,
+)
 
 
 class GruppoSerializer(serializers.ModelSerializer):
@@ -143,6 +147,106 @@ class OrariViewSet(ViewSetCliente):
     def perform_destroy(self, orario):
         registra(self.request.user, "orario_eliminato", orario, nome=orario.nome)
         orario.delete()
+
+
+class ImpostazioniAllarmiSerializer(serializers.ModelSerializer):
+    email = serializers.ListField(child=serializers.EmailField(), required=False, max_length=20)
+    minuti = serializers.IntegerField(min_value=3, max_value=24 * 60, required=False)
+
+    class Meta:
+        model = ImpostazioniAllarmi
+        fields = ["attivo", "email", "minuti", "solo_in_orario", "avvisa_ritorno"]
+
+    def validate(self, dati):
+        attivo = dati.get("attivo", getattr(self.instance, "attivo", False))
+        email = dati.get("email", getattr(self.instance, "email", []))
+        if attivo and not email:
+            raise serializers.ValidationError({"email": "Indica almeno un indirizzo a cui mandare gli allarmi."})
+        return dati
+
+
+class StatoSchermiView(VistaConContesto, APIView):
+    """Lo stato di tutti gli schermi, i minuti di collegamento degli ultimi giorni e lo storico
+    degli allarmi. Con PUT/POST le impostazioni degli allarmi (solo la gestione)."""
+
+    def _verifica_gestione(self, request):
+        if request.user.ruolo not in GESTIONE:
+            raise exceptions.PermissionDenied("Solo chi gestisce il cliente cambia gli allarmi.")
+
+    def get(self, request):
+        from . import allarmi
+
+        giorni = max(1, min(31, int(request.query_params.get("giorni", 7))))
+        oggi = timezone.localdate()
+        dal = oggi - timedelta(days=giorni - 1)
+        monitor = Monitor.objects.select_related("sede").order_by("sede__nome", "nome")
+        limitate = sedi_visibili(request.user)
+        if limitate is not None:
+            monitor = monitor.filter(sede_id__in=limitate)
+        presenze = {}
+        for p in PresenzaSchermo.objects.filter(monitor__in=monitor, giorno__gte=dal):
+            presenze.setdefault(str(p.monitor_id), {})[p.giorno.isoformat()] = [p.minuti, p.minuti_riposo]
+        schermi = []
+        for m in monitor:
+            orario = orario_del_monitor(m)
+            atteso = {}
+            for n in range(giorni):
+                giorno = dal + timedelta(days=n)
+                # Minuti in cui lo schermo doveva essere acceso, a passi di 10 minuti.
+                inizio = timezone.make_aware(datetime.combine(giorno, time(0, 0)))
+                # Oggi conta solo fino a adesso.
+                passi = 144 if giorno < oggi else int((timezone.now() - inizio).total_seconds() // 600)
+                atteso[giorno.isoformat()] = sum(
+                    10 for passo in range(passi) if acceso_secondo_orario(orario, timezone.localtime(inizio + timedelta(minutes=10 * passo + 5)))
+                )
+            schermi.append({
+                "id": str(m.id), "nome": m.nome, "sede": m.sede.nome, "orientamento": m.orientamento,
+                "online": m.online, "riposo": bool((m.info_dispositivo or {}).get("riposo")),
+                "ultimo_contatto": m.ultimo_contatto, "versione": m.versione_player,
+                "problema": (m.info_dispositivo or {}).get("problema"), "allarme_dal": m.allarme_dal,
+                "orario": orario.nome if orario else None,
+                "presenze": presenze.get(str(m.id), {}), "atteso": atteso,
+                # Prima di questo giorno non ci sono dati (storico appena iniziato o schermo nuovo).
+                "dati_dal": min(presenze.get(str(m.id), {}) or [None]) if str(m.id) in presenze else None,
+            })
+        eventi = EventoSchermo.objects.filter(monitor__in=monitor).select_related("monitor", "monitor__sede")[:50]
+        impostazioni = ImpostazioniAllarmi.objects.first()
+        return Response({
+            "giorni": [(dal + timedelta(days=n)).isoformat() for n in range(giorni)],
+            "schermi": schermi,
+            "eventi": [
+                {"monitor": e.monitor.nome, "sede": e.monitor.sede.nome, "tipo": e.tipo, "quando": e.quando,
+                 "dettaglio": e.dettaglio, "email": e.email_inviata}
+                for e in eventi
+            ],
+            "allarmi": ImpostazioniAllarmiSerializer(impostazioni).data if impostazioni else
+            {"attivo": False, "email": [], "minuti": 15, "solo_in_orario": True, "avvisa_ritorno": True},
+            "email_configurata": allarmi.email_configurata(),
+        })
+
+    def put(self, request):
+        self._verifica_gestione(request)
+        impostazioni = ImpostazioniAllarmi.objects.first()
+        dati = ImpostazioniAllarmiSerializer(impostazioni, data=request.data, partial=True)
+        dati.is_valid(raise_exception=True)
+        salvate = dati.save()
+        registra(request.user, "allarmi_modificati", None, attivo=salvate.attivo)
+        return Response(ImpostazioniAllarmiSerializer(salvate).data)
+
+    def post(self, request):
+        """Una email di prova agli indirizzi indicati."""
+        from . import allarmi
+
+        self._verifica_gestione(request)
+        if not allarmi.email_configurata():
+            raise exceptions.ValidationError("Il server non ha ancora un server email (SMTP): vedi la guida di installazione.")
+        prova = ImpostazioniAllarmi(email=request.data.get("email") or [])
+        dati = ImpostazioniAllarmiSerializer(data={"email": prova.email})
+        dati.is_valid(raise_exception=True)
+        prova.email = dati.validated_data["email"]
+        if not allarmi.invia(prova, "FuturaPro: email di prova", "Se leggi questo messaggio, gli allarmi degli schermi arriveranno qui."):
+            raise exceptions.ValidationError("L'email non è partita: controlla le impostazioni SMTP del server.")
+        return Response({"inviata": True})
 
 
 class AbbinamentoSerializer(serializers.Serializer):
@@ -358,7 +462,16 @@ class HeartbeatView(VistaPlayer):
         credenziale = credenziale_dalla_richiesta(request)
         with contesto_cliente(credenziale.cliente_id):
             monitor = Monitor.objects.get(id=credenziale.monitor_id)
-            monitor.ultimo_contatto = timezone.now()
+            adesso = timezone.now()
+            # Un segnale ogni minuto: ognuno vale un minuto di collegamento nello storico.
+            if monitor.ultimo_contatto is None or adesso - monitor.ultimo_contatto >= timedelta(seconds=45):
+                presenza, _ = PresenzaSchermo.objects.get_or_create(
+                    monitor=monitor, giorno=timezone.localdate(), defaults={"cliente_id": monitor.cliente_id}
+                )
+                PresenzaSchermo.objects.filter(id=presenza.id).update(
+                    minuti=F("minuti") + 1, minuti_riposo=F("minuti_riposo") + (1 if request.data.get("riposo") is True else 0)
+                )
+            monitor.ultimo_contatto = adesso
             monitor.versione_player = str(request.data.get("versione", ""))[:40]
             monitor.manifest_ricevuto = str(request.data.get("manifest", ""))[:64]
             # Un problema che il player vuole far sapere (es. una diretta che non parte).

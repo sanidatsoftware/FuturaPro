@@ -106,6 +106,24 @@ contenuti, tenuti 14 giorni). Copiali anche fuori dalla VM.
 Rilanciare `sudo ./installa.sh` è sicuro: password e dati restano, si aggiornano solo le risposte
 (per esempio un nuovo indirizzo).
 
+### Email per gli allarmi degli schermi (facoltativo)
+
+Per ricevere un'email quando uno schermo resta scollegato (scheda «Schermi → Stato e allarmi»)
+aggiungi in fondo a `/opt/futurapro/deploy/.env` i dati di un server email (quello della posta
+aziendale, oppure un servizio come Brevo o Mailgun):
+
+```
+FP_EMAIL_HOST=smtp.miodominio.it
+FP_EMAIL_PORT=587
+FP_EMAIL_UTENTE=futurapro@miodominio.it
+FP_EMAIL_PASSWORD=la-password
+FP_EMAIL_MITTENTE=FuturaPro <futurapro@miodominio.it>
+```
+
+Poi `cd /opt/futurapro/deploy && sudo docker compose up -d`. Nel pannello, «Invia un'email di
+prova» verifica che funzioni. Il controllo degli schermi lo fa il servizio `pianificatore`, ogni
+minuto. Senza queste righe tutto funziona lo stesso: gli allarmi restano solo nello storico.
+
 ---
 
 ## 2. Monitor (Windows 10/11)

@@ -23,7 +23,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    environment:
+    environment: &ambiente
       FUTURAPRO_SECRET_KEY: ${FP_SECRET_KEY}
       FUTURAPRO_DB_HOST: db
       FUTURAPRO_DB_NAME: futurapro
@@ -33,9 +33,27 @@ services:
       FUTURAPRO_ALLOWED_HOSTS: ${FP_INDIRIZZO},localhost
       FUTURAPRO_ORIGINI: https://${FP_INDIRIZZO}
       FUTURAPRO_MAX_UPLOAD_MB: ${FP_MAX_UPLOAD_MB:-2048}
+      # Facoltativi: server email per gli allarmi degli schermi.
+      FUTURAPRO_EMAIL_HOST: ${FP_EMAIL_HOST:-}
+      FUTURAPRO_EMAIL_PORT: ${FP_EMAIL_PORT:-587}
+      FUTURAPRO_EMAIL_UTENTE: ${FP_EMAIL_UTENTE:-}
+      FUTURAPRO_EMAIL_PASSWORD: ${FP_EMAIL_PASSWORD:-}
+      FUTURAPRO_EMAIL_MITTENTE: ${FP_EMAIL_MITTENTE:-}
+      # Facoltativo: l'indirizzo pubblico per la coda sul telefono (es. https://coda.miodominio.it).
+      FUTURAPRO_URL_PUBBLICO: ${FP_URL_PUBBLICO:-}
     volumes:
       - media:/dati/media
       - static:/dati/static
+
+  # I lavori periodici: allarmi degli schermi scollegati (ogni minuto).
+  pianificatore:
+    build: ../server
+    restart: unless-stopped
+    depends_on: [app]
+    environment: *ambiente
+    entrypoint: ["python", "manage.py", "controlla_schermi", "--ciclo"]
+    volumes:
+      - media:/dati/media
 
   caddy:
     image: caddy:2

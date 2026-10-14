@@ -57,6 +57,8 @@ class Monitor(ModelloCliente):
     # Quando il monitor ha mandato l'ultima fotografia dello schermo (vedi «schermate»).
     schermata_il = models.DateTimeField(null=True, blank=True)
     schermata_richiesta = models.DateTimeField(null=True, blank=True)
+    # Quando è partito l'allarme «schermo scollegato» (si azzera quando torna in linea).
+    allarme_dal = models.DateTimeField(null=True, blank=True)
     # Cosa mostrano le slide quando non c'è nulla in onda (es. il logo del negozio): mai uno schermo vuoto.
     immagine_riserva = models.ForeignKey(
         "contenuti.Contenuto", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
@@ -166,3 +168,69 @@ def orario_del_monitor(monitor):
         if trovato is not None:
             return trovato
     return None
+
+
+def acceso_secondo_orario(orario, quando) -> bool:
+    """Come regole.js/acceso nel player: lo schermo dovrebbe essere acceso in quell'istante
+    locale? Senza orario, sempre."""
+    if orario is None:
+        return True
+    if quando.date().isoformat() in (orario.chiusure or []):
+        return False
+    ora = quando.strftime("%H:%M")
+    oggi = quando.weekday()
+    ieri = (oggi + 6) % 7
+    for f in orario.fasce or []:
+        if f["dalle"] < f["alle"]:
+            if oggi in f["giorni"] and f["dalle"] <= ora < f["alle"]:
+                return True
+        elif (oggi in f["giorni"] and ora >= f["dalle"]) or (ieri in f["giorni"] and ora < f["alle"]):
+            return True
+    return False
+
+
+class PresenzaSchermo(ModelloCliente):
+    """Minuti di collegamento di uno schermo in un giorno (dal segnale periodico, uno al minuto)."""
+
+    monitor = models.ForeignKey(Monitor, on_delete=models.CASCADE, related_name="presenze")
+    giorno = models.DateField()
+    minuti = models.PositiveIntegerField(default=0)
+    # Di cui a riposo, fuori dall'orario di accensione.
+    minuti_riposo = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["monitor", "giorno"]
+        constraints = [models.UniqueConstraint(fields=["monitor", "giorno"], name="presenza_unica_al_giorno")]
+
+
+class EventoSchermo(ModelloCliente):
+    """Lo storico degli allarmi: quando uno schermo si è scollegato e quando è tornato."""
+
+    class Tipo(models.TextChoices):
+        SCOLLEGATO = "scollegato", "Scollegato"
+        RICOLLEGATO = "ricollegato", "Tornato in linea"
+
+    monitor = models.ForeignKey(Monitor, on_delete=models.CASCADE, related_name="eventi_stato")
+    tipo = models.CharField(max_length=12, choices=Tipo.choices)
+    quando = models.DateTimeField(auto_now_add=True)
+    # Da quando non rispondeva (per lo scollegamento) o per quanto è rimasto fuori (minuti).
+    dettaglio = models.CharField(max_length=200, blank=True)
+    email_inviata = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-quando"]
+
+
+class ImpostazioniAllarmi(ModelloCliente):
+    """Chi avvisare, via email, quando uno schermo resta scollegato."""
+
+    attivo = models.BooleanField(default=False)
+    email = models.JSONField(default=list, blank=True)
+    minuti = models.PositiveIntegerField(default=15)
+    # Fuori dall'orario di accensione uno schermo spento non è un guasto.
+    solo_in_orario = models.BooleanField(default=True)
+    avvisa_ritorno = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name_plural = "impostazioni allarmi"
+        constraints = [models.UniqueConstraint(fields=["cliente"], name="allarmi_uno_per_cliente")]

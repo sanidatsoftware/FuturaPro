@@ -69,6 +69,12 @@ FP_SECRET_KEY=$FP_SECRET_KEY
 FP_DB_PASSWORD=$FP_DB_PASSWORD
 FP_DB_SUPERPASSWORD=$FP_DB_SUPERPASSWORD
 EOF
+# Le impostazioni facoltative aggiunte a mano (email degli allarmi, indirizzo pubblico della
+# coda sul telefono) restano.
+for chiave in FP_EMAIL_HOST FP_EMAIL_PORT FP_EMAIL_UTENTE FP_EMAIL_PASSWORD FP_EMAIL_MITTENTE FP_URL_PUBBLICO; do
+    valore=$(precedente "$chiave")
+    if [ -n "$valore" ]; then echo "$chiave=$valore" >> .env; fi
+done
 umask 022
 
 # --- 4. Caddy (HTTPS) --------------------------------------------------------------

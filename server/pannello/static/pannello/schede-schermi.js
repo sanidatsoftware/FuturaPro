@@ -218,3 +218,118 @@ export async function schedaAccensione() {
     box.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 }
+
+// --- Stato e allarmi ------------------------------------------------------------------------
+
+function daQuanto(iso) {
+  const minuti = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  if (minuti < 60) return `${minuti} min`;
+  if (minuti < 48 * 60) return `${Math.floor(minuti / 60)} h ${minuti % 60} min`;
+  return `${Math.floor(minuti / 1440)} giorni`;
+}
+
+export async function schedaStato() {
+  const { crea, sezione, api, prova } = H;
+  const dati = await api("GET", "/api/stato-schermi/?giorni=7");
+  const gestione = H.ruoloGestione();
+
+  const riepilogo = sezione("Stato degli schermi");
+  const conta = (f) => dati.schermi.filter(f).length;
+  const tessere = crea("div", { classe: "tessere-stato" }, riepilogo);
+  for (const [n, testo, classe] of [
+    [conta((s) => s.online && !s.riposo), "in linea", "ok"],
+    [conta((s) => s.online && s.riposo), "a riposo (fuori orario)", "riposo"],
+    [conta((s) => !s.online && s.ultimo_contatto), "scollegati", "male"],
+    [conta((s) => !s.ultimo_contatto), "mai collegati", "tenue"],
+  ]) {
+    const t = crea("div", { classe: `tessera ${classe}` }, tessere);
+    crea("strong", { testo: String(n) }, t);
+    crea("span", { testo: testo }, t);
+  }
+
+  const corpo = H.tabella(["", "Schermo", "Sede", "Stato", "Orario", "Disponibilità ultimi 7 giorni", "Player"], riepilogo);
+  for (const s of dati.schermi) {
+    const riga = crea("tr", {}, corpo);
+    crea("span", { classe: `pallino ${s.online ? (s.riposo ? "riposo" : "acceso") : "spento"}` }, crea("td", {}, riga));
+    crea("td", { testo: s.nome }, riga);
+    crea("td", { testo: s.sede }, riga);
+    const stato = crea("td", {}, riga);
+    stato.textContent = s.online ? (s.riposo ? "A riposo" : "In linea") : s.ultimo_contatto ? `Scollegato da ${daQuanto(s.ultimo_contatto)}` : "Mai collegato";
+    if (!s.online && s.ultimo_contatto) stato.className = "attenzione";
+    if (s.problema) crea("div", { classe: "problema-schermo", testo: `⚠ ${s.problema.testo}` }, stato);
+    crea("td", { testo: s.orario || "sempre acceso" }, riga);
+    // Una barretta per giorno: la parte verde è il tempo in linea sul tempo in cui doveva essere acceso.
+    const cella = crea("td", {}, riga);
+    const barre = crea("div", { classe: "barre-disponibilita" }, cella);
+    let somma = 0;
+    let attesi = 0;
+    for (const giorno of dati.giorni) {
+      const [minuti, riposo] = s.presenze[giorno] || [0, 0];
+      const atteso = s.atteso[giorno] || 0;
+      const senzaDati = !s.dati_dal || giorno < s.dati_dal;
+      const quota = atteso && !senzaDati ? Math.min(1, (minuti - riposo) / atteso) : null;
+      if (quota !== null) { somma += Math.min(atteso, minuti - riposo); attesi += atteso; }
+      const barra = crea("span", { classe: senzaDati ? "nessuno" : quota === null ? "chiuso" : quota > 0.95 ? "pieno" : quota > 0.6 ? "medio" : "basso" }, barre);
+      barra.style.setProperty("--quota", quota === null ? "100%" : `${Math.max(4, quota * 100)}%`);
+      barra.title = `${new Date(`${giorno}T00:00`).toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })}: `
+        + (senzaDati ? "nessun dato" : atteso ? `in linea ${Math.round((minuti - riposo) / 60 * 10) / 10} h su ${Math.round(atteso / 60 * 10) / 10} h previste` : "spento per orario");
+    }
+    crea("span", { classe: "percentuale", testo: attesi ? `${Math.round((somma / attesi) * 100)}%` : "—" }, cella);
+    crea("td", { testo: s.versione || "—", classe: "tenue" }, riga);
+  }
+
+  const allarmi = sezione("🔔 Allarmi via email");
+  crea("p", {
+    classe: "nota",
+    testo: "Facoltativi. Se uno schermo non risponde per più dei minuti scelti, parte una email (una sola per scollegamento) e, se vuoi, un'altra quando torna in linea. "
+      + "Fuori dal suo orario di accensione uno schermo spento non è un guasto.",
+  }, allarmi);
+  if (!dati.email_configurata) {
+    crea("p", { classe: "attenzione", testo: "Il server non ha ancora un server email (SMTP): gli allarmi restano nello storico qui sotto ma le email non partono. Vedi la guida di installazione (FUTURAPRO_EMAIL_…)." }, allarmi);
+  }
+  const a = dati.allarmi;
+  const attivo = crea("input", { type: "checkbox", checked: a.attivo, disabled: !gestione });
+  const l1 = crea("label", { classe: "spunta interruttore" }, crea("div", {}, allarmi)); l1.append(attivo, " Allarmi attivi");
+  const riga = crea("div", { classe: "riga" }, allarmi);
+  const email = H.campo("Email (separate da virgola)", crea("input", { value: a.email.join(", "), placeholder: "es. tecnico@azienda.it, negozio@azienda.it", disabled: !gestione, size: 44 }), riga);
+  const minuti = H.campo("Dopo", H.scelta([[5, "5 minuti"], [10, "10 minuti"], [15, "15 minuti"], [30, "30 minuti"], [60, "1 ora"], [120, "2 ore"]], a.minuti), riga);
+  minuti.disabled = !gestione;
+  const riga2 = crea("div", { classe: "riga" }, allarmi);
+  const orario = crea("input", { type: "checkbox", checked: a.solo_in_orario, disabled: !gestione });
+  const l2 = crea("label", { classe: "spunta" }, riga2); l2.append(orario, " Solo negli orari di accensione");
+  const ritorno = crea("input", { type: "checkbox", checked: a.avvisa_ritorno, disabled: !gestione });
+  const l3 = crea("label", { classe: "spunta" }, riga2); l3.append(ritorno, " Avvisa anche quando torna in linea");
+  const indirizzi = () => email.value.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
+  if (gestione) {
+    const azioni = crea("div", { classe: "riga" }, allarmi);
+    crea("button", {
+      classe: "primario", testo: "Salva",
+      onclick: () => prova(() => api("PUT", "/api/stato-schermi/", { attivo: attivo.checked, email: indirizzi(), minuti: parseInt(minuti.value, 10), solo_in_orario: orario.checked, avvisa_ritorno: ritorno.checked }), "Allarmi salvati."),
+    }, azioni);
+    crea("button", {
+      testo: "Invia un'email di prova", disabled: !dati.email_configurata,
+      onclick: async () => {
+        try {
+          await api("POST", "/api/stato-schermi/", { email: indirizzi() });
+          H.avvisa("Email di prova inviata: controlla la casella (anche lo spam).", "ok");
+        } catch (errore) {
+          H.avvisa(errore.message);
+        }
+      },
+    }, azioni);
+  }
+
+  const storico = sezione("Storico");
+  if (!dati.eventi.length) crea("p", { classe: "vuoto", testo: "Nessun allarme finora." }, storico);
+  else {
+    const c = H.tabella(["Quando", "Schermo", "Sede", "", "Email"], storico);
+    for (const e of dati.eventi) {
+      const r = crea("tr", {}, c);
+      crea("td", { testo: new Date(e.quando).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" }) }, r);
+      crea("td", { testo: e.monitor }, r);
+      crea("td", { testo: e.sede }, r);
+      crea("td", { testo: `${e.tipo === "scollegato" ? "🔴 Scollegato" : "🟢 Di nuovo in linea"} · ${e.dettaglio}` }, r);
+      crea("td", { testo: e.email ? "inviata" : "—", classe: "tenue" }, r);
+    }
+  }
+}

@@ -119,6 +119,19 @@ MEDIA_ROOT = Path(_env("MEDIA_ROOT", BASE_DIR / "media"))
 FUTURAPRO_MAX_UPLOAD_MB = int(_env("MAX_UPLOAD_MB", "2048"))
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 
+# Email (allarmi degli schermi): un server SMTP qualsiasi. Senza FUTURAPRO_EMAIL_HOST le email
+# non partono e il pannello lo dice.
+EMAIL_HOST = _env("EMAIL_HOST", "")
+EMAIL_PORT = int(_env("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = _env("EMAIL_UTENTE", "")
+EMAIL_HOST_PASSWORD = _env("EMAIL_PASSWORD", "")
+EMAIL_USE_TLS = _env("EMAIL_TLS", "1") == "1" and EMAIL_PORT != 465
+EMAIL_USE_SSL = EMAIL_PORT == 465
+EMAIL_TIMEOUT = 20
+DEFAULT_FROM_EMAIL = _env("EMAIL_MITTENTE", EMAIL_HOST_USER or "futurapro@localhost")
+if not EMAIL_HOST:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
 STATIC_URL = "static/"
 STATIC_ROOT = Path(_env("STATIC_ROOT", BASE_DIR / "staticfiles"))
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
