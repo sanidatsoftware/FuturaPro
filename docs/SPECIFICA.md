@@ -189,7 +189,12 @@ al passaggio del mouse (`data-aiuto`, `pannello/static/pannello/aiuto.js`).
   usa hls.js (`player/static/player/vendor`, licenza Apache 2.0) per l'HLS; se il canale non
   parte entro 15 secondi, o dà un errore certo, passa alla voce successiva; se cade durante
   la riproduzione si passa oltre e al giro dopo si riprova. L'audio resta disattivato. Le
-  dirette vanno ai monitor orizzontali e la pulizia non le cancella.
+  dirette vanno ai monitor orizzontali e la pulizia non le cancella. Se il player è in https e il canale
+  in http, il player prova lo stesso indirizzo in https (il browser blocca l'http). Il motivo di
+  una diretta che non parte arriva al server con il segnale periodico e compare nella scheda
+  Monitor; il pulsante ▶ sulla diretta, nella libreria, la prova dal browser del pannello.
+- **Salvataggio**: i pulsanti «Salva» di campagna e promozione restano spenti finché non si
+  cambia qualcosa; con modifiche in sospeso lampeggiano e compare il promemoria.
 - **Insegne** (`/api/insegne/`, facoltative): ogni sede può avere un'insegna; una campagna su
   un'insegna raggiunge tutti i monitor e totem delle sue sedi.
 - **Calendario**: anno o tre mesi, una fascia per campagna con le sue promozioni colorate per

@@ -277,6 +277,18 @@ class CodeSulTotemTest(ConReparti):
         self.come(self.admin_a)
         self.assertTrue(self.client.get(f"/api/anteprima/{self.mon_a_milano.id}/").json()["aggiornato"])
 
+    def test_il_monitor_segnala_una_diretta_che_non_parte(self):
+        dispositivo = self.player(self.mon_a_milano)
+        problema = {"testo": "Diretta «Uno» non partita: nessun segnale in 15 secondi.", "quando": "2026-10-14T10:00:00Z"}
+        self.client.post("/api/player/heartbeat/", {"problema": problema}, format="json", **dispositivo)
+        self.come(self.admin_a)
+        self.assertEqual(self.client.get(f"/api/monitor/{self.mon_a_milano.id}/").json()["problema"]["testo"], problema["testo"])
+        self.client.logout()
+        # Quando torna tutto a posto, la segnalazione sparisce.
+        self.client.post("/api/player/heartbeat/", {"problema": None}, format="json", **dispositivo)
+        self.come(self.admin_a)
+        self.assertIsNone(self.client.get(f"/api/monitor/{self.mon_a_milano.id}/").json()["problema"])
+
     def test_con_il_totem_il_server_non_da_numeri(self):
         self.come(self.admin_a)
         chiave = self.client.post(f"/api/reparti/{self.salumeria.id}/chiave/").json()["chiave"]

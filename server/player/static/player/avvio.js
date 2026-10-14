@@ -313,7 +313,7 @@ async function avviaPlayer() {
     fetch("/api/player/heartbeat/", {
       method: "POST",
       headers: { ...intestazioni, "Content-Type": "application/json" },
-      body: JSON.stringify({ versione: VERSIONE, manifest: mostrato?.versione || "" }),
+      body: JSON.stringify({ versione: VERSIONE, manifest: mostrato?.versione || "", problema: motore.problema || null }),
     }).catch(() => {});
   await aggiorna();
   setInterval(aggiorna, OGNI_MANIFEST);

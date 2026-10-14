@@ -464,3 +464,13 @@ code { background: var(--carta-forte); padding: 1px 6px; border-radius: 5px; }
 .conferma-legale { display: flex; gap: 8px; align-items: flex-start; margin-top: 14px; font-size: 14px; font-weight: 600; }
 @media (max-width: 700px) { .schede-dirette { grid-template-columns: 1fr; } }
 .suggerimenti-liste { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+
+/* Salvataggio: promemoria e pulsante spento senza modifiche */
+.da-salvare { width: 100%; padding: 8px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; color: var(--ambra); background: var(--ambra-tenue); border: 1px solid color-mix(in srgb, var(--ambra) 45%, transparent); animation: entra .2s ease-out; }
+button.salva:disabled { filter: grayscale(.6); box-shadow: none; }
+.piede-campagna { flex-wrap: wrap; }
+/* Prova di una diretta */
+.prova-diretta { width: min(860px, 90vw); aspect-ratio: 16 / 9; background: #000; border-radius: 8px; }
+.esito-diretta { text-align: center; font-weight: 600; margin: 10px 0 0; color: #dfe6f1; }
+.esito-diretta.ok { color: #7df0b0; }
+.esito-diretta.errore { color: #ffb4b0; }

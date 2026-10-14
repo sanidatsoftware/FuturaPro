@@ -6,6 +6,7 @@
 // pubblicazione per orientamento: qui si sceglie solo cosa, quando e dove.
 // I testi che arrivano dai dati passano sempre da textContent.
 
+import { avviaDiretta } from "../player/motore.js";
 import { attivaAiuti } from "./aiuto.js";
 import { clienteRicordato, disegnaMenu, ricordaCliente } from "./menu.js";
 
@@ -415,7 +416,7 @@ function disegnaGallerie(box, visibili, uso) {
         etichetta.style.setProperty("--colore", usi[0].campagnaDati.colore);
       }
       const azioni = crea("div", { classe: "azioni-media" }, cornice);
-      crea("button", { type: "button", title: "Ingrandisci", testo: "⤢", onclick: (e) => { e.stopPropagation(); apriVisore(c); } }, azioni);
+      crea("button", { type: "button", title: c.tipo === "diretta" ? "Prova la diretta" : "Ingrandisci", testo: c.tipo === "diretta" ? "▶" : "⤢", onclick: (e) => { e.stopPropagation(); apriVisore(c); } }, azioni);
       if (S.promozione) {
         const dentro = nellaPromozione.has(c.id);
         crea("button", {
@@ -448,11 +449,35 @@ function apriVisore(contenuto) {
   const finestra = document.getElementById("visore");
   const box = document.getElementById("visore-contenuto");
   box.replaceChildren();
+  if (contenuto.tipo === "diretta") {
+    provaDiretta(contenuto, box, finestra);
+    return;
+  }
   if (contenuto.tipo === "immagine") crea("img", { src: conCliente(`/api/contenuti/${contenuto.id}/file/`), alt: contenuto.nome }, box);
   else if (contenuto.tipo === "video") crea("video", { src: conCliente(`/api/contenuti/${contenuto.id}/file/`), controls: true, autoplay: true, muted: true }, box);
   else crea("p", { testo: contenuto.url }, box);
   crea("p", { classe: "nome", testo: `${contenuto.nome}${contenuto.larghezza ? ` · ${contenuto.larghezza}×${contenuto.altezza}` : ""}` }, box);
   finestra.showModal();
+}
+
+// Prova la diretta in questo browser, con lo stesso lettore dei player: dice subito se parte
+// e, se no, perché (lo stesso motivo che il monitor segnala nella scheda Monitor).
+async function provaDiretta(contenuto, box, finestra) {
+  const video = crea("video", { muted: true, playsInline: true, controls: true, classe: "prova-diretta" }, box);
+  const esito = crea("p", { classe: "esito-diretta", testo: "Collegamento al canale…" }, box);
+  crea("p", { classe: "nome", testo: `${contenuto.nome} · ${contenuto.url}` }, box);
+  finestra.showModal();
+  const diretta = await avviaDiretta(video, contenuto.url);
+  finestra.addEventListener("close", () => diretta.chiudi(), { once: true });
+  const risultato = await diretta.pronta;
+  if (risultato.ok) {
+    video.play().catch(() => {});
+    esito.className = "esito-diretta ok";
+    esito.textContent = "✓ Il canale parte da questo computer: con la stessa rete partirà anche sui monitor.";
+  } else {
+    esito.className = "esito-diretta errore";
+    esito.textContent = `✕ Non parte: ${risultato.motivo}. Prova un altro indirizzo del canale o rileggi la lista.`;
+  }
 }
 
 // --- Barra della selezione -------------------------------------------------------------------
@@ -749,9 +774,28 @@ function chiudi() {
   disegna();
 }
 
+// Una modifica non salvata: il pulsante «Salva» si attiva e lampeggia, e compare il promemoria.
 function segnaModificata() {
   S.modificata = true;
-  document.querySelector(".piede-campagna .primario")?.classList.add("pulsa");
+  for (const pulsante of document.querySelectorAll(".salva")) {
+    pulsante.disabled = false;
+    pulsante.classList.add("pulsa");
+  }
+  for (const promemoria of document.querySelectorAll(".da-salvare")) promemoria.hidden = false;
+}
+
+// Il pulsante «Salva» di campagna e promozione: spento finché non si cambia qualcosa.
+function pulsanteSalva(genitore, testo, azione) {
+  const promemoria = crea("div", {
+    classe: "da-salvare", hidden: !S.modificata,
+    testo: "Modifiche non salvate: premi «Salva», altrimenti non verranno applicate agli schermi.",
+  }, genitore);
+  promemoria.setAttribute("role", "status");
+  return crea("button", {
+    type: "button", classe: `primario salva${S.modificata ? " pulsa" : ""}`, testo, disabled: !S.modificata,
+    "data-aiuto": "Salva e manda le modifiche agli schermi (entro un minuto). Si attiva quando cambi qualcosa.",
+    onclick: azione,
+  }, genitore);
 }
 
 // Prima di mettere in onda una diretta si ricorda che va autorizzata.
@@ -908,7 +952,7 @@ function disegnaCampagna(box) {
   codice.addEventListener("input", () => { c.codice = codice.value; segnaModificata(); });
   disegnaDestinatari(impostazioni, c);
   const piede = crea("div", { classe: "piede-campagna" }, impostazioni);
-  crea("button", { type: "button", classe: `primario${S.modificata ? " pulsa" : ""}`, testo: c.id ? "Salva la campagna" : "Crea la campagna", onclick: salvaCampagna }, piede);
+  pulsanteSalva(piede, c.id ? "Salva la campagna" : "Crea la campagna", salvaCampagna);
   if (c.id) {
     crea("button", {
       type: "button", classe: "pericolo", testo: "Elimina la campagna",
@@ -1078,7 +1122,7 @@ function disegnaPromozione(box) {
   }
 
   const piede = crea("div", { classe: "piede-campagna" }, box);
-  crea("button", { type: "button", classe: `primario grande${S.modificata ? " pulsa" : ""}`, testo: p.id ? "Salva la promozione" : "Crea la promozione", onclick: salvaPromozione }, piede);
+  pulsanteSalva(piede, p.id ? "Salva la promozione" : "Crea la promozione", salvaPromozione).classList.add("grande");
   if (p.id) {
     crea("button", {
       type: "button", classe: "pericolo", testo: "Elimina",

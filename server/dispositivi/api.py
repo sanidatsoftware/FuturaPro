@@ -46,12 +46,16 @@ class MonitorSerializer(serializers.ModelSerializer):
     layout = RiferimentoCliente(Layout, required=False, allow_null=True)
     immagine_riserva = RiferimentoCliente(Contenuto, required=False, allow_null=True)
     online = serializers.BooleanField(read_only=True)
+    problema = serializers.SerializerMethodField()
+
+    def get_problema(self, monitor):
+        return (monitor.info_dispositivo or {}).get("problema")
 
     class Meta:
         model = Monitor
         fields = [
             "id", "nome", "sede", "gruppi", "orientamento", "rotazione", "layout", "immagine_riserva", "piattaforma",
-            "versione_player", "ultimo_contatto", "online", "abbinato_il",
+            "versione_player", "ultimo_contatto", "online", "problema", "abbinato_il",
         ]
         read_only_fields = ["piattaforma", "versione_player", "ultimo_contatto", "abbinato_il"]
 
@@ -224,9 +228,17 @@ class HeartbeatView(VistaPlayer):
     def post(self, request):
         credenziale = credenziale_dalla_richiesta(request)
         with contesto_cliente(credenziale.cliente_id):
-            Monitor.objects.filter(id=credenziale.monitor_id).update(
-                ultimo_contatto=timezone.now(),
-                versione_player=str(request.data.get("versione", ""))[:40],
-                manifest_ricevuto=str(request.data.get("manifest", ""))[:64],
-            )
+            monitor = Monitor.objects.get(id=credenziale.monitor_id)
+            monitor.ultimo_contatto = timezone.now()
+            monitor.versione_player = str(request.data.get("versione", ""))[:40]
+            monitor.manifest_ricevuto = str(request.data.get("manifest", ""))[:64]
+            # Un problema che il player vuole far sapere (es. una diretta che non parte).
+            problema = request.data.get("problema")
+            info = dict(monitor.info_dispositivo or {})
+            if isinstance(problema, dict) and problema.get("testo"):
+                info["problema"] = {"testo": str(problema["testo"])[:300], "quando": str(problema.get("quando", ""))[:40]}
+            else:
+                info.pop("problema", None)
+            monitor.info_dispositivo = info
+            monitor.save(update_fields=["ultimo_contatto", "versione_player", "manifest_ricevuto", "info_dispositivo"])
         return Response(status=status.HTTP_204_NO_CONTENT)

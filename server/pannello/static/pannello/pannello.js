@@ -316,6 +316,10 @@ async function schedaMonitor() {
         inOnda.className = "attenzione";
         inOnda.title = "Nessuna pubblicazione valida adesso per questo schermo o per i suoi gruppi.";
       }
+      // Il player ha segnalato un problema (es. una diretta che non parte): lo si mostra qui.
+      if (m.problema) {
+        crea("div", { classe: "problema-schermo", testo: `⚠ ${m.problema.testo}`, title: `Segnalato il ${new Date(m.problema.quando).toLocaleString("it-IT")}` }, inOnda);
+      }
       // Online ma con un palinsesto vecchio: non ha ancora scaricato le ultime modifiche.
       if (m.online && aggiornato === false) {
         inOnda.append(" · non aggiornato");

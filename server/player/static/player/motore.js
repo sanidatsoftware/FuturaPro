@@ -21,6 +21,11 @@ function crea(tag, classe, genitore) {
 const attendi = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
 export class Motore {
+  // L'ultimo problema da far sapere al pannello (es. una diretta che non parte), o null.
+  segnala(testo) {
+    this.problema = testo ? { testo, quando: new Date().toISOString() } : null;
+  }
+
   constructor(radice, fonte) {
     this.radice = radice;
     this.fonte = fonte;
@@ -116,30 +121,43 @@ function caricaHls() {
   return promessaHls;
 }
 
+// Un player in https non può leggere un canale in http (il browser lo blocca): si prova
+// lo stesso indirizzo in https, che quasi tutti i distributori offrono.
+export function indirizzoSicuro(url) {
+  return location.protocol === "https:" && /^http:\/\//i.test(url) ? url.replace(/^http:/i, "https:") : url;
+}
+
 // Avvia la diretta nell'elemento video. Restituisce { pronta, interrotta, chiudi }:
-// «pronta» si risolve (true/false) quando parte o non parte, «interrotta» se cade dopo.
-async function avviaDiretta(video, url) {
+// «pronta» si risolve in { ok } oppure { ok: false, motivo } quando parte o non parte,
+// «interrotta» se cade dopo. Il motivo serve al pannello per spiegare cosa non va.
+export async function avviaDiretta(video, indirizzo) {
+  const url = indirizzoSicuro(indirizzo);
+  const passatoAHttps = url !== indirizzo;
   let hls = null;
   let segnalaFine;
   let fallita;
   const interrotta = new Promise((ok) => (segnalaFine = ok));
   // Un errore certo (es. formato non supportato) fa saltare subito, senza aspettare.
-  const errore = new Promise((ok) => (fallita = () => ok(false)));
+  const errore = new Promise((ok) => (fallita = (motivo) => ok({ ok: false, motivo })));
   const chiudi = () => {
     hls?.destroy();
     hls = null;
     video.removeAttribute("src");
     video.load();
   };
-  const isHls = /\.m3u8($|\?)/i.test(url) || /m3u8/i.test(url);
+  const fallimento = (motivo) => ({ pronta: Promise.resolve({ ok: false, motivo }), interrotta, chiudi });
+  const nonRaggiungibile = passatoAHttps
+    ? "il canale è in http e il player è in https: il browser lo blocca, e la versione https del canale non risponde"
+    : "il canale non risponde, non permette la riproduzione da altri siti (CORS) o è riservato a un paese";
+  const isHls = /m3u8/i.test(url);
   try {
     if (isHls && !video.canPlayType("application/vnd.apple.mpegurl")) {
       const Hls = await caricaHls();
-      if (!Hls.isSupported()) return { pronta: Promise.resolve(false), interrotta, chiudi };
+      if (!Hls.isSupported()) return fallimento("questo browser non sa riprodurre le dirette HLS");
       hls = new Hls({ lowLatencyMode: false, backBufferLength: 30 });
       hls.on(Hls.Events.ERROR, (_, dati) => {
         if (!dati.fatal) return;
-        fallita();
+        fallita(dati.type === Hls.ErrorTypes.MEDIA_ERROR ? "formato video non supportato da questo browser" : nonRaggiungibile);
         segnalaFine();
       });
       hls.loadSource(url);
@@ -148,16 +166,18 @@ async function avviaDiretta(video, url) {
       video.src = url;
     }
   } catch {
-    return { pronta: Promise.resolve(false), interrotta, chiudi };
+    return fallimento("il lettore delle dirette non si è caricato");
   }
   video.addEventListener("error", () => segnalaFine(), { once: true });
   video.addEventListener("ended", () => segnalaFine(), { once: true });
   // Pronta appena ha il primo fotogramma (il video non è ancora sullo schermo).
   const pronta = Promise.race([
-    new Promise((ok) => video.addEventListener("loadeddata", () => ok(true), { once: true })),
-    new Promise((ok) => video.addEventListener("error", () => ok(false), { once: true })),
+    new Promise((ok) => video.addEventListener("loadeddata", () => ok({ ok: true }), { once: true })),
+    new Promise((ok) => video.addEventListener("error", () => ok({
+      ok: false, motivo: video.error?.code === 4 ? `formato non supportato o ${nonRaggiungibile}` : nonRaggiungibile,
+    }), { once: true })),
     errore,
-    attendi(ATTESA_DIRETTA).then(() => false),
+    attendi(ATTESA_DIRETTA).then(() => ({ ok: false, motivo: "nessun segnale in 15 secondi" })),
   ]);
   video.play().catch(() => {});
   return { pronta, interrotta, chiudi };
@@ -239,11 +259,14 @@ class ZonaSlide {
       Object.assign(media, { muted: true, playsInline: true, autoplay: true });
       adatta(media, this.config.adattamento === "riempi" ? "riempi" : "adatta", voce.url);
       const diretta = await avviaDiretta(media, voce.url);
-      const partita = await diretta.pronta;
-      if (!partita || !this.attivo) {
+      const esito = await diretta.pronta;
+      if (!esito.ok || !this.attivo) {
         diretta.chiudi();
-        return null; // canale non raggiungibile: si passa al contenuto successivo
+        // Il motivo va al server con il prossimo segnale: il pannello lo mostra sul monitor.
+        if (!esito.ok) this.motore.segnala(`Diretta «${voce.nome}» non partita: ${esito.motivo}.`);
+        return null; // si passa al contenuto successivo
       }
+      this.motore.segnala(null);
       strato.chiudi = diretta.chiudi; // via dallo schermo: si smette anche di scaricare
       this.entra(strato);
       this.corrente = elemento.contenuto;

@@ -110,3 +110,4 @@ td.attenzione { color: var(--errore); font-weight: 600; cursor: help; }
 @media (prefers-color-scheme: dark) { :root[data-tema="auto"] .aiuto-mouse { background: #2b3550; } }
 select.riserva { max-width: 190px; }
 td select { max-width: 190px; }
+.problema-schermo { margin-top: 4px; font-size: 12px; color: var(--errore); max-width: 260px; }
