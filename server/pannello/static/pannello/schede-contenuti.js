@@ -1,4 +1,4 @@
-// Le schede del gruppo «Contenuti» nel pannello: listini prezzi e messa in onda.
+// Le schede «Listini» (gruppo Contenuti) e «Messa in onda» (gruppo Report & Log) del pannello.
 // Gli strumenti (api, crea, sezione…) arrivano da pannello.js. I testi dei dati passano da textContent.
 
 import { sezioneInvii } from "./invii.js";

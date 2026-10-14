@@ -6,7 +6,7 @@ const nonTecnico = (io) => io.ruolo !== "tecnico";
 
 // pagina: un'altra pagina, nella stessa finestra; esterna: si apre in una scheda nuova;
 // le altre sono schede del pannello.
-export const GRUPPI = ["Schermi", "Contenuti", "Code", "Impostazioni"];
+export const GRUPPI = ["Schermi", "Contenuti", "Code", "Report & Log", "Impostazioni"];
 
 export const VOCI = [
   { chiave: "clienti", titolo: "Clienti", visibile: (io) => io.ruolo === "admin_assoluto", serveCliente: false,
@@ -23,18 +23,18 @@ export const VOCI = [
     aiuto: "Carica le immagini, raggruppale in promozioni con le loro date e decidi con le campagne dove vanno in onda. C'è anche il calendario e l'importazione da CSV." },
   { chiave: "listini", gruppo: "Contenuti", titolo: "Listini", visibile: nonTecnico,
     aiuto: "Tabelle di prodotti e prezzi (es. banco salumi, panetteria) da mostrare sugli schermi con la zona «Listino»; si compilano qui, da Excel o dal gestionale." },
-  { chiave: "messa_in_onda", gruppo: "Contenuti", titolo: "Messa in onda", visibile: nonTecnico,
+  { chiave: "messa_in_onda", gruppo: "Report & Log", titolo: "Messa in onda", visibile: nonTecnico,
     aiuto: "Cosa è andato davvero in onda, dove e per quanto: rapporti per promozione, campagna, fornitore e negozio, da stampare o esportare." },
-  { chiave: "layout", gruppo: "Contenuti", titolo: "Layout", visibile: gestione, esterna: "/editor/",
-    aiuto: "L'editor grafico: come si divide lo schermo tra slide, orologio, meteo, notizie, listini, numeri dei reparti e pulsanti del totem." },
   { chiave: "reparti", gruppo: "Code", titolo: "Reparti ed eliminacode", visibile: nonTecnico,
     aiuto: "I reparti con il «prendi il numero»: nomi, colori, ordine, annunci registrati e i collegamenti per bilance e pulsantiere." },
-  { chiave: "attese", gruppo: "Code", titolo: "Tempi d'attesa", visibile: nonTecnico,
+  { chiave: "attese", gruppo: "Report & Log", titolo: "Tempi d'attesa", visibile: nonTecnico,
     aiuto: "Quanto aspettano i clienti a ogni banco, per ora e per giorno: per decidere i turni del personale." },
   { chiave: "telefono", gruppo: "Code", titolo: "Coda sul telefono", visibile: gestione,
     aiuto: "Il QR sul biglietto: il cliente segue la coda dal suo telefono e viene avvisato quando tocca a lui." },
   { chiave: "banco", gruppo: "Code", titolo: "Banco", visibile: nonTecnico, esterna: "/banco/",
     aiuto: "La pagina per chiamare i numeri dal banco (Avanti, Indietro, Ripeti), la stessa che usano le bilance." },
+  { chiave: "layout", gruppo: "Impostazioni", titolo: "Layout", visibile: gestione, esterna: "/editor/",
+    aiuto: "L'editor grafico: come si divide lo schermo tra slide, orologio, meteo, notizie, listini, numeri dei reparti e pulsanti del totem." },
   { chiave: "sedi", gruppo: "Impostazioni", titolo: "Sedi e gruppi", visibile: gestione,
     aiuto: "I punti vendita con la loro insegna e il totem delle code, e i gruppi di schermi usati per pubblicare." },
   { chiave: "utenti", gruppo: "Impostazioni", titolo: "Utenti", visibile: gestione,
