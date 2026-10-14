@@ -9,6 +9,7 @@
 import { avviaDiretta } from "../player/motore.js";
 import { attivaAiuti } from "./aiuto.js";
 import { clienteRicordato, disegnaMenu, ricordaCliente } from "./menu.js";
+import { FORMATO_LIBRERIA, apriAnteprima, disegnaSequenza, preparaSequenza } from "./sequenza.js";
 
 const cliente = clienteRicordato();
 const MESI = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
@@ -437,6 +438,17 @@ function disegnaGallerie(box, visibili, uso) {
         disegnaSelezione();
       };
       scheda.addEventListener("click", scegli);
+      // Con una promozione aperta le immagini si trascinano nella timeline (anche tutte le selezionate).
+      if (S.promozione) {
+        scheda.draggable = true;
+        scheda.addEventListener("dragstart", (e) => {
+          const ids = S.selezione.has(c.id) ? [...S.selezione] : [c.id];
+          e.dataTransfer.setData(FORMATO_LIBRERIA, JSON.stringify(ids));
+          e.dataTransfer.effectAllowed = "copy";
+          document.body.classList.add("trascina-libreria");
+        });
+        scheda.addEventListener("dragend", () => document.body.classList.remove("trascina-libreria"));
+      }
       scheda.addEventListener("dblclick", () => apriVisore(c));
       scheda.addEventListener("keydown", (e) => {
         if (e.key === " " || e.key === "Enter") { e.preventDefault(); scegli(); }
@@ -837,6 +849,7 @@ function destinatari(campagna) {
 // --- Pannello di destra: campagna o promozione -------------------------------------------------
 
 function disegnaPannello() {
+  disegnaSequenza();
   const colonna = document.getElementById("campagna");
   colonna.replaceChildren();
   disegnaRiquadroCampagne(crea("section", { classe: "riquadro-destra riquadro-campagne" }, colonna));
@@ -1184,72 +1197,18 @@ function aggiornaGiro(box = document.getElementById("giro-promozione")) {
   }
 }
 
+// Nel riquadro solo il riassunto: la sequenza si monta nella timeline in basso.
 function disegnaContenutiPromozione(box, p) {
   const sezione = crea("section", { classe: "contenuti-campagna" }, box);
-  crea("h3", { testo: `Immagini (${p.contenuti.length})` }, sezione);
-  if (!p.contenuti.length) {
-    crea("p", { classe: "vuoto", testo: "Seleziona le immagini nella libreria e premi «Aggiungi», o usa il + su ognuna." }, sezione);
-    return;
-  }
-  const contenuti = perId(S.contenuti);
-  for (const [chiave, titolo] of [["verticale", "Totem"], ["orizzontale", "Monitor"], ["diretta", "Dirette (monitor)"], ["altro", "Tutti"]]) {
-    const ids = p.contenuti.filter((id) => contenuti.has(id) && orientamentoDi(contenuti.get(id)) === chiave);
-    if (!ids.length) continue;
-    crea("div", { classe: "titolo-striscia", testo: `${titolo} · ${ids.length}` }, sezione);
-    const striscia = crea("div", { classe: `striscia ${chiave}` }, sezione);
-    ids.forEach((id, posizione) => {
-      const x = contenuti.get(id);
-      const voce = crea("div", { classe: "voce", draggable: true, title: `${x.nome} — trascina per cambiare l'ordine` }, striscia);
-      voce.appendChild(anteprima(x));
-      crea("span", { classe: "posizione", testo: String(posizione + 1) }, voce);
-      crea("button", { type: "button", classe: "togli", title: "Togli", testo: "✕", onclick: () => togliDallaPromozione(id) }, voce);
-      if (x.tipo === "diretta") {
-        // Quanto dura l'intermezzo: da solo nella promozione, la diretta resta per tutta la fascia.
-        p.durate ??= {};
-        const durata = crea("label", { classe: "durata-diretta", "data-aiuto": "Minuti di diretta a ogni giro, tra un'immagine e l'altra. Se la diretta è l'unica voce della promozione resta in onda di continuo." }, voce);
-        const input = crea("input", { type: "number", min: 1, max: 1440, value: minuti(p.durate[id] || x.durata) }, durata);
-        durata.append(" min");
-        input.addEventListener("click", (e) => e.stopPropagation());
-        // Si registra a ogni tasto, non solo uscendo dal campo: premendo subito «Salva» non si perde.
-        input.addEventListener("input", () => {
-          const valore = parseInt(input.value, 10);
-          if (!valore || valore < 1) return;
-          p.durate[id] = valore * 60;
-          segnaModificata();
-          aggiornaGiro();
-        });
-        // Audio della sola diretta: spento non tocca gli altri suoni del monitor (es. il din-don dei numeri).
-        p.audio ??= [];
-        const conAudio = p.audio.includes(id);
-        crea("button", {
-          type: "button", classe: `audio-diretta${conAudio ? " acceso" : ""}`, testo: conAudio ? "🔊" : "🔇",
-          "data-aiuto": conAudio
-            ? "Audio della diretta acceso. Clic per spegnerlo: gli altri suoni del monitor (es. il din-don dei numeri) restano attivi."
-            : "Audio della diretta spento: gli altri suoni del monitor (es. il din-don dei numeri) restano attivi. Clic per accenderlo.",
-          onclick: (e) => {
-            e.stopPropagation();
-            p.audio = conAudio ? p.audio.filter((x) => x !== id) : [...p.audio, id];
-            segnaModificata();
-            disegnaPannello();
-          },
-        }, voce);
-      }
-      voce.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/futurapro", id); voce.classList.add("trascinata"); });
-      voce.addEventListener("dragend", () => voce.classList.remove("trascinata"));
-      voce.addEventListener("dragover", (e) => { e.preventDefault(); voce.classList.add("bersaglio"); });
-      voce.addEventListener("dragleave", () => voce.classList.remove("bersaglio"));
-      voce.addEventListener("drop", (e) => {
-        e.preventDefault();
-        const spostato = e.dataTransfer.getData("text/futurapro");
-        if (!spostato || spostato === id) return;
-        const ordine = p.contenuti.filter((v) => v !== spostato);
-        ordine.splice(ordine.indexOf(id), 0, spostato);
-        p.contenuti = ordine;
-        segnaModificata();
-        disegnaPannello();
-      });
-    });
-  }
+  crea("h3", { testo: `Sequenza (${p.contenuti.length} ${p.contenuti.length === 1 ? "voce" : "voci"})` }, sezione);
+  crea("p", {
+    classe: "nota",
+    testo: p.contenuti.length
+      ? "Ordine e durate si cambiano nella timeline «🎬 Sequenza» in basso: trascina le voci, tira il bordo destro di un blocco per la durata, e guarda l'anteprima prima di salvare."
+      : "Trascina le immagini dalla libreria nella timeline «🎬 Sequenza» in basso, oppure selezionale e premi «Aggiungi».",
+  }, sezione);
+  const azioni = crea("div", { classe: "azioni-sequenza" }, sezione);
+  crea("button", { type: "button", classe: "leggero", testo: "▶ Anteprima", disabled: !p.contenuti.length, onclick: () => apriAnteprima() }, azioni);
 }
 
 function datiCampagna(c) {
@@ -1829,6 +1788,12 @@ async function avvia() {
   preparaCaricamento();
   preparaImportazione();
   preparaDirette();
+  preparaSequenza({
+    S, crea, perId, conCliente, anteprima, avvisa, destinatari, confermaDirette, apriVisore,
+    segnaModificata,
+    aggiorna: () => { disegnaLibreria(); disegnaPannello(); },
+    salva: salvaPromozione,
+  });
   document.getElementById("cerca").addEventListener("input", (e) => { S.cerca = e.target.value; disegnaLibreria(); });
   window.addEventListener("beforeunload", (e) => { if (S.modificata) e.preventDefault(); });
   try {

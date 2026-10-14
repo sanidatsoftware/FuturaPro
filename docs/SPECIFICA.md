@@ -172,10 +172,25 @@ al passaggio del mouse (`data-aiuto`, `pannello/static/pannello/aiuto.js`).
   delle playlist fatte a mano (anche quelle fisse delle zone slide) e dei layout.
 - **Cartelle.** Si trascina o si sceglie un'intera cartella: i file vengono caricati tre alla
   volta e viene proposta una promozione con il nome della cartella (si sceglie la campagna).
-- **Immagine di riserva** (campo `immagine_riserva` del monitor, scheda Monitor): quando non
-  c'è nessuna promozione in onda le slide mostrano questa immagine (es. il logo) invece del
-  nero. Va nel manifest (`riserva`) e la pulizia non la cancella mai. Le promozioni importate da
+- **Riserva dello schermo** (campo `immagine_riserva` del monitor, scheda Monitor): quando non
+  c'è nessuna promozione in onda le slide mostrano questa immagine o questo video (es. il logo o
+  uno spot istituzionale; il video ricomincia da capo) invece del nero. Si carica dal computer
+  (`POST /api/contenuti/` con `uso=riserva`) ed è conservata a parte: non compare nella
+  libreria (`?uso=libreria`), non scade con le promozioni e la pulizia non la tocca. Quando
+  nessuno schermo la usa più (cambiata, tolta, schermo rimosso) viene cancellata dal server, e
+  i player la tolgono dalla loro cache al palinsesto successivo. Le promozioni importate da
   CSV senza immagini sono bozze: nessun errore, e fino ad allora va in onda la riserva.
+- **Sequenza della promozione** (timeline «🎬 Sequenza», in basso quando una promozione è
+  aperta). Una corsia per i monitor (orizzontali e dirette) e una per i totem (verticali);
+  ogni voce è un blocco lungo quanto resta in onda, con il righello dei tempi e la durata di un
+  giro. Si selezionano una o più voci (clic, Ctrl/⇧), si trascinano per cambiare l'ordine (o
+  con ← →), si tira il bordo destro per cambiare la durata (o la si scrive, anche per più voci
+  insieme), si tolgono con Canc; Ctrl+Z annulla. Le immagini si trascinano anche dalla
+  libreria direttamente nel punto voluto. Durate: quella propria della voce (`durate` della
+  promozione), altrimenti i secondi della campagna per le immagini, il video intero per i video,
+  5 minuti per le dirette. L'anteprima riproduce la corsia come lo schermo (stesse durate, poi
+  da capo; dirette comprese), si può accelerare (2×, 4×, 10× per le immagini) e da lì si
+  conferma il salvataggio.
 - **Dirette in streaming** (facoltative; tipo di contenuto `diretta`). Si aggiungono dal
   pulsante «📡 Dirette»: da una lista M3U/M3U8 (indirizzo o file; `POST /api/contenuti/m3u/`
   la legge e restituisce i canali senza salvarli) o da un singolo indirizzo `.m3u8`/video.

@@ -95,11 +95,14 @@ def sincronizza(promozione):
 
 def durata_voce(contenuto, propria, campagna):
     """Quanto resta in onda una voce: la sua durata, altrimenti quella del contenuto per le
-    dirette (es. 5 minuti), altrimenti i secondi per immagine della campagna."""
+    dirette (es. 5 minuti), altrimenti i secondi per immagine della campagna (non per i video)."""
     if propria:
         return propria
     if contenuto.tipo == Tipo.DIRETTA:
         return contenuto.durata or 300
+    # Un video senza durata propria va fino alla fine (o fino alla durata del contenuto).
+    if contenuto.tipo == Tipo.VIDEO:
+        return None
     return campagna.durata
 
 

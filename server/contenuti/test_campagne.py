@@ -11,7 +11,7 @@ from dispositivi.models import GruppoMonitor, Monitor
 
 from . import palinsesto
 from .models import Contenuto
-from .tests import ConFile
+from .tests import MP4, ConFile
 
 
 def immagine(larghezza, altezza, nome="volantino.jpg"):
@@ -182,6 +182,19 @@ class CampagneTest(ConFile):
         self.assertIn(logo, corpo["contenuti"])
         # Le immagini di riserva non si cancellano con la pulizia.
         self.assertNotIn(logo, [str(i) for i in self.client.get("/api/contenuti/pulizia/").json()["id"]])
+
+    def test_sequenza_con_durate_proprie_e_video_interi(self):
+        self.come(self.admin_a)
+        foto = self.carica(immagine(192, 108))["id"]
+        video = self.carica(SimpleUploadedFile("spot.mp4", MP4, content_type="video/mp4"), larghezza=1920, altezza=1080)["id"]
+        campagna = self.campagna(monitor=[str(self.mon_a_milano.id)], durata=8)
+        r = self.promozione(campagna, contenuti=[video, foto], durate={foto: 15})
+        self.assertEqual(r.status_code, 201, r.content)
+        with contesto_cliente(self.a.id):
+            corpo = palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))
+        voci = [v for elenco in corpo["playlist"].values() for v in elenco]
+        # L'ordine è quello della timeline; il video senza durata propria va fino alla fine.
+        self.assertEqual([(v["contenuto"], v["durata"]) for v in voci], [(video, None), (foto, 15)])
 
     def test_riserva_caricata_a_parte_e_tolta_quando_non_serve(self):
         self.come(self.admin_a)
