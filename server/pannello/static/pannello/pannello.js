@@ -3,6 +3,7 @@
 
 import { attivaAiuti } from "./aiuto.js";
 import { VOCI, clienteRicordato, disegnaMenu, ricordaCliente } from "./menu.js";
+import { preparaSchedeSchermi, schedaAccensione } from "./schede-schermi.js";
 
 const stato = { io: null, cliente: null, clienti: [], scheda: null };
 
@@ -130,6 +131,7 @@ const contenuto = document.getElementById("contenuto");
 const SCHEDE = {
   clienti: schedaClienti,
   monitor: schedaMonitor,
+  accensione: schedaAccensione,
   reparti: schedaReparti,
   sedi: schedaSedi,
   utenti: schedaUtenti,
@@ -297,7 +299,7 @@ async function schedaMonitor() {
     crea("td", { testo: sedi.find((s) => s.id === m.sede)?.nome || "" }, riga);
     const statoCella = crea("td", {}, riga);
     crea("span", { classe: `pallino ${m.online ? "acceso" : "spento"}` }, statoCella);
-    statoCella.append(m.online ? " Online" : m.ultimo_contatto ? ` Offline da ${new Date(m.ultimo_contatto).toLocaleString("it-IT")}` : " Mai collegato");
+    statoCella.append(m.online ? (m.riposo ? " A riposo (fuori orario)" : " Online") : m.ultimo_contatto ? ` Offline da ${new Date(m.ultimo_contatto).toLocaleString("it-IT")}` : " Mai collegato");
     const salva = (dati) => prova(() => api("PATCH", `/api/monitor/${m.id}/`, dati), "Salvato.");
     const orientamento = scelta([["orizzontale", "Orizzontale"], ["verticale", "Verticale (totem)"]], m.orientamento);
     const rotazione = scelta([[0, "0°"], [90, "90°"], [180, "180°"], [270, "270°"]], m.rotazione);
@@ -935,6 +937,7 @@ async function avvia() {
       scegliCliente(e.target.value, stato.scheda === "clienti" && e.target.value ? "monitor" : undefined));
   }
   attivaAiuti();
+  preparaSchedeSchermi({ stato, api, elenco, tutteLePagine, crea, avvisa, prova, sezione, campo, scelta, tabella, ruoloGestione, conCliente, mostra });
   const richiesta = location.hash.slice(1);
   const visibile = VOCI.some((v) => v.chiave === richiesta && SCHEDE[richiesta] && v.visibile(stato.io));
   await mostra(visibile ? richiesta : stato.io.ruolo === "admin_assoluto" && !stato.cliente ? "clienti" : "monitor");

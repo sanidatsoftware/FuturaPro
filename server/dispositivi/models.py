@@ -122,3 +122,47 @@ class CredenzialeDispositivo(models.Model):
     cliente_id = models.UUIDField()
     revocata = models.BooleanField(default=False)
     creata = models.DateTimeField(auto_now_add=True)
+
+
+class OrarioSchermi(ModelloCliente):
+    """Quando gli schermi sono accesi: fasce per giorno della settimana e giorni di chiusura.
+
+    Fuori orario il player va in riposo (schermo nero, niente audio né dirette). Uno schermo
+    senza orario resta sempre acceso. Se più orari valgono per uno schermo, vince il più
+    specifico: quello scelto per lo schermo, poi per un suo gruppo, poi per la sua insegna.
+    """
+
+    nome = models.CharField(max_length=200)
+    # [{"giorni": [0..6], "dalle": "07:30", "alle": "21:00"}, …]; 0 = lunedì. «alle» prima di
+    # «dalle» vuol dire che la fascia passa la mezzanotte.
+    fasce = models.JSONField(default=list, blank=True)
+    # ["2026-12-25", …]: tutto il giorno spento.
+    chiusure = models.JSONField(default=list, blank=True)
+    attivo = models.BooleanField(default=True)
+    insegne = models.ManyToManyField("clienti.Insegna", blank=True, related_name="orari_schermi")
+    gruppi = models.ManyToManyField(GruppoMonitor, blank=True, related_name="orari_schermi")
+    monitor = models.ManyToManyField(Monitor, blank=True, related_name="orari_schermi")
+    modificato = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["nome"]
+        verbose_name_plural = "orari degli schermi"
+
+    def __str__(self):
+        return self.nome
+
+
+def orario_del_monitor(monitor):
+    """L'orario che vale per lo schermo (il più specifico), o None: sempre acceso."""
+    orari = OrarioSchermi.objects.filter(attivo=True)
+    for filtro in (
+        {"monitor": monitor},
+        {"gruppi__monitor": monitor},
+        {"insegne": monitor.sede.insegna_id} if monitor.sede.insegna_id else None,
+    ):
+        if filtro is None:
+            continue
+        trovato = orari.filter(**filtro).order_by("-modificato").first()
+        if trovato is not None:
+            return trovato
+    return None

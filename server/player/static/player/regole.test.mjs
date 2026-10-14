@@ -47,3 +47,15 @@ test("l'istante è nel fuso del manifest, non in quello del dispositivo", () => 
     data: "2026-10-12", giorno: 0, ora: "00:30:00",
   });
 });
+
+test("accensione: fasce, chiusure e mezzanotte", async () => {
+  const { acceso } = await import("./regole.js");
+  const orario = { fasce: [{ giorni: [0, 1, 2, 3, 4, 5], dalle: "07:30", alle: "21:00" }, { giorni: [4], dalle: "22:00", alle: "02:00" }], chiusure: ["2026-12-25"] };
+  assert.ok(acceso(null, lunedi9));
+  assert.ok(acceso(orario, lunedi9));
+  assert.ok(!acceso(orario, { ...lunedi9, ora: "21:00:00" }));
+  assert.ok(!acceso(orario, { data: "2026-10-18", giorno: 6, ora: "10:00:00" })); // domenica
+  assert.ok(acceso(orario, { data: "2026-10-16", giorno: 4, ora: "23:00:00" })); // venerdì sera
+  assert.ok(acceso(orario, { data: "2026-10-17", giorno: 5, ora: "01:30:00" })); // e dopo mezzanotte
+  assert.ok(!acceso(orario, { data: "2026-12-25", giorno: 4, ora: "10:00:00" })); // chiuso
+});

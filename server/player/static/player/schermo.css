@@ -137,3 +137,6 @@ html, body {
 
 /* Evento straordinario a tutto schermo: la zona slide principale copre le altre finché dura. */
 .zona.evento-schermo-intero { left: 0 !important; top: 0 !important; width: 100% !important; height: 100% !important; z-index: 1000 !important; }
+
+/* Riposo fuori orario: tutto nero, nessun puntatore. */
+.riposo { position: fixed; inset: 0; background: #000; cursor: none; }

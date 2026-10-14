@@ -15,12 +15,13 @@ from audit.models import registra
 from clienti.models import Abilitazioni, Sede
 from contenuti.models import Contenuto
 from layout.models import Layout
-from core.api import RiferimentoCliente, ViewSetCliente, sedi_visibili
+from clienti.models import Insegna
+from core.api import GESTIONE, RiferimentoCliente, ViewSetCliente, sedi_visibili
 from core.contesto import contesto_cliente
 from utenti.models import Ruolo
 
 from . import schermate
-from .models import CredenzialeDispositivo, GruppoMonitor, Monitor, Piattaforma, RichiestaAbbinamento, impronta
+from .models import CredenzialeDispositivo, GruppoMonitor, Monitor, OrarioSchermi, Piattaforma, RichiestaAbbinamento, impronta
 
 
 class GruppoSerializer(serializers.ModelSerializer):
@@ -64,15 +65,19 @@ class MonitorSerializer(serializers.ModelSerializer):
     immagine_riserva = RiferimentoCliente(Contenuto, required=False, allow_null=True)
     online = serializers.BooleanField(read_only=True)
     problema = serializers.SerializerMethodField()
+    riposo = serializers.SerializerMethodField()
 
     def get_problema(self, monitor):
         return (monitor.info_dispositivo or {}).get("problema")
+
+    def get_riposo(self, monitor):
+        return bool((monitor.info_dispositivo or {}).get("riposo"))
 
     class Meta:
         model = Monitor
         fields = [
             "id", "nome", "sede", "gruppi", "orientamento", "rotazione", "layout", "immagine_riserva", "piattaforma",
-            "versione_player", "ultimo_contatto", "online", "problema", "schermata_il", "abbinato_il",
+            "versione_player", "ultimo_contatto", "online", "problema", "riposo", "schermata_il", "abbinato_il",
         ]
         read_only_fields = ["piattaforma", "versione_player", "ultimo_contatto", "schermata_il", "abbinato_il"]
 
@@ -85,6 +90,59 @@ class MonitorSerializer(serializers.ModelSerializer):
         if riserva is not None and riserva.tipo not in ("immagine", "video"):
             raise serializers.ValidationError({"immagine_riserva": "Dev'essere un'immagine o un video."})
         return dati
+
+
+class FasciaSerializer(serializers.Serializer):
+    giorni = serializers.ListField(child=serializers.IntegerField(min_value=0, max_value=6), min_length=1)
+    dalle = serializers.TimeField(format="%H:%M")
+    alle = serializers.TimeField(format="%H:%M")
+
+    def validate(self, dati):
+        if dati["dalle"] == dati["alle"]:
+            raise serializers.ValidationError("Inizio e fine della fascia coincidono.")
+        return {"giorni": sorted(set(dati["giorni"])), "dalle": dati["dalle"].strftime("%H:%M"), "alle": dati["alle"].strftime("%H:%M")}
+
+
+class OrarioSerializer(serializers.ModelSerializer):
+    fasce = FasciaSerializer(many=True, required=False)
+    chiusure = serializers.ListField(child=serializers.DateField(), required=False)
+    insegne = RiferimentoCliente(Insegna, many=True, required=False)
+    gruppi = RiferimentoCliente(GruppoMonitor, many=True, required=False)
+    monitor = RiferimentoCliente(Monitor, many=True, required=False)
+
+    class Meta:
+        model = OrarioSchermi
+        fields = ["id", "nome", "fasce", "chiusure", "attivo", "insegne", "gruppi", "monitor", "modificato"]
+        read_only_fields = ["modificato"]
+
+    def validate_chiusure(self, date):
+        return sorted({d.isoformat() for d in date})
+
+    def to_representation(self, orario):
+        dati = super().to_representation(orario)
+        dati["fasce"] = orario.fasce
+        dati["chiusure"] = orario.chiusure
+        return dati
+
+
+class OrariViewSet(ViewSetCliente):
+    """Gli orari di accensione degli schermi (fuori orario: riposo, schermo nero)."""
+
+    ruoli_scrittura = GESTIONE
+    serializer_class = OrarioSerializer
+
+    def get_queryset(self):
+        return OrarioSchermi.objects.prefetch_related("insegne", "gruppi", "monitor")
+
+    def perform_create(self, serializer):
+        registra(self.request.user, "orario_creato", serializer.save())
+
+    def perform_update(self, serializer):
+        registra(self.request.user, "orario_modificato", serializer.save())
+
+    def perform_destroy(self, orario):
+        registra(self.request.user, "orario_eliminato", orario, nome=orario.nome)
+        orario.delete()
 
 
 class AbbinamentoSerializer(serializers.Serializer):
@@ -310,6 +368,8 @@ class HeartbeatView(VistaPlayer):
                 info["problema"] = {"testo": str(problema["testo"])[:300], "quando": str(problema.get("quando", ""))[:40]}
             else:
                 info.pop("problema", None)
+            # Fuori orario lo schermo riposa: non è un guasto.
+            info["riposo"] = request.data.get("riposo") is True
             monitor.info_dispositivo = info
             monitor.save(update_fields=["ultimo_contatto", "versione_player", "manifest_ricevuto", "info_dispositivo"])
         return Response(status=status.HTTP_204_NO_CONTENT)

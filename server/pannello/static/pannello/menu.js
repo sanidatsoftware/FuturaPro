@@ -6,24 +6,40 @@ const nonTecnico = (io) => io.ruolo !== "tecnico";
 
 // pagina: un'altra pagina, nella stessa finestra; esterna: si apre in una scheda nuova;
 // le altre sono schede del pannello.
+export const GRUPPI = ["Schermi", "Contenuti", "Code", "Impostazioni"];
+
 export const VOCI = [
   { chiave: "clienti", titolo: "Clienti", visibile: (io) => io.ruolo === "admin_assoluto", serveCliente: false,
     aiuto: "Le aziende clienti: crearle, abilitarne le funzioni (monitor, utenti, spazio) e il loro primo amministratore." },
-  { chiave: "monitor", titolo: "Monitor", visibile: () => true,
+  { chiave: "monitor", gruppo: "Schermi", titolo: "Monitor", visibile: () => true,
     aiuto: "Gli schermi e i totem: abbinarne di nuovi con il codice, sede, gruppi, layout, rotazione, cosa è in onda e se sono in linea." },
-  { chiave: "palinsesto", titolo: "Creazione palinsesto", visibile: nonTecnico, pagina: "/palinsesto/",
+  { chiave: "accensione", gruppo: "Schermi", titolo: "Accensione e spegnimento", visibile: nonTecnico,
+    aiuto: "Gli orari in cui gli schermi sono accesi, per giorno della settimana, e i giorni di chiusura (es. festivi)." },
+  { chiave: "stato", gruppo: "Schermi", titolo: "Stato e allarmi", visibile: () => true,
+    aiuto: "Quali schermi sono in linea, da quanto sono spenti o scollegati, la disponibilità degli ultimi giorni e gli avvisi via email." },
+  { chiave: "download", gruppo: "Schermi", titolo: "Fasce di download", visibile: gestione,
+    aiuto: "Quando e a quale velocità gli schermi scaricano i file nuovi, per non rallentare la rete del negozio (es. casse)." },
+  { chiave: "palinsesto", gruppo: "Contenuti", titolo: "Creazione palinsesto", visibile: nonTecnico, pagina: "/palinsesto/",
     aiuto: "Carica le immagini, raggruppale in promozioni con le loro date e decidi con le campagne dove vanno in onda. C'è anche il calendario e l'importazione da CSV." },
-  { chiave: "reparti", titolo: "Reparti ed eliminacode", visibile: nonTecnico,
-    aiuto: "I reparti con il «prendi il numero»: nomi, colori, ordine, e i collegamenti per bilance e pulsantiere." },
-  { chiave: "layout", titolo: "Layout", visibile: gestione, esterna: "/editor/",
-    aiuto: "L'editor grafico: come si divide lo schermo tra slide, orologio, meteo, notizie, numeri dei reparti e pulsanti del totem." },
-  { chiave: "banco", titolo: "Banco", visibile: nonTecnico, esterna: "/banco/",
+  { chiave: "listini", gruppo: "Contenuti", titolo: "Listini", visibile: nonTecnico,
+    aiuto: "Tabelle di prodotti e prezzi (es. banco salumi, panetteria) da mostrare sugli schermi con la zona «Listino»; si compilano qui, da Excel o dal gestionale." },
+  { chiave: "messa_in_onda", gruppo: "Contenuti", titolo: "Messa in onda", visibile: nonTecnico,
+    aiuto: "Cosa è andato davvero in onda, dove e per quanto: rapporti per promozione, campagna, fornitore e negozio, da stampare o esportare." },
+  { chiave: "layout", gruppo: "Contenuti", titolo: "Layout", visibile: gestione, esterna: "/editor/",
+    aiuto: "L'editor grafico: come si divide lo schermo tra slide, orologio, meteo, notizie, listini, numeri dei reparti e pulsanti del totem." },
+  { chiave: "reparti", gruppo: "Code", titolo: "Reparti ed eliminacode", visibile: nonTecnico,
+    aiuto: "I reparti con il «prendi il numero»: nomi, colori, ordine, annunci registrati e i collegamenti per bilance e pulsantiere." },
+  { chiave: "attese", gruppo: "Code", titolo: "Tempi d'attesa", visibile: nonTecnico,
+    aiuto: "Quanto aspettano i clienti a ogni banco, per ora e per giorno: per decidere i turni del personale." },
+  { chiave: "telefono", gruppo: "Code", titolo: "Coda sul telefono", visibile: gestione,
+    aiuto: "Il QR sul biglietto: il cliente segue la coda dal suo telefono e viene avvisato quando tocca a lui." },
+  { chiave: "banco", gruppo: "Code", titolo: "Banco", visibile: nonTecnico, esterna: "/banco/",
     aiuto: "La pagina per chiamare i numeri dal banco (Avanti, Indietro, Ripeti), la stessa che usano le bilance." },
-  { chiave: "sedi", titolo: "Sedi e gruppi", visibile: gestione,
+  { chiave: "sedi", gruppo: "Impostazioni", titolo: "Sedi e gruppi", visibile: gestione,
     aiuto: "I punti vendita con la loro insegna e il totem delle code, e i gruppi di schermi usati per pubblicare." },
-  { chiave: "utenti", titolo: "Utenti", visibile: gestione,
+  { chiave: "utenti", gruppo: "Impostazioni", titolo: "Utenti", visibile: gestione,
     aiuto: "Chi accede al pannello del cliente, con quale ruolo ed eventualmente limitato ad alcune sedi." },
-  { chiave: "aspetto", titolo: "Aspetto interfaccia", visibile: () => true, serveCliente: false,
+  { chiave: "aspetto", gruppo: "Impostazioni", titolo: "Aspetto interfaccia", visibile: () => true, serveCliente: false,
     aiuto: "Tema chiaro, scuro o automatico delle pagine. L'Administrator Assoluto qui sceglie anche nome e logo della piattaforma." },
 ];
 
@@ -35,32 +51,66 @@ function conCliente(url, cliente) {
 // (nella pagina del palinsesto) le schede del pannello diventano collegamenti.
 export function disegnaMenu(nav, { io, attiva, cliente, mostra }) {
   nav.replaceChildren();
-  for (const voce of VOCI) {
-    if (!voce.visibile(io)) continue;
+  const voce = (v) => {
     let el;
-    if (voce.esterna) {
+    if (v.esterna) {
       el = document.createElement("a");
-      el.href = conCliente(voce.esterna, cliente);
+      el.href = conCliente(v.esterna, cliente);
       el.target = "_blank";
-      el.textContent = `${voce.titolo} ↗`;
-    } else if (voce.pagina) {
+      el.textContent = `${v.titolo} ↗`;
+    } else if (v.pagina) {
       el = document.createElement("a");
-      el.href = conCliente(voce.pagina, cliente);
-      el.textContent = voce.titolo;
+      el.href = conCliente(v.pagina, cliente);
+      el.textContent = v.titolo;
     } else if (mostra) {
       el = document.createElement("button");
       el.type = "button";
-      el.textContent = voce.titolo;
-      el.addEventListener("click", () => mostra(voce.chiave));
+      el.textContent = v.titolo;
+      el.addEventListener("click", () => { chiudiTendine(nav); mostra(v.chiave); });
     } else {
       el = document.createElement("a");
-      el.href = `${conCliente("/pannello/", cliente)}#${voce.chiave}`;
-      el.textContent = voce.titolo;
+      el.href = `${conCliente("/pannello/", cliente)}#${v.chiave}`;
+      el.textContent = v.titolo;
     }
-    el.className = `scheda${attiva === voce.chiave ? " attiva" : ""}`;
-    el.dataset.aiuto = voce.aiuto;
-    nav.appendChild(el);
+    el.className = `scheda${attiva === v.chiave ? " attiva" : ""}`;
+    el.dataset.aiuto = v.aiuto;
+    return el;
+  };
+  const visibili = VOCI.filter((v) => v.visibile(io));
+  // Prima le voci senza gruppo, poi un menu a tendina per gruppo.
+  for (const v of visibili.filter((x) => !x.gruppo)) nav.appendChild(voce(v));
+  for (const gruppo of GRUPPI) {
+    const voci = visibili.filter((x) => x.gruppo === gruppo);
+    if (!voci.length) continue;
+    const scelta = voci.find((v) => v.chiave === attiva);
+    const box = document.createElement("div");
+    box.className = `gruppo-menu${scelta ? " attivo" : ""}`;
+    const titolo = document.createElement("button");
+    titolo.type = "button";
+    titolo.className = `scheda titolo-gruppo${scelta ? " attiva" : ""}`;
+    titolo.setAttribute("aria-haspopup", "true");
+    titolo.textContent = scelta ? `${gruppo} · ${scelta.titolo}` : gruppo;
+    const tendina = document.createElement("div");
+    tendina.className = "tendina";
+    for (const v of voci) tendina.appendChild(voce(v));
+    titolo.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const aperta = box.classList.contains("aperto");
+      chiudiTendine(nav);
+      box.classList.toggle("aperto", !aperta);
+    });
+    box.append(titolo, tendina);
+    nav.appendChild(box);
   }
+  if (!nav.dataset.ascolta) {
+    nav.dataset.ascolta = "1";
+    document.addEventListener("click", (e) => { if (!nav.contains(e.target)) chiudiTendine(nav); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") chiudiTendine(nav); });
+  }
+}
+
+function chiudiTendine(nav) {
+  for (const aperto of nav.querySelectorAll(".gruppo-menu.aperto")) aperto.classList.remove("aperto");
 }
 
 // Il cliente scelto da un utente di piattaforma: dall'indirizzo, altrimenti l'ultimo usato.

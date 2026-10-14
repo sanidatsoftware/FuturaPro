@@ -370,7 +370,7 @@ async function avviaPlayer() {
     fetch("/api/player/heartbeat/", {
       method: "POST",
       headers: { ...intestazioni, "Content-Type": "application/json" },
-      body: JSON.stringify({ versione: VERSIONE, manifest: mostrato?.versione || "", problema: motore.problema || null }),
+      body: JSON.stringify({ versione: VERSIONE, manifest: mostrato?.versione || "", problema: motore.problema || null, riposo: motore.inRiposo }),
     }).catch(() => {});
   await aggiorna();
   setInterval(aggiorna, OGNI_MANIFEST);
@@ -449,6 +449,19 @@ function posizioneNelPalco(el, palco) {
 }
 
 async function fotografaSchermo(motore) {
+  // In riposo (fuori orario) lo schermo è nero: lo si dice nella foto.
+  if (!motore.palco) {
+    const tela = document.createElement("canvas");
+    Object.assign(tela, { width: LARGHEZZA_SCHERMATA, height: Math.round(LARGHEZZA_SCHERMATA * 9 / 16) });
+    const c = tela.getContext("2d");
+    c.fillStyle = "#000";
+    c.fillRect(0, 0, tela.width, tela.height);
+    c.fillStyle = "#9aa5b8";
+    c.font = "28px sans-serif";
+    c.textAlign = "center";
+    c.fillText(motore.inRiposo ? "Schermo in riposo (fuori orario)" : "Schermo non ancora pronto", tela.width / 2, tela.height / 2);
+    return new Promise((ok, ko) => tela.toBlob((blob) => (blob ? ok(blob) : ko(new Error("fotografia vuota"))), "image/jpeg", 0.78));
+  }
   const html2canvas = await caricaScript("./vendor/html2canvas.min.js", "html2canvas");
   const palco = motore.palco;
   const { larghezza, altezza } = motore.dimensioni;

@@ -61,6 +61,15 @@ def pubblicazioni_del_monitor(monitor):
     )
 
 
+def accensione_del_monitor(monitor):
+    from dispositivi.models import orario_del_monitor
+
+    orario = orario_del_monitor(monitor)
+    if orario is None:
+        return None
+    return {"nome": orario.nome, "fasce": orario.fasce, "chiusure": orario.chiusure}
+
+
 def eventi_del_monitor(monitor):
     """Gli eventi straordinari non ancora finiti per questo schermo (al massimo i prossimi 120 giorni)."""
     from django.utils import timezone
@@ -193,6 +202,8 @@ def manifest(monitor) -> dict:
         "playlist": playlist,
         # Quando non c'è nulla in onda le slide mostrano questa immagine, invece del nero.
         "riserva": riserva,
+        # Quando lo schermo è acceso (fasce per giorno, chiusure); null: sempre.
+        "accensione": accensione_del_monitor(monitor),
         # Precedenza su tutto, dall'inizio alla fine (istanti assoluti, con il fuso).
         "eventi": [
             {

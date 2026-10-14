@@ -6,7 +6,7 @@
 // così lo stesso codice serve il player e l'anteprima del pannello.
 // Ogni testo che arriva da fuori (titoli, nomi) passa da textContent, mai da innerHTML.
 
-import { inOnda, istanteNelFuso } from "./regole.js";
+import { acceso, inOnda, istanteNelFuso } from "./regole.js";
 
 const RISOLUZIONE = { orizzontale: [1920, 1080], verticale: [1080, 1920] };
 const ATTESA_SE_VUOTO = 5000;
@@ -33,8 +33,51 @@ export class Motore {
     this.manifest = null;
     this.evento = null;
     window.addEventListener("resize", () => this.adatta());
-    // Gli eventi straordinari partono al secondo, anche a metà di una slide.
-    setInterval(() => this.controllaEvento(), 1000);
+    this.inRiposo = false;
+    // Orari di accensione ed eventi straordinari si controllano ogni secondo.
+    setInterval(() => {
+      if (this.controllaRiposo()) this.controllaEvento();
+    }, 1000);
+    document.addEventListener("visibilitychange", () => this.tieniAcceso(!this.inRiposo));
+  }
+
+  // Fuori dall'orario di accensione (e senza eventi straordinari) il player riposa:
+  // schermo nero, niente audio, niente dirette. Restituisce true se è acceso.
+  controllaRiposo() {
+    if (!this.manifest) return false;
+    const riposo = !this.eventoInCorso() && !acceso(this.manifest.accensione, istanteNelFuso(this.manifest.fuso_orario));
+    if (riposo && !this.inRiposo) {
+      this.inRiposo = true;
+      this.zone.forEach((z) => z.ferma());
+      this.zone = [];
+      this.principale = null;
+      this.palco = null;
+      this.firma = null;
+      this.radice.replaceChildren();
+      crea("div", "riposo", this.radice);
+      this.tieniAcceso(false);
+    } else if (!riposo && this.inRiposo) {
+      this.inRiposo = false;
+      this.tieniAcceso(true);
+      this.mostra(this.manifest);
+    }
+    return !riposo;
+  }
+
+  // Acceso: si chiede al sistema di non spegnere lo schermo. In riposo lo si lascia libero,
+  // così, se le impostazioni di risparmio energetico lo prevedono, il monitor si spegne.
+  async tieniAcceso(acceso) {
+    try {
+      if (acceso && !this.blocco && document.visibilityState === "visible") {
+        this.blocco = await navigator.wakeLock?.request("screen");
+        this.blocco?.addEventListener("release", () => (this.blocco = null));
+      } else if (!acceso && this.blocco) {
+        await this.blocco.release();
+        this.blocco = null;
+      }
+    } catch {
+      // Non disponibile (pagina non sicura o browser vecchio): nessun problema.
+    }
   }
 
   // L'evento straordinario in corso adesso (se più d'uno, quello iniziato per ultimo), o null.
@@ -62,6 +105,7 @@ export class Motore {
   mostra(manifest) {
     const firma = JSON.stringify([manifest.layout, manifest.schermo]);
     this.manifest = manifest;
+    if (!this.controllaRiposo()) return; // in riposo: si ridisegna all'accensione
     if (firma === this.firma) return;
     this.firma = firma;
     this.zone.forEach((z) => z.ferma());

@@ -44,3 +44,16 @@ export function inOnda(pubblicazioni, istante) {
   const massima = Math.max(...valide.map((p) => p.priorita));
   return valide.filter((p) => p.priorita === massima);
 }
+
+// Lo schermo è acceso in questo istante? «accensione» viene dal manifest: null = sempre.
+// Una fascia che passa la mezzanotte (22:00–02:00 del venerdì) vale fino alle 2 di sabato.
+export function acceso(accensione, istante) {
+  if (!accensione) return true;
+  if ((accensione.chiusure || []).includes(istante.data)) return false;
+  const ora = istante.ora.slice(0, 5);
+  const ieri = (istante.giorno + 6) % 7;
+  return (accensione.fasce || []).some((f) => {
+    if (f.dalle < f.alle) return f.giorni.includes(istante.giorno) && f.dalle <= ora && ora < f.alle;
+    return (f.giorni.includes(istante.giorno) && ora >= f.dalle) || (f.giorni.includes(ieri) && ora < f.alle);
+  });
+}

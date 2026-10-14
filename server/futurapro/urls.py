@@ -21,6 +21,7 @@ from dispositivi.api import (
     GruppiViewSet,
     HeartbeatView,
     MonitorViewSet,
+    OrariViewSet,
     RichiestaAbbinamentoView,
     SchermataPlayerView,
     StatoPlayerView,
@@ -45,6 +46,7 @@ router.register("insegne", InsegneViewSet, basename="insegne")
 router.register("sedi", SediViewSet, basename="sedi")
 router.register("gruppi", GruppiViewSet, basename="gruppi")
 router.register("monitor", MonitorViewSet, basename="monitor")
+router.register("orari", OrariViewSet, basename="orari")
 router.register("utenti", UtentiClienteViewSet, basename="utenti")
 router.register("audit", AuditClienteViewSet, basename="audit")
 router.register("contenuti", ContenutiViewSet, basename="contenuti")
