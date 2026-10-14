@@ -254,6 +254,15 @@ class ZonaSlide {
         continue;
       }
       await mostrato.fine;
+      if (voce.tipo === "diretta" && this.strato === mostrato.strato && this.attivo) {
+        // Minuti finiti: la diretta si ferma subito (non resta in onda mentre arriva
+        // l'immagine dopo) e la playlist riparte da capo. Se la sequenza è solo la
+        // diretta, si riprende al giro dopo.
+        mostrato.strato.chiudi?.();
+        this.corrente = null;
+        const prima = this.sequenza()[0];
+        indice = prima && prima.contenuto === elemento.contenuto ? 1 : 0;
+      }
     }
   }
 
@@ -296,7 +305,7 @@ class ZonaSlide {
       // Se la diretta cade, al giro dopo si riprova (anche quando è l'unica voce in onda).
       diretta.interrotta.then(() => { if (this.strato === strato) this.corrente = null; });
       const fine = Promise.race([diretta.interrotta, attendi((elemento.durata || 300) * 1000)]);
-      return { fine };
+      return { fine, strato };
     }
     if (voce.tipo === "web") {
       media = crea("iframe", "media", strato);
