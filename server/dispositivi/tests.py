@@ -230,3 +230,57 @@ class StampanteTest(Base):
         self.assertEqual(self.client.patch(f"/api/monitor/{secondo.id}/", {"totem_master": True}, format="json").status_code, 200)
         with contesto_cliente(self.a.id):
             self.assertEqual(list(Monitor.objects.filter(totem_master=True).values_list("nome", flat=True)), ["Totem 2"])
+
+
+class LayoutTicketTest(Base):
+    def test_layout_logo_e_stampante(self):
+        import io
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        from layout.models import Layout, Zona
+
+        self.come(self.admin_a)
+        r = self.client.post("/api/layout-ticket/", {"nome": "Standard", "carta": 80}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        layout = r.json()
+        self.assertEqual([e["campo"] for e in layout["elementi"]][:4], ["logo", "intestazione", "reparto", "numero"])
+        url = f"/api/layout-ticket/{layout['id']}/"
+        doppio = [{"campo": "numero"}, {"campo": "numero"}]
+        self.assertEqual(self.client.patch(url, {"elementi": doppio}, format="json").status_code, 400)
+        elementi = [{"campo": "intestazione", "testo": "Supermercato", "dimensione": 999, "carattere": "Comic"},
+                    {"campo": "numero", "dimensione": 200, "grassetto": True}, {"campo": "testo", "testo": "Grazie"}]
+        r = self.client.patch(url, {"elementi": elementi}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        primo = r.json()["elementi"][0]
+        self.assertEqual((primo["dimensione"], primo["carattere"]), (400, "sans-serif"))  # riportati nei limiti
+
+        # Il logo: un PNG trasparente largo 2000 punti diventa grigio e largo quanto la carta.
+        grezzo = io.BytesIO()
+        Image.new("RGBA", (2000, 500), (255, 0, 0, 128)).save(grezzo, "PNG")
+        r = self.client.post(f"{url}logo/", {"file": SimpleUploadedFile("logo.png", grezzo.getvalue(), "image/png")})
+        self.assertEqual(r.status_code, 200, r.content)
+        logo = Image.open(io.BytesIO(self.client.get(f"{url}logo/").content))
+        self.assertEqual((logo.mode, logo.width), ("L", 576))
+        self.assertEqual(self.client.post(f"{url}logo/", {"file": SimpleUploadedFile("x.png", b"non immagine", "image/png")}).status_code, 400)
+
+        # Abbinato alla stampante del totem, arriva nel manifest con i testi propri della stampante.
+        with contesto_cliente(self.a.id):
+            video = Layout.objects.create(cliente=self.a, nome="Totem", orientamento="orizzontale")
+            Zona.objects.create(cliente=self.a, layout=video, tipo="prendi_numero", x=0, y=0, larghezza=100, altezza=100, configurazione={})
+            Monitor.objects.filter(id=self.mon_a_milano.id).update(layout=video)
+        stampante = self.client.post("/api/stampanti/", {"nome": "Epson", "sede": str(self.a_milano.id), "tipo": "epson", "indirizzo": "10.0.0.5",
+                                                         "layout": layout["id"], "messaggio": "Buona spesa"}, format="json").json()
+        self.client.patch(f"/api/monitor/{self.mon_a_milano.id}/", {"stampante": stampante["id"]}, format="json")
+        with contesto_cliente(self.a.id):
+            zona = palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))["layout"]["zone"][0]["configurazione"]
+        self.assertEqual(zona["ticket"]["punti"], 576)
+        self.assertTrue(zona["ticket"]["logo"].startswith("data:image/png;base64,"))
+        self.assertEqual((zona["ticket"]["messaggio"], zona["ticket"]["elementi"][2]["testo"]), ("Buona spesa", "Grazie"))
+
+        # Il semplice utente non lo cambia; un'altra azienda non lo vede.
+        self.come(self.user_a)
+        self.assertEqual(self.client.patch(url, {"nome": "x"}, format="json").status_code, 403)
+        self.come(self.admin_b)
+        self.assertEqual(self.client.get(url).status_code, 404)

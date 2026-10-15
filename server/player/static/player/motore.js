@@ -7,6 +7,7 @@
 // Ogni testo che arriva da fuori (titoli, nomi) passa da textContent, mai da innerHTML.
 
 import { acceso, inOnda, istanteNelFuso } from "./regole.js";
+import { disegnaTicket, immagineEpson } from "./ticket.js";
 
 const RISOLUZIONE = { orizzontale: [1920, 1080], verticale: [1080, 1920] };
 const ATTESA_SE_VUOTO = 5000;
@@ -39,8 +40,7 @@ export class Motore {
     const telefono = this.manifest?.telefono;
     if (telefono) Object.assign(dati, { qr: `${telefono.url}prova`, testo_qr: telefono.testo });
     try {
-      if (config.stampa === "epson") await stampaEpson(config.stampante, dati);
-      else await stampaBrowser(dati);
+      await stampaBiglietto(config, dati);
       return { ok: true, messaggio: config.stampa === "epson" ? `Inviato alla stampante ${config.stampante}.` : "Inviato alla stampante di sistema del totem." };
     } catch (e) {
       return { ok: false, messaggio: `Stampante non raggiungibile o spenta (${e.name === "AbortError" ? "tempo scaduto" : e.message}).` };
@@ -1015,10 +1015,7 @@ function xml(testo) {
 }
 
 async function stampaEpson(indirizzo, biglietto) {
-  const corpo =
-    '<?xml version="1.0" encoding="utf-8"?>' +
-    '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>' +
-    '<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">' +
+  await inviaEpson(indirizzo,
     '<text align="center"/>' +
     (biglietto.intestazione ? `<text width="1" height="1" em="true">${xml(biglietto.intestazione)}&#10;</text>` : "") +
     `<text width="2" height="2" em="true">${xml(biglietto.reparto)}&#10;</text>` +
@@ -1026,7 +1023,14 @@ async function stampaEpson(indirizzo, biglietto) {
     `<text width="1" height="1" em="false">${xml(biglietto.davanti)}&#10;${xml(biglietto.messaggio)}&#10;${xml(biglietto.quando)}&#10;</text>` +
     // La coda sul telefono: il QR lo disegna la stampante.
     (biglietto.qr ? `<feed line="1"/><symbol type="qrcode_model_2" level="level_m" width="6">${xml(biglietto.qr)}</symbol><text>&#10;${xml(biglietto.testo_qr || "")}&#10;</text>` : "") +
-    '<cut type="feed"/></epos-print></s:Body></s:Envelope>';
+    '<cut type="feed"/>');
+}
+
+async function inviaEpson(indirizzo, contenuto) {
+  const corpo =
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>' +
+    `<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">${contenuto}</epos-print></s:Body></s:Envelope>`;
   // Stesso protocollo della pagina: su HTTPS la stampante va usata in HTTPS
   // (il suo certificato va accettato una volta sul totem).
   const url = `${location.protocol}//${indirizzo}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
@@ -1042,6 +1046,32 @@ async function stampaEpson(indirizzo, biglietto) {
   } finally {
     clearTimeout(limite);
   }
+}
+
+// Con un Layout Ticket il biglietto è un'immagine: identica su Epson e stampante di sistema.
+async function stampaConLayout(config, dati) {
+  const tela = await disegnaTicket(config.ticket, dati);
+  if (config.stampa === "epson") return inviaEpson(config.stampante, immagineEpson(tela));
+  let foglio = document.getElementById("biglietto");
+  if (!foglio) {
+    foglio = document.createElement("div");
+    foglio.id = "biglietto";
+    document.body.appendChild(foglio);
+  }
+  foglio.replaceChildren();
+  const img = crea("img", "ticket", foglio);
+  img.style.width = `${(config.ticket.punti || 576) / 8}mm`;
+  img.src = tela.toDataURL("image/png");
+  await img.decode().catch(() => {});
+  window.print();
+}
+
+// La stampa di un biglietto: con il Layout Ticket della stampante, o quella semplice.
+async function stampaBiglietto(config, dati) {
+  if (config.stampa !== "epson" && config.stampa !== "browser") return;
+  if (config.ticket) return stampaConLayout(config, dati);
+  if (config.stampa === "epson") return stampaEpson(config.stampante, dati);
+  return stampaBrowser(dati);
 }
 
 // Il QR come immagine (per la stampa dal browser), con la libreria in player/vendor.
@@ -1172,8 +1202,7 @@ class ZonaPrendiNumero {
       }
       let errore = null;
       try {
-        if (this.config.stampa === "epson") await stampaEpson(this.config.stampante, dati);
-        else if (this.config.stampa === "browser") await stampaBrowser(dati);
+        await stampaBiglietto(this.config, dati);
       } catch (e) {
         errore = `Stampante non raggiungibile o spenta (${e.name === "AbortError" ? "tempo scaduto" : e.message}). Ricorda il tuo numero.`;
       }

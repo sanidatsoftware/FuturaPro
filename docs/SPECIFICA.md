@@ -325,7 +325,7 @@ il periodo appena concluso.
 - **Plugin** (facoltativi): Info Prezzo, Info Ingredienti.
 - **Report & Log**: Stato e allarmi, Messa in onda, Tempi d'attesa, Registro operazioni,
   Storico allarmi.
-- **Impostazioni**: Layout, Sedi e gruppi, Utenti, Email, Accensione e spegnimento, Fasce di
+- **Impostazioni**: Layout, Layout Ticket, Sedi e gruppi, Utenti, Email, Accensione e spegnimento, Fasce di
   download, Banco, Aspetto interfaccia.
 
 ### Report & Log
@@ -502,6 +502,21 @@ le persone che lo precedono e il player stampa:
   attuale), all'indirizzo indicato. Se la pagina è in HTTPS anche la stampante va usata in HTTPS
   (il suo certificato si accetta una volta sul totem). Se la stampante non risponde il totem lo
   dice e mostra comunque il numero.
+
+**Layout Ticket** (menu **Impostazioni**, `/api/layout-ticket/`, modello `LayoutTicket`): com'è
+fatto il biglietto. Elementi in colonna, nell'ordine in cui escono dalla carta: logo,
+intestazione, reparto (il tasto toccato sul totem), numero, persone in coda, testo di fine
+biglietto, data e ora, QR della coda sul telefono, testi liberi e linee. Per ogni elemento:
+visibile, carattere, grandezza (in punti della stampante, 8 = 1 mm), grassetto, corsivo,
+maiuscolo, bianco su nero, allineamento, spazio sotto; per logo e QR la larghezza. Carta 80 mm
+(576 punti) o 58 mm (384). L'editor del pannello ha l'elenco da trascinare, le proprietà
+dell'elemento scelto e l'anteprima, in cui un clic sceglie l'elemento. Il logo caricato diventa
+un PNG in scala di grigi alla larghezza della carta. Ogni stampante sceglie il suo layout (vuoto:
+biglietto semplice). Il totem disegna il biglietto come immagine (`player/ticket.js`, lo stesso
+codice dell'anteprima) e lo manda alla Epson come immagine raster ePOS-Print a strisce, o alla
+stampante di sistema come immagine: esce identico con qualsiasi carattere. Il logo è retinato
+(Floyd-Steinberg) perché la stampante fa solo punti neri. Intestazione e messaggio scritti
+sulla stampante valgono sopra quelli del layout.
 
 **Anagrafica Stampanti Ticket** (menu **Hardware**, `/api/stampanti/`, modello
 `StampanteTicket`): l'elenco delle stampanti dei negozi — nome, sede, tipo (Epson di rete o di

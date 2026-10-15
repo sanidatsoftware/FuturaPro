@@ -17,10 +17,20 @@ VALIDITA_PROVA = timedelta(minutes=2)
 def per_il_player(stampante) -> dict | None:
     if stampante is None:
         return None
+    from .ticket import per_il_player as ticket
+
     return {
         "id": str(stampante.id), "nome": stampante.nome, "stampa": stampante.tipo,
         "stampante": stampante.indirizzo, "intestazione": stampante.intestazione, "messaggio": stampante.messaggio,
+        "ticket": ticket_con_testi(ticket(stampante.layout), stampante),
     }
+
+
+def ticket_con_testi(layout: dict | None, stampante) -> dict | None:
+    """Intestazione e messaggio scritti sulla stampante valgono sopra quelli del layout ticket."""
+    if layout is None:
+        return None
+    return {**layout, "intestazione": stampante.intestazione, "messaggio": stampante.messaggio}
 
 
 def applica(monitor, configurazione: dict) -> dict:
@@ -28,7 +38,7 @@ def applica(monitor, configurazione: dict) -> dict:
     dati = per_il_player(monitor.stampante) if monitor.stampante_id else None
     if dati is None:
         return configurazione
-    nuova = {**configurazione, "stampa": dati["stampa"], "stampante": dati["stampante"]}
+    nuova = {**configurazione, "stampa": dati["stampa"], "stampante": dati["stampante"], "ticket": dati["ticket"]}
     for campo in ("intestazione", "messaggio"):
         if dati[campo]:
             nuova[campo] = dati[campo]

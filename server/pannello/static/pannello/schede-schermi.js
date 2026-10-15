@@ -392,7 +392,7 @@ let attesaProva = null;
 export async function schedaStampanti() {
   const { crea, sezione, api, prova, campo, scelta, tabella, avvisa } = H;
   clearTimeout(attesaProva);
-  const [stampanti, sedi] = await Promise.all([H.elenco("/api/stampanti/"), H.elenco("/api/sedi/")]);
+  const [stampanti, sedi, layoutTicket] = await Promise.all([H.elenco("/api/stampanti/"), H.elenco("/api/sedi/"), H.elenco("/api/layout-ticket/").catch(() => [])]);
   const modifica = H.ruoloGestione() || H.stato.io.ruolo === "tecnico";
   const nomeSede = (id) => sedi.find((s) => s.id === id)?.nome || "";
 
@@ -404,8 +404,9 @@ export async function schedaStampanti() {
     const tipo = campo("Tipo", scelta(TIPI_STAMPANTE, st?.tipo || "epson"), riga);
     const indirizzo = campo("Indirizzo IP", crea("input", { value: st?.indirizzo || "", placeholder: "es. 192.168.1.50", maxLength: 100 }), riga);
     const modello = campo("Modello", crea("input", { value: st?.modello || "", placeholder: "es. TM-m30III", maxLength: 60 }), riga);
+    const layout = campo("Layout ticket", scelta([["", "— biglietto semplice —"], ...layoutTicket.map((l) => [l.id, `🧾 ${l.nome} (${l.carta} mm)`])], st?.layout || ""), riga);
     const riga2 = crea("div", { classe: "riga" }, box);
-    const intestazione = campo("Intestazione del biglietto (vuoto = dal layout)", crea("input", { value: st?.intestazione || "", maxLength: 60, size: 28 }), riga2);
+    const intestazione = campo("Intestazione (vuoto = dal layout)", crea("input", { value: st?.intestazione || "", maxLength: 60, size: 28 }), riga2);
     const messaggio = campo("Messaggio in fondo (vuoto = dal layout)", crea("input", { value: st?.messaggio || "", maxLength: 120, size: 34 }), riga2);
     const note = campo("Note", crea("input", { value: st?.note || "", maxLength: 200, size: 28 }), riga2);
     const aggiorna = () => (indirizzo.closest("label").hidden = tipo.value !== "epson");
@@ -413,14 +414,14 @@ export async function schedaStampanti() {
     aggiorna();
     return () => ({
       nome: nome.value.trim(), sede: sede.value, tipo: tipo.value, indirizzo: tipo.value === "epson" ? indirizzo.value : "",
-      modello: modello.value, intestazione: intestazione.value, messaggio: messaggio.value, note: note.value,
+      modello: modello.value, layout: layout.value || null, intestazione: intestazione.value, messaggio: messaggio.value, note: note.value,
     });
   };
 
   const intro = sezione("Anagrafica Stampanti Ticket");
   crea("p", {
     classe: "nota",
-    testo: "L'elenco delle stampanti dei biglietti dei negozi. Ogni totem si abbina alla sua stampante in «Anagrafica Dispositivi Video» (colonna «Totem»). "
+    testo: "L'elenco delle stampanti dei biglietti dei negozi, ognuna con il suo Layout Ticket (Impostazioni · Layout Ticket). Ogni totem si abbina alla sua stampante in «Anagrafica Dispositivi Video» (colonna «Totem»). "
       + "Un totem senza stampante abbinata stampa come indicato nella zona «prendi il numero» del layout.",
   }, intro);
   crea("p", {
@@ -441,7 +442,7 @@ export async function schedaStampanti() {
     crea("p", { classe: "vuoto", testo: "Nessuna stampante in anagrafica." }, box);
     return;
   }
-  const corpo = tabella(["Nome", "Sede", "Tipo", "Indirizzo", "Modello", "Abbinata ai totem", "Ultima prova", ""], box);
+  const corpo = tabella(["Nome", "Sede", "Tipo", "Indirizzo", "Modello", "Layout ticket", "Abbinata ai totem", "Ultima prova", ""], box);
   let inAttesa = false;
   for (const st of stampanti) {
     const riga = crea("tr", {}, corpo);
@@ -450,6 +451,7 @@ export async function schedaStampanti() {
     crea("td", { testo: TIPI_STAMPANTE.find(([v]) => v === st.tipo)?.[1] || st.tipo }, riga);
     crea("td", { testo: st.indirizzo || "—" }, riga);
     crea("td", { testo: st.modello || "—" }, riga);
+    crea("td", { testo: layoutTicket.find((l) => l.id === st.layout)?.nome || "biglietto semplice" }, riga);
     const abbinati = crea("td", {}, riga);
     if (!st.abbinata_a.length) abbinati.append("— nessuno —");
     for (const m of st.abbinata_a) {
@@ -472,7 +474,7 @@ export async function schedaStampanti() {
         testo: "Modifica",
         onclick: () => {
           const dettaglio = crea("tr", {}, null);
-          const cella = crea("td", { colSpan: 8 }, dettaglio);
+          const cella = crea("td", { colSpan: 9 }, dettaglio);
           riga.after(dettaglio);
           const valori = modulo(cella, st);
           const pulsanti = crea("div", { classe: "riga" }, cella);

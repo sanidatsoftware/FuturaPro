@@ -39,6 +39,8 @@ export const VOCI = [
     aiuto: "Il QR sul biglietto: il cliente segue la coda dal suo telefono e viene avvisato quando tocca a lui." },
   { chiave: "layout", gruppo: "Impostazioni", titolo: "Layout", visibile: gestione, esterna: "/editor/",
     aiuto: "L'editor grafico: come si divide lo schermo tra slide, orologio, meteo, notizie, listini, numeri dei reparti e pulsanti del totem." },
+  { chiave: "layout_ticket", gruppo: "Impostazioni", titolo: "Layout Ticket", visibile: (io) => io.ruolo !== "user_cliente",
+    aiuto: "Com'è fatto il biglietto stampato dal totem: logo, intestazione, reparto, numero e testo di fine biglietto, con carattere e grandezza di ogni elemento. Si sceglie per ogni stampante." },
   { chiave: "sedi", gruppo: "Impostazioni", titolo: "Sedi e gruppi", visibile: gestione,
     aiuto: "I punti vendita con la loro insegna e il totem delle code, e i gruppi di schermi usati per pubblicare." },
   { chiave: "utenti", gruppo: "Impostazioni", titolo: "Utenti", visibile: gestione,

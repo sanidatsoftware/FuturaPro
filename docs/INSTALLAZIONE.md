@@ -226,8 +226,10 @@ La stampante non risponde? Il totem lo dice e mostra comunque il numero al clien
 > fabbrica di quasi tutti). Configurazione: pannello → **Plugin**; la colonna «Ultima copia»
 > dice se il totem riesce a leggere il file.
 
-> **Dove si configura.** Pannello → **Hardware · Anagrafica Stampanti Ticket**: aggiungi la
-> stampante (nome, sede, tipo, indirizzo della Epson, eventuali intestazione e messaggio). Poi in
+> **Dove si configura.** Pannello → **Impostazioni · Layout Ticket**: componi il biglietto (logo,
+> intestazione, reparto, numero, testo di fine biglietto, caratteri e grandezze). Poi
+> **Hardware · Anagrafica Stampanti Ticket**: aggiungi la stampante (nome, sede, tipo, indirizzo
+> della Epson, layout ticket). Poi in
 > **Hardware · Anagrafica Dispositivi Video**, colonna *Totem*, scegli la stampante del totem. Il
 > pulsante **Prova** dell'anagrafica fa stampare al totem abbinato un biglietto di prova e mostra
 > l'esito nel pannello.

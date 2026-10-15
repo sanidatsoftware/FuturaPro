@@ -133,6 +133,7 @@ html, body {
   #biglietto .reparto { font-size: 18pt; font-weight: 700; text-transform: uppercase; margin-top: 3mm; }
   #biglietto .numero { font-size: 60pt; font-weight: 800; line-height: 1; }
   #biglietto .riga { font-size: 10pt; margin-top: 1mm; }
+  #biglietto .ticket { display: block; margin: 0 auto; max-width: 100%; }
   #biglietto .qr { width: 34mm; height: 34mm; margin: 3mm auto 0; display: block; image-rendering: pixelated; }
 }
 

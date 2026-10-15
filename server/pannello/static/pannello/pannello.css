@@ -231,3 +231,21 @@ input.corto { width: 90px; }
   background: linear-gradient(135deg, #2b4c7e, #1b2a44); }
 .palco-plugin { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
 td.attenzione, div.attenzione { color: var(--errore); }
+.elenco-ticket { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+.scheda-ticket.attiva { border-color: var(--primario); color: var(--primario); font-weight: 700; }
+.editor-ticket { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) minmax(260px, 1.1fr); gap: 18px; align-items: start; margin-top: 10px; }
+@media (max-width: 1000px) { .editor-ticket { grid-template-columns: 1fr; } }
+.colonna-elementi, .colonna-proprieta { display: flex; flex-direction: column; gap: 6px; }
+.colonna-proprieta .campo { margin: 0; }
+.voce-ticket { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--linea); border-radius: 8px; background: var(--carta); cursor: pointer; user-select: none; }
+.voce-ticket .nome { flex: 1; }
+.voce-ticket .maniglia { cursor: grab; color: var(--tenue); }
+.voce-ticket.scelta { border-color: var(--primario); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primario) 25%, transparent); }
+.voce-ticket.nascosta .nome { opacity: .45; text-decoration: line-through; }
+.voce-ticket.sopra { border-style: dashed; border-color: var(--primario); }
+.voce-ticket.trascinata { opacity: .4; }
+.voce-ticket button { padding: 2px 6px; }
+.carta-ticket { position: relative; display: inline-block; padding: 14px 10px 22px; background: #fff; border-radius: 4px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .18); background-image: linear-gradient(-45deg, transparent 8px, #fff 0), linear-gradient(45deg, transparent 8px, #fff 0); }
+.tela-ticket { display: block; width: 300px; height: auto; cursor: pointer; }
+.segno-ticket { position: absolute; left: 4px; right: 4px; margin-top: 14px; border: 2px dashed #1f6feb; border-radius: 4px; pointer-events: none; }

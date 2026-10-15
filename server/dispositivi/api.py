@@ -20,11 +20,11 @@ from core.api import GESTIONE, RiferimentoCliente, VistaConContesto, ViewSetClie
 from core.contesto import contesto_cliente
 from utenti.models import Ruolo
 
-from . import schermate, stampanti
+from . import schermate, stampanti, ticket
 from .models import (
     acceso_secondo_orario, orario_del_monitor,
     CredenzialeDispositivo, EventoSchermo, GruppoMonitor, ImpostazioniAllarmi, ImpostazioniDownload, Monitor, OrarioSchermi, Piattaforma,
-    PresenzaSchermo, RichiestaAbbinamento, StampanteTicket, impronta,
+    LayoutTicket, PresenzaSchermo, RichiestaAbbinamento, StampanteTicket, impronta,
 )
 
 
@@ -295,8 +295,80 @@ class DownloadView(VistaConContesto, APIView):
         return Response(ImpostazioniDownloadSerializer(impostazioni).data)
 
 
+class LayoutTicketSerializer(serializers.ModelSerializer):
+    elementi = serializers.JSONField(required=False)
+    ha_logo = serializers.SerializerMethodField()
+    stampanti = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LayoutTicket
+        fields = ["id", "nome", "carta", "elementi", "ha_logo", "stampanti", "modificato"]
+        read_only_fields = ["modificato"]
+
+    def get_ha_logo(self, layout):
+        return bool(layout.logo)
+
+    def get_stampanti(self, layout):
+        return [s.nome for s in layout.stampanti.all()]
+
+    def validate_elementi(self, valore):
+        return ticket.valida_elementi(valore)
+
+    def create(self, dati):
+        dati.setdefault("elementi", ticket.predefiniti())
+        return super().create(dati)
+
+
+class LayoutTicketViewSet(ViewSetCliente):
+    """Layout Ticket: com'è fatto il biglietto stampato. GET <id>/logo/ il logo in PNG;
+    POST (multipart «file») lo cambia, DELETE lo toglie. GET predefiniti/ gli elementi di partenza."""
+
+    serializer_class = LayoutTicketSerializer
+    ruoli_scrittura = GESTIONE | {Ruolo.TECNICO}
+
+    def get_queryset(self):
+        return LayoutTicket.objects.prefetch_related("stampanti")
+
+    def perform_create(self, serializer):
+        registra(self.request.user, "layout_ticket_creato", serializer.save())
+
+    def perform_update(self, serializer):
+        registra(self.request.user, "layout_ticket_modificato", serializer.save())
+
+    def perform_destroy(self, layout):
+        registra(self.request.user, "layout_ticket_eliminato", layout, nome=layout.nome)
+        layout.delete()
+
+    @action(detail=False, methods=["get"])
+    def predefiniti(self, request):
+        return Response({"elementi": ticket.predefiniti(), "campi": ticket.CAMPI, "caratteri": ticket.CARATTERI})
+
+    @action(detail=True, methods=["get", "post", "delete"])
+    def logo(self, request, pk=None):
+        layout = self.get_object()
+        if request.method == "GET":
+            if not layout.logo:
+                raise exceptions.NotFound()
+            import base64
+
+            from django.http import HttpResponse
+
+            return HttpResponse(base64.b64decode(layout.logo), content_type="image/png")
+        if request.method == "POST":
+            file = request.FILES.get("file")
+            if file is None:
+                raise exceptions.ValidationError({"file": "Scegli un'immagine."})
+            layout.logo = ticket.prepara_logo(file, layout.carta)
+        else:
+            layout.logo = ""
+        layout.save(update_fields=["logo", "modificato"])
+        registra(request.user, "layout_ticket_modificato", layout, logo=bool(layout.logo))
+        return Response(self.get_serializer(layout).data)
+
+
 class StampanteTicketSerializer(serializers.ModelSerializer):
     sede = RiferimentoCliente(Sede)
+    layout = RiferimentoCliente(LayoutTicket, required=False, allow_null=True)
     abbinata_a = serializers.SerializerMethodField()
     prova = serializers.SerializerMethodField()
 
@@ -308,7 +380,7 @@ class StampanteTicketSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StampanteTicket
-        fields = ["id", "nome", "sede", "tipo", "indirizzo", "modello", "intestazione", "messaggio", "note", "abbinata_a", "prova"]
+        fields = ["id", "nome", "sede", "tipo", "indirizzo", "modello", "layout", "intestazione", "messaggio", "note", "abbinata_a", "prova"]
 
     def validate_indirizzo(self, valore):
         valore = valore.strip()

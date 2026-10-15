@@ -32,6 +32,7 @@ from dispositivi.api import (
     RichiestaAbbinamentoView,
     ProvaStampaPlayerView,
     SchermataPlayerView,
+    LayoutTicketViewSet,
     StampantiViewSet,
     StatoPlayerView,
 )
@@ -58,6 +59,7 @@ router.register("piattaforma/audit", AuditPiattaformaViewSet, basename="audit-pi
 router.register("insegne", InsegneViewSet, basename="insegne")
 router.register("sedi", SediViewSet, basename="sedi")
 router.register("stampanti", StampantiViewSet, basename="stampanti")
+router.register("layout-ticket", LayoutTicketViewSet, basename="layout-ticket")
 router.register("fonti-plugin", FontiPluginViewSet, basename="fonti-plugin")
 router.register("gruppi", GruppiViewSet, basename="gruppi")
 router.register("monitor", MonitorViewSet, basename="monitor")

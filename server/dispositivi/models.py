@@ -34,6 +34,29 @@ class GruppoMonitor(ModelloCliente):
         return self.nome
 
 
+class LayoutTicket(ModelloCliente):
+    """Com'è fatto il biglietto stampato: gli elementi in colonna (logo, intestazione, reparto,
+    numero, testo di fine biglietto…), ognuno con carattere, grandezza e allineamento. Si sceglie
+    per ogni stampante (vedi «ticket»). Il totem lo disegna come immagine: esce identico
+    sulla Epson di rete e sulla stampante di sistema."""
+
+    nome = models.CharField(max_length=100)
+    # Larghezza della carta: 80 mm (576 punti a 203 dpi) o 58 mm (384 punti).
+    carta = models.PositiveSmallIntegerField(choices=[(80, "80 mm"), (58, "58 mm")], default=80)
+    elementi = models.JSONField(default=list, blank=True)
+    # Il logo in PNG (base64), già in scala di grigi e alla larghezza della carta.
+    logo = models.TextField(blank=True)
+    modificato = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["nome"]
+        verbose_name_plural = "layout ticket"
+        constraints = [models.UniqueConstraint(fields=["cliente", "nome"], name="layout_ticket_nome_unico")]
+
+    def __str__(self):
+        return self.nome
+
+
 class StampanteTicket(ModelloCliente):
     """Una stampante dei biglietti di un negozio. Si abbina ai totem dall'anagrafica degli schermi."""
 
@@ -47,7 +70,9 @@ class StampanteTicket(ModelloCliente):
     # Epson: indirizzo IP o nome in rete, eventualmente con la porta.
     indirizzo = models.CharField(max_length=100, blank=True)
     modello = models.CharField(max_length=60, blank=True)
-    # Vuoti: valgono quelli della zona «prendi il numero» del layout.
+    # Com'è fatto il biglietto; vuoto: quello semplice, con i testi della zona «prendi il numero».
+    layout = models.ForeignKey(LayoutTicket, on_delete=models.SET_NULL, null=True, blank=True, related_name="stampanti")
+    # Vuoti: valgono quelli del layout ticket, o della zona «prendi il numero» del layout.
     intestazione = models.CharField(max_length=60, blank=True)
     messaggio = models.CharField(max_length=120, blank=True)
     note = models.CharField(max_length=200, blank=True)
