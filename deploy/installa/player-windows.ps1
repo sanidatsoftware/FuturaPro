@@ -20,6 +20,12 @@
     -Utente NOME          utente Windows che avvia il player (predefinito: quello attuale)
     -Totem IP             (monitor) indirizzo del totem del negozio, per leggere i numeri dei reparti
     -IndirizzoTotem IP    (totem) indirizzo di questo totem in rete locale, se diverso da quello trovato
+    -Impronta HEX         impronta SHA-256 attesa del certificato interno del server: lo script la
+                          controlla da solo (il comando pronto del pannello la contiene già)
+    -ImprontaTotem HEX    (monitor) impronta attesa del certificato del totem, come sopra
+
+  Le impronte si confrontano a mano solo se non sono nel comando; se sul PC c'è già lo stesso
+  certificato (reinstallazione) non si chiede nulla.
     -Configura            apre il browser del player in una finestra normale, per
                           accettare il certificato di una stampante o controllare le impostazioni
     -Rimuovi              toglie il player da questo PC
@@ -31,6 +37,8 @@ param(
     [string]$Utente = $env:USERNAME,
     [string]$Totem,
     [string]$IndirizzoTotem,
+    [string]$Impronta,
+    [string]$ImprontaTotem,
     [switch]$Configura,
     [switch]$Rimuovi
 )
@@ -47,6 +55,37 @@ $CartellaCode = Join-Path $Cartella "code"
 $AppIdCode = "{6f0b1d6e-2a4c-4f7e-9c1d-5a1f2b3c4d5e}"
 
 function Scrivi([string]$testo, [string]$colore = "Cyan") { Write-Host $testo -ForegroundColor $colore }
+
+function Normalizza-Impronta([string]$testo) { return ($testo -replace '[^0-9a-fA-F]', '').ToUpper() }
+
+# Decide se fidarsi di un certificato: già presente tra quelli attendibili (reinstallazione),
+# impronta uguale a quella del comando del pannello, oppure confronto a mano come ultima strada.
+function Conferma-Certificato([string]$file, [string]$attesa, [string]$chi, [string]$dove) {
+    $c = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($file)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $impronta = ($sha.ComputeHash($c.RawData) | ForEach-Object { $_.ToString("X2") }) -join ""
+    if (Test-Path "Cert:\LocalMachine\Root\$($c.Thumbprint)") {
+        Scrivi "Certificato $chi già attendibile su questo PC: nessun controllo da fare." "Green"
+        return
+    }
+    if ($attesa) {
+        if ((Normalizza-Impronta $attesa) -ne $impronta) {
+            Scrivi "`nATTENZIONE: il certificato $chi NON è quello indicato nel comando." "Red"
+            Write-Host "  atteso:   $(Normalizza-Impronta $attesa)"
+            Write-Host "  ricevuto: $impronta"
+            throw "Installazione interrotta: certificato $chi diverso da quello atteso. Ricopia il comando dal pannello; se l'errore resta, in rete potrebbe esserci un dispositivo che si spaccia per $chi."
+        }
+        Scrivi "Certificato $chi controllato: l'impronta coincide con quella del pannello." "Green"
+    } else {
+        Scrivi "`nImpronta del certificato $($chi):" "Yellow"
+        Write-Host "  $impronta"
+        Scrivi "Deve coincidere con quella $dove." "Yellow"
+        $conferma = Read-Host "Coincide? (S/N)"
+        if ($conferma -notmatch '^[sSyY]') { throw "Installazione interrotta: impronta $chi non confermata." }
+    }
+    Import-Certificate -FilePath $file -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+    Scrivi "Certificato $chi installato tra quelli attendibili." "Green"
+}
 
 function Trova-Browser {
     $candidati = @(
@@ -137,16 +176,7 @@ try {
     $certificatoScaricato = $false
 }
 if ($certificatoScaricato) {
-    $certificato = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($fileCertificato)
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    $impronta = ($sha.ComputeHash($certificato.RawData) | ForEach-Object { $_.ToString("X2") }) -join ""
-    Scrivi "`nIl server usa un certificato interno. Impronta SHA-256:" "Yellow"
-    Write-Host "  $impronta"
-    Scrivi "Deve coincidere con quella mostrata alla fine dell'installazione del server." "Yellow"
-    $conferma = Read-Host "Coincide? (S/N)"
-    if ($conferma -notmatch '^[sSyY]') { throw "Installazione interrotta: impronta non confermata." }
-    Import-Certificate -FilePath $fileCertificato -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
-    Scrivi "Certificato installato tra quelli attendibili." "Green"
+    Conferma-Certificato $fileCertificato $Impronta "del server" "mostrata alla fine dell'installazione del server (o nel pannello, in Anagrafica Dispositivi Video)"
 } else {
     Scrivi "Nessun certificato interno: il server usa un certificato pubblico."
 }
@@ -241,12 +271,7 @@ if ($Tipo -eq "monitor") {
         } catch {
             throw "Il totem $Totem non risponde (http://$($Totem):8090). Installa prima il totem, poi rilancia sul monitor."
         }
-        Scrivi "`nImpronta del certificato del totem:" "Yellow"
-        Write-Host "  $(Impronta-Certificato $fileCertificatoTotem)"
-        Scrivi "Deve coincidere con quella mostrata alla fine dell'installazione del totem." "Yellow"
-        $conferma = Read-Host "Coincide? (S/N)"
-        if ($conferma -notmatch '^[sSyY]') { throw "Installazione interrotta: impronta del totem non confermata." }
-        Import-Certificate -FilePath $fileCertificatoTotem -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+        Conferma-Certificato $fileCertificatoTotem $ImprontaTotem "del totem" "mostrata alla fine dell'installazione del totem"
         try {
             Invoke-WebRequest -UseBasicParsing -Uri "https://$($Totem):8443/salute" -TimeoutSec 10 | Out-Null
             Scrivi "Il monitor raggiunge le code del totem." "Green"

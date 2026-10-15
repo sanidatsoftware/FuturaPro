@@ -442,3 +442,9 @@ td.attenzione, div.attenzione { color: var(--errore); }
 .legenda-stati { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--tenue); }
 .legenda-stati span { display: inline-flex; align-items: center; gap: 5px; }
 .legenda-stati i { width: 10px; height: 10px; border-radius: 3px; background: var(--st); display: inline-block; }
+
+/* Comandi pronti per installare il player */
+.installazione summary { cursor: pointer; font-weight: 600; font-size: 16px; }
+.comando-installazione { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.comando-installazione code { display: block; font-family: Consolas, "Courier New", monospace; font-size: 12.5px; background: #0f1524; color: #e6eaf2; padding: 10px 12px; border-radius: 8px; overflow-wrap: anywhere; user-select: all; }
+.comando-installazione button { align-self: flex-start; }

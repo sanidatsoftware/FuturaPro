@@ -178,6 +178,19 @@ class ImpostazioniAllarmiSerializer(serializers.ModelSerializer):
         return dati
 
 
+class InstallazioneView(VistaConContesto, APIView):
+    """I comandi pronti per installare il player su un PC Windows, con le impronte dei certificati
+    già dentro: lo script le controlla da solo (vedi dispositivi.installazione)."""
+
+    ruoli_lettura = GESTIONE | {Ruolo.TECNICO}
+
+    def get(self, request):
+        from . import installazione
+
+        sedi = Sede.objects.order_by("nome")
+        return Response(installazione.comandi(request, sedi, Monitor.objects.filter(totem_master=True)))
+
+
 class DistribuzioneView(VistaConContesto, APIView):
     """Distribuzione contenuti dell'azienda: per ogni schermo quanti file del palinsesto ha
     già, cosa sta scaricando e cosa va in onda; per ogni promozione su quanti schermi è arrivata."""
@@ -899,6 +912,11 @@ class HeartbeatView(VistaPlayer):
             avanzamento = pulisci_avanzamento(request.data.get("distribuzione"))
             if avanzamento is not None:
                 info["distribuzione"] = {**avanzamento, "riferito": adesso.isoformat()}
+            # Il Totem Master riferisce l'impronta del certificato del suo servizio code: va nel
+            # comando di installazione dei monitor del negozio, che così la controllano da soli.
+            impronta_totem = str(request.data.get("impronta_totem") or "").upper()
+            if re.fullmatch(r"[0-9A-F]{64}", impronta_totem):
+                info["impronta_totem"] = impronta_totem
             in_onda = pulisci_in_onda(request.data.get("in_onda"))
             if in_onda is not None:
                 info["in_onda"] = in_onda

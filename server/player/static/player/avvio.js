@@ -615,8 +615,26 @@ async function avviaPlayer() {
     battito();
   };
 
+  // Il Totem Master riferisce l'impronta del certificato del suo servizio code (una volta
+  // l'ora): il pannello la mette nel comando di installazione dei monitor del negozio.
+  let improntaTotem = null;
+  let improntaLetta = 0;
+  const leggiImprontaTotem = async () => {
+    if (!mostrato?.code?.reparti || Date.now() - improntaLetta < 3600_000) return;
+    improntaLetta = Date.now();
+    try {
+      const risposta = await conLimite(`${SERVIZIO_LOCALE}/certificato.cer`, {}, 3000);
+      if (!risposta.ok) return;
+      const impronta = await crypto.subtle.digest("SHA-256", await risposta.arrayBuffer());
+      improntaTotem = [...new Uint8Array(impronta)].map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+    } catch {
+      // Servizio code non raggiungibile: si riprova tra un'ora.
+    }
+  };
+
   // Il segnale periodico dice anche quale versione del palinsesto è in onda.
   const battito = async () => {
+    await leggiImprontaTotem();
     // Il Totem Master riferisce anche come vanno le copie dei file dei plugin.
     let plugin = null;
     if (mostrato?.code?.plugin) {
@@ -630,7 +648,7 @@ async function avviaPlayer() {
     fetch("/api/player/heartbeat/", {
       method: "POST",
       headers: { ...intestazioni, "Content-Type": "application/json" },
-      body: JSON.stringify({ versione: VERSIONE, postazione: POSTAZIONE, manifest: mostrato?.versione || "", problema: motore.problema || null, riposo: motore.inRiposo, attesa_download: Boolean(inAttesa?.fascia), plugin,
+      body: JSON.stringify({ versione: VERSIONE, postazione: POSTAZIONE, impronta_totem: improntaTotem, manifest: mostrato?.versione || "", problema: motore.problema || null, riposo: motore.inRiposo, attesa_download: Boolean(inAttesa?.fascia), plugin,
         distribuzione: riassuntoAvanzamento(), in_onda: Object.entries(motore.inOnda).map(([zona, voce]) => ({ zona, ...voce })) }),
     })
       .then((risposta) => (risposta.ok && risposta.status !== 204 ? risposta.json() : null))

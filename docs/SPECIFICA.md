@@ -743,6 +743,16 @@ righe di esempio in un testo di pochi KB e cerca dei codici in tutte le colonne.
 
 ## 8. Player
 
+**Certificati senza confronti a occhio.** Lo script di Windows deve fidarsi del certificato
+interno del server e di quello del Totem Master. Il pannello (in HTTPS, quindi già sicuro) mostra
+in Anagrafica Dispositivi Video i comandi pronti per negozio (`GET /api/installazione/`,
+`dispositivi/installazione.py`) con dentro le impronte: `-Impronta` (calcolata dal certificato di
+Caddy, che il container dell'app legge in sola lettura: `FUTURAPRO_CA_CERT`) e, per i monitor,
+`-ImprontaTotem`, che il player del Totem Master calcola dal `certificato.cer` del suo servizio
+code e manda con il segnale periodico (`info_dispositivo.impronta_totem`). Lo script confronta da
+solo e si ferma se non coincidono; un certificato già presente tra quelli attendibili del PC
+(reinstallazione) non chiede nulla; senza impronta nel comando resta il confronto a mano.
+
 **Guardiano della postazione (Windows).** Lo script di installazione dà a ogni PC un codice
 casuale (`impostazioni.json`, resta uguale se si reinstalla) e lo passa al player nell'indirizzo
 (`/player/?postazione=…`, poi salvato nel browser); il player lo manda con il segnale periodico e

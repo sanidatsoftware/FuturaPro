@@ -170,7 +170,13 @@ Serve **Google Chrome** (consigliato) o Microsoft Edge, già presente su Windows
 1. Accedi a Windows con l'utente che userà il monitor (meglio un utente locale dedicato, es. «schermo»,
    amministratore solo per l'installazione).
 2. Apri **PowerShell come amministratore** (tasto destro su Start → *Terminale (Amministratore)*).
-3. Incolla il comando mostrato alla fine dell'installazione del server:
+3. Incolla il comando pronto: lo trovi nel pannello, **Hardware → Anagrafica Dispositivi Video →
+   «Installare un nuovo totem o monitor»** (scegli il negozio e premi *Copia*), oppure alla fine
+   dell'installazione del server. Contiene già le **impronte dei certificati** (`-Impronta`, e per i
+   monitor `-ImprontaTotem`): lo script le controlla da solo e si ferma solo se non coincidono.
+   Su un PC già installato lo stesso certificato è riconosciuto e non si chiede nulla. Solo se
+   l'impronta non è nel comando, lo script la mostra e chiede di confrontarla a mano. Il comando
+   di base è:
 
    ```powershell
    irm http://SERVER/installa/player-windows.ps1 -OutFile $env:TEMP\futurapro.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\futurapro.ps1 -Server SERVER

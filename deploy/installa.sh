@@ -218,17 +218,21 @@ echo "Pannello:        https://$FP_INDIRIZZO/pannello/"
 echo "Player:          https://$FP_INDIRIZZO/player/"
 echo "Banco:           https://$FP_INDIRIZZO/banco/"
 [ "$BANCO_HTTP" = si ] && echo "Banco (bilance): http://$FP_INDIRIZZO/banco/   (solo dalla rete locale)"
-echo
-echo "Installazione su Windows (monitor e totem), in PowerShell come amministratore:"
-echo "  irm http://$FP_INDIRIZZO/installa/player-windows.ps1 -OutFile \$env:TEMP\\futurapro.ps1; powershell -ExecutionPolicy Bypass -File \$env:TEMP\\futurapro.ps1 -Server $FP_INDIRIZZO"
+impronta=""
 if [ "$CERTIFICATO" = interno ]; then
     for _ in $(seq 1 15); do
         docker compose exec -T caddy test -f /data/caddy/pki/authorities/local/root.crt < /dev/null && break
         sleep 1
     done
     impronta=$(docker compose exec -T caddy cat /data/caddy/pki/authorities/local/root.crt < /dev/null | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':')
+fi
+echo
+echo "Installazione su Windows (monitor e totem), in PowerShell come amministratore."
+echo "I comandi pronti, per negozio, sono anche nel pannello: Hardware -> Anagrafica Dispositivi Video."
+echo "  irm http://$FP_INDIRIZZO/installa/player-windows.ps1 -OutFile \$env:TEMP\\futurapro.ps1; powershell -ExecutionPolicy Bypass -File \$env:TEMP\\futurapro.ps1 -Server $FP_INDIRIZZO${impronta:+ -Impronta $impronta}"
+if [ -n "$impronta" ]; then
     echo
-    echo "Impronta del certificato interno (l'installazione sui player la mostra: devono coincidere):"
+    echo "L'impronta del certificato interno è già nel comando: lo script la controlla da solo."
     echo "  $impronta"
 fi
 echo

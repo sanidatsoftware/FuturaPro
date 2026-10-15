@@ -138,6 +138,10 @@ if not EMAIL_HOST:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 # Facoltativo: l'indirizzo pubblico (da internet) per la coda sul telefono, es. https://coda.miodominio.it
+# Il certificato interno del server (Caddy) e l'indirizzo per i player: servono al comando di
+# installazione mostrato nel pannello (vedi dispositivi.installazione).
+FUTURAPRO_CA_CERT = _env("CA_CERT", "")
+FUTURAPRO_INDIRIZZO = _env("INDIRIZZO", "")
 FUTURAPRO_URL_PUBBLICO = _env("URL_PUBBLICO", "")
 if FUTURAPRO_URL_PUBBLICO:
     from urllib.parse import urlsplit

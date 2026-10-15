@@ -281,6 +281,8 @@ async function schedaMonitor() {
   const sceltaRiserva = (orientamento, valore, alCambio) => sceltaFileRiserva(riserve, orientamento, valore, alCambio);
   const gestione = ruoloGestione();
 
+  if ((gestione || stato.io.ruolo === "tecnico") && sedi.length) await sezioneInstallazione();
+
   if (gestione) {
     const abbina = sezione("Abbina uno schermo");
     if (!sedi.length) crea("p", { classe: "nota", testo: "Prima crea una sede, in «Sedi e gruppi»." }, abbina);
@@ -1066,6 +1068,58 @@ async function sezioneMarchio() {
     }, azioni);
   }
   crea("button", { type: "button", testo: "Vedi la pagina di accesso salvata", onclick: () => apriRiquadro("Pagina di accesso", "/accesso/?anteprima=1") }, azioni);
+}
+
+// I comandi pronti per installare il player su un PC Windows, con le impronte dei certificati già
+// dentro: lo script le controlla da solo, nessuna stringa lunga da confrontare a occhio.
+async function sezioneInstallazione() {
+  const dati = await api("GET", "/api/installazione/").catch(() => null);
+  if (!dati?.sedi?.length) return;
+  const box = sezione("");
+  const dettagli = crea("details", { classe: "installazione" }, box);
+  crea("summary", { testo: "🧰 Installare un nuovo totem o monitor (comandi pronti)", "data-aiuto": "I comandi da incollare in PowerShell, come amministratore, sul PC del totem o del monitor." }, dettagli);
+  crea("p", {
+    classe: "nota",
+    testo: "Sul PC di Windows apri PowerShell come amministratore e incolla il comando, una volta sola. Prima il totem, poi i monitor. "
+      + "Le impronte dei certificati sono già nel comando: lo script le controlla da solo e si ferma solo se non coincidono (in quel caso ricopia il comando da qui). "
+      + "Rilanciarlo su un PC già installato è sicuro: l'abbinamento resta.",
+  }, dettagli);
+  const riga = crea("div", { classe: "riga" }, dettagli);
+  const sceltaSede = campo("Negozio", scelta(dati.sedi.map((s) => [s.id, s.nome])), riga);
+  sceltaSede.dataset.aiuto = "Il negozio dove si installa: decide l'IP del Totem Master nel comando dei monitor.";
+  const comandi = crea("div", {}, dettagli);
+  const blocco = (titolo, testo, aiuto) => {
+    const b = crea("div", { classe: "comando-installazione" }, comandi);
+    crea("strong", { testo: titolo }, b);
+    const codice = crea("code", { testo }, b);
+    crea("button", {
+      type: "button", classe: "piccolo", testo: "📋 Copia", "data-aiuto": aiuto,
+      onclick: async (e) => {
+        try {
+          await navigator.clipboard.writeText(testo);
+        } catch {
+          const area = getSelection();
+          area.selectAllChildren(codice);
+          document.execCommand("copy");
+        }
+        e.target.textContent = "✓ Copiato";
+        setTimeout(() => { e.target.textContent = "📋 Copia"; }, 2000);
+      },
+    }, b);
+  };
+  const disegna = () => {
+    comandi.replaceChildren();
+    const s = dati.sedi.find((x) => x.id === sceltaSede.value) || dati.sedi[0];
+    blocco("Totem (Totem Master del negozio)", s.comando_totem, "Copia il comando per il PC del totem.");
+    blocco("Monitor", s.comando_monitor, "Copia il comando per il PC di un monitor del negozio.");
+    const note = [];
+    if (!dati.impronta_server) note.push("Il server non ha un certificato interno da controllare (usa un certificato pubblico): nessuna impronta da confrontare.");
+    if (!s.totem) note.push("Per i monitor manca l'IP del Totem Master: scrivilo in Impostazioni → Sedi e gruppi, poi ricarica questa pagina (lo script lo chiederà).");
+    else if (!s.impronta_totem) note.push("L'impronta del certificato del totem arriva al pannello quando il Totem Master è installato e in linea (entro qualche minuto): finché non c'è, lo script del monitor la fa confrontare a mano con quella mostrata dal totem.");
+    for (const n of note) crea("p", { classe: "nota", testo: n }, comandi);
+  };
+  sceltaSede.addEventListener("change", disegna);
+  disegna();
 }
 
 // --- Utenti --------------------------------------------------------------------------------------

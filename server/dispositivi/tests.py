@@ -423,3 +423,49 @@ class GuardianoPostazioneTest(Base):
         # Un codice non valido nel segnale si ignora.
         self.client.post("/api/player/heartbeat/", {"versione": "web", "postazione": "x' OR 1=1"}, format="json", HTTP_AUTHORIZATION=f"Device {token}")
         self.assertEqual(SegnalePostazione.objects.count(), 1)
+
+
+class InstallazioneTest(Base):
+    """I comandi pronti del pannello contengono le impronte: lo script le controlla da solo."""
+
+    def test_comandi_con_le_impronte(self):
+        import secrets
+        import shutil
+        import subprocess
+        import tempfile
+
+        from django.test import override_settings
+
+        from clienti.models import Sede
+
+        from .models import CredenzialeDispositivo, impronta
+
+        cartella = tempfile.mkdtemp()
+        try:
+            subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", f"{cartella}/k.pem",
+                            "-out", f"{cartella}/ca.crt", "-days", "2", "-subj", "/CN=prova"], check=True, capture_output=True)
+            attesa = subprocess.run(["openssl", "x509", "-in", f"{cartella}/ca.crt", "-noout", "-fingerprint", "-sha256"],
+                                    check=True, capture_output=True, text=True).stdout.split("=")[1].strip().replace(":", "")
+            with contesto_cliente(self.a.id):
+                Sede.objects.filter(id=self.a_milano.id).update(indirizzo_totem="192.168.1.65")
+                Monitor.objects.filter(id=self.mon_a_milano.id).update(totem_master=True)
+            # Il Totem Master riferisce l'impronta del suo certificato.
+            token = secrets.token_urlsafe(32)
+            with contesto_cliente(self.a.id):
+                CredenzialeDispositivo.objects.create(impronta_token=impronta(token), monitor=self.mon_a_milano, cliente_id=self.a.id)
+            self.client.post("/api/player/heartbeat/", {"versione": "web", "impronta_totem": "ab" * 32}, format="json",
+                             HTTP_AUTHORIZATION=f"Device {token}")
+            self.come(self.admin_a)
+            with override_settings(FUTURAPRO_CA_CERT=f"{cartella}/ca.crt", FUTURAPRO_INDIRIZZO="192.168.1.67"):
+                dati = self.client.get("/api/installazione/").json()
+            self.assertEqual(dati["impronta_server"], attesa)
+            milano = next(s for s in dati["sedi"] if s["nome"] == "Milano")
+            self.assertIn(f"-Server 192.168.1.67 -Impronta {attesa} -Tipo totem", milano["comando_totem"])
+            self.assertIn(f"-Tipo monitor -Totem 192.168.1.65 -ImprontaTotem {'AB' * 32}", milano["comando_monitor"])
+            # Senza certificato interno (certificato pubblico) niente -Impronta; lo User non li vede.
+            with override_settings(FUTURAPRO_CA_CERT="", FUTURAPRO_INDIRIZZO="schermi.esempio.it"):
+                self.assertNotIn("-Impronta ", self.client.get("/api/installazione/").json()["sedi"][0]["comando_totem"])
+            self.come(self.user_a)
+            self.assertEqual(self.client.get("/api/installazione/").status_code, 403)
+        finally:
+            shutil.rmtree(cartella, ignore_errors=True)
