@@ -290,7 +290,7 @@ class AbbinamentoTest(Base):
         self.client.logout()
         stato = self.client.get("/api/player/stato/", **dispositivo).json()
         self.assertEqual((stato["abbinato"], stato["nome"]), (True, "Cassa"))
-        self.assertEqual(self.client.post("/api/player/heartbeat/", {"versione": "1.0"}, **dispositivo).status_code, 204)
+        self.assertEqual(self.client.post("/api/player/heartbeat/", {"versione": "1.0"}, **dispositivo).status_code, 200)  # risponde con la versione attuale del player
         with contesto_cliente(self.a.id):
             self.assertTrue(Monitor.objects.get(nome="Cassa").online)
 

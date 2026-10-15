@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="{% static 'player/schermo.css' %}">
   <link rel="stylesheet" href="{% static 'player/plugin.css' %}">
 </head>
-<body data-modo="{{ modo }}" data-monitor="{{ monitor|default:'' }}">
+<body data-modo="{{ modo }}" data-monitor="{{ monitor|default:'' }}" data-versione="{{ versione }}">
   <div id="schermo"></div>
   <div id="avviso"><h1>FuturaPro</h1><p>Avvio…</p></div>
   <script type="module" src="{% static 'player/avvio.js' %}"></script>

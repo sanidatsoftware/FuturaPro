@@ -3,7 +3,9 @@
 // Rete prima (per prendere subito gli aggiornamenti), copia salvata se la rete manca.
 // Le chiamate alle API e i file dei contenuti non passano di qui: li gestisce avvio.js.
 
-const CACHE = "futurapro-app-v21";
+// Il nome cambia da solo con la versione del player (player/versione.py): una versione nuova
+// prende una copia nuova e cancella le vecchie.
+const CACHE = "futurapro-app-{{ versione }}";
 const FILE = [
   "/player/",
   "/static/player/avvio.js",

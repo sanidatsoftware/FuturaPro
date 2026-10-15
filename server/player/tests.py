@@ -30,3 +30,12 @@ class PagineTest(TestCase):
         r = self.client.get("/player/sw.js")
         self.assertEqual(r["Content-Type"], "text/javascript; charset=utf-8")
         self.assertContains(r, "futurapro-app-")
+
+    def test_versione_del_player(self):
+        """La versione si calcola dai file del player: pagina, service worker e segnale la riportano."""
+        from .versione import versione
+
+        attuale = versione()
+        self.assertRegex(attuale, r"^web-\d+\.\d+-[0-9a-f]{7}$")
+        self.assertContains(self.client.get("/player/"), f'data-versione="{attuale}"')
+        self.assertContains(self.client.get("/player/sw.js"), f"futurapro-app-{attuale}")

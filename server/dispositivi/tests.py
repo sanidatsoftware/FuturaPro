@@ -379,3 +379,24 @@ class DisposizioneTicketTest(Base):
 
         with contesto_cliente(self.a.id):
             self.assertEqual(ticket.per_il_player(LayoutTicket.objects.get(id=layout["id"]))["disposizione"], "libera")
+
+
+class AggiornamentoPlayerTest(Base):
+    def test_il_segnale_dice_la_versione_attuale(self):
+        import secrets
+
+        from player.versione import versione
+
+        from .models import CredenzialeDispositivo, impronta
+
+        token = secrets.token_urlsafe(32)
+        with contesto_cliente(self.a.id):
+            CredenzialeDispositivo.objects.create(impronta_token=impronta(token), monitor=self.mon_a_milano, cliente_id=self.a.id)
+        r = self.client.post("/api/player/heartbeat/", {"versione": "web-0.2"}, format="json", HTTP_AUTHORIZATION=f"Device {token}")
+        self.assertEqual(r.json(), {"versione_player": versione()})
+        self.come(self.admin_a)
+        stato = self.client.get("/api/stato-schermi/").json()
+        self.assertEqual(stato["versione_attuale"], versione())
+        self.assertEqual(next(s for s in stato["schermi"] if s["nome"] == "Ingresso")["versione"], "web-0.2")
+        avvisi = self.client.get("/api/panoramica/").json()["avvisi"]
+        self.assertTrue(any("versione precedente" in a["testo"] for a in avvisi))

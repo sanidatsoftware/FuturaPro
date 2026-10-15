@@ -63,6 +63,14 @@ def azienda(sedi=None, con_registro=True, adesso=None) -> dict:
     if len(spenti) > 3:
         altri = len(spenti) - 3
         avvisi.append(_avviso("critico", "Un altro schermo non in linea" if altri == 1 else f"Altri {altri} schermi non in linea", "stato"))
+    # Player rimasti a una versione precedente: quelli recenti si aggiornano da soli entro un minuto,
+    # quindi chi resta indietro (in linea) va riavviato a mano una volta.
+    from player.versione import versione
+
+    attuale = versione()
+    vecchi = [m for m in monitor if m.online and m.versione_player and m.versione_player != attuale]
+    if vecchi:
+        avvisi.append(_avviso("attenzione", f"{len(vecchi)} schermi con il player di una versione precedente: riavviali una volta, poi si aggiornano da soli", "stato"))
     errori = [s for s in schermi if s["stato"] == "errore"]
     if errori:
         avvisi.append(_avviso("attenzione", f"{len(errori)} schermi non riescono a scaricare dei file", "distribuzione"))

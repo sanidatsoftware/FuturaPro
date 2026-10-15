@@ -264,7 +264,10 @@ class StatoSchermiView(VistaConContesto, APIView):
             })
         eventi = EventoSchermo.objects.filter(monitor__in=monitor).select_related("monitor", "monitor__sede")[:50]
         impostazioni = ImpostazioniAllarmi.objects.first()
+        from player.versione import versione
+
         return Response({
+            "versione_attuale": versione(),
             "giorni": [(dal + timedelta(days=n)).isoformat() for n in range(giorni)],
             "schermi": schermi,
             "eventi": [
@@ -879,4 +882,7 @@ class HeartbeatView(VistaPlayer):
                 info["in_onda"] = in_onda
             monitor.info_dispositivo = info
             monitor.save(update_fields=["ultimo_contatto", "versione_player", "manifest_ricevuto", "info_dispositivo"])
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        # La versione attuale del player: se il player ne ha un'altra, si aggiorna da solo.
+        from player.versione import versione
+
+        return Response({"versione_player": versione()})

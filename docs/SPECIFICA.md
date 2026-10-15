@@ -743,6 +743,18 @@ righe di esempio in un testo di pochi KB e cerca dei codici in tutte le colonne.
 
 ## 8. Player
 
+**Versione e aggiornamento automatico.** La versione del player web si calcola da sola dal
+contenuto dei suoi file (`player/versione.py`: `web-<BASE>-<impronta>`, es. `web-1.5-3b4875b`):
+ogni modifica a pagina, motore, stili o service worker dà una versione nuova, senza numeri da
+ricordarsi di cambiare; anche la cache del service worker prende quel nome. Il player la manda a
+ogni segnale periodico e il server risponde con quella attuale (`{"versione_player": …}`): se è
+diversa il player aggiorna il service worker e si ricarica (il palinsesto riparte subito dalla
+copia salvata); verso la stessa versione riprova al massimo ogni 30 minuti, così non si ricarica
+all'infinito se qualcosa va storto. In «Stato e allarmi» la colonna Player mostra la versione che
+gira davvero su ogni schermo, con «da aggiornare» se non è l'ultima; la Panoramica avvisa degli
+schermi rimasti indietro. I player di una versione precedente alla 1.5 non hanno ancora questo
+meccanismo: vanno riavviati una volta a mano, poi si aggiornano da soli.
+
 **Motore di rendering** (`server/player/static/player/`, JavaScript senza dipendenze né
 compilazione). Disegna il layout del manifest e fa girare le zone: slide con transizioni e loro
 durata, orologio nel fuso del manifest, meteo, rullo continuo (i titoli nuovi entrano al giro

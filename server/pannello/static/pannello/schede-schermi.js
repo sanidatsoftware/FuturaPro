@@ -277,7 +277,14 @@ export async function schedaStato() {
         + (senzaDati ? "nessun dato" : atteso ? `in linea ${Math.round((minuti - riposo) / 60 * 10) / 10} h su ${Math.round(atteso / 60 * 10) / 10} h previste` : "spento per orario");
     }
     crea("span", { classe: "percentuale", testo: attesi ? `${Math.round((somma / attesi) * 100)}%` : "—" }, cella);
-    crea("td", { testo: s.versione || "—", classe: "tenue" }, riga);
+    // La versione del player che gira davvero; se non è l'ultima, si aggiorna da solo al prossimo segnale.
+    const versione = crea("td", { testo: s.versione || "—", classe: "tenue" }, riga);
+    if (s.versione && dati.versione_attuale && s.versione !== dati.versione_attuale) {
+      crea("div", {
+        classe: "attenzione", testo: "⟳ da aggiornare",
+        "data-aiuto": `L'ultima versione è ${dati.versione_attuale}. Lo schermo si aggiorna da solo entro un minuto dal prossimo segnale; un player di una versione precedente alla 1.5 va riavviato una volta a mano.`,
+      }, versione);
+    } else if (s.versione) versione.dataset.aiuto = "La versione del player che gira su questo schermo: è l'ultima.";
   }
 
   const allarmi = sezione("🔔 Allarmi via email");

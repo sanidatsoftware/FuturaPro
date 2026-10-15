@@ -5,7 +5,6 @@ import { Motore } from "./motore.js";
 import { preparaLettore } from "./plugin.js";
 import { istanteNelFuso } from "./regole.js";
 
-const VERSIONE = "web-0.2";
 const OGNI_MANIFEST = 30_000;
 const OGNI_HEARTBEAT = 60_000;
 const OGNI_STATO = 5_000;
@@ -17,6 +16,8 @@ const CACHE_FILE = "futurapro-file";
 const radice = document.getElementById("schermo");
 const avviso = document.getElementById("avviso");
 const impostazioni = document.body.dataset;
+// La versione del player, calcolata dal server dal contenuto dei file (player/versione.py).
+const VERSIONE = impostazioni.versione || "web-sconosciuta";
 
 function memoria(chiave, valore) {
   try {
@@ -136,6 +137,32 @@ async function preparaFile(manifest, scarica, voci = Object.values(manifest.cont
     }
   }
   return completo;
+}
+
+// --- Aggiornamento automatico ------------------------------------------------------
+
+// Il server dice a ogni segnale qual è la versione attuale del player: se questa è diversa il
+// player si ricarica (la pagina e i suoi file arrivano dalla rete, il palinsesto riparte subito
+// dalla copia salvata). Per non ricaricare all'infinito se qualcosa va storto, verso la stessa
+// versione ci si riprova al massimo ogni 30 minuti.
+async function aggiornaSeServe(attuale) {
+  if (!attuale || attuale === VERSIONE || impostazioni.modo !== "player") return;
+  const CHIAVE = "futurapro.aggiornamento";
+  let ultimo = null;
+  try {
+    ultimo = JSON.parse(memoria(CHIAVE) || "null");
+  } catch {
+    ultimo = null;
+  }
+  if (ultimo?.verso === attuale && Date.now() - ultimo.quando < 30 * 60_000) return;
+  memoria(CHIAVE, JSON.stringify({ verso: attuale, da: VERSIONE, quando: Date.now() }));
+  try {
+    const registrazione = await navigator.serviceWorker?.getRegistration("/player/");
+    await registrazione?.update();
+  } catch {
+    // Senza service worker si ricarica e basta.
+  }
+  location.reload();
 }
 
 // --- Avanzamento della distribuzione ------------------------------------------------
@@ -594,7 +621,10 @@ async function avviaPlayer() {
       headers: { ...intestazioni, "Content-Type": "application/json" },
       body: JSON.stringify({ versione: VERSIONE, manifest: mostrato?.versione || "", problema: motore.problema || null, riposo: motore.inRiposo, attesa_download: Boolean(inAttesa?.fascia), plugin,
         distribuzione: riassuntoAvanzamento(), in_onda: Object.entries(motore.inOnda).map(([zona, voce]) => ({ zona, ...voce })) }),
-    }).catch(() => {});
+    })
+      .then((risposta) => (risposta.ok && risposta.status !== 204 ? risposta.json() : null))
+      .then((dati) => { if (dati?.versione_player) aggiornaSeServe(dati.versione_player); })
+      .catch(() => {});
   };
   await aggiorna();
   setInterval(aggiorna, OGNI_MANIFEST);
