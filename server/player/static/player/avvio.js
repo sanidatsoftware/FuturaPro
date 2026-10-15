@@ -249,24 +249,25 @@ function fileUrgenti(manifest) {
 
 // Legge la risposta senza superare i kilobyte al secondo indicati (0: senza limite); con
 // «conta», riferisce i byte man mano che arrivano (le barre di avanzamento del pannello).
+// I dati passano in flusso, un pezzo alla volta, fino alla cache: un video grande non viene mai
+// tenuto tutto in memoria (con uno di qualche centinaio di MB la pagina del player si bloccherebbe).
 async function conVelocita(risposta, kbps, conta = null) {
   if ((!kbps && !conta) || !risposta.ok || !risposta.body) return risposta;
-  const lettore = risposta.body.getReader();
-  const pezzi = [];
   let letti = 0;
   const inizio = performance.now();
-  for (;;) {
-    const { done, value } = await lettore.read();
-    if (done) break;
-    pezzi.push(value);
-    letti += value.length;
-    conta?.(value.length);
-    if (!kbps) continue;
-    const atteso = (letti / (kbps * 1024)) * 1000;
-    const trascorso = performance.now() - inizio;
-    if (atteso > trascorso) await attendi(atteso - trascorso);
-  }
-  return new Response(new Blob(pezzi), { status: risposta.status, headers: risposta.headers });
+  const flusso = risposta.body.pipeThrough(new TransformStream({
+    async transform(pezzo, uscita) {
+      letti += pezzo.length;
+      conta?.(pezzo.length);
+      if (kbps) {
+        const atteso = (letti / (kbps * 1024)) * 1000;
+        const trascorso = performance.now() - inizio;
+        if (atteso > trascorso) await attendi(atteso - trascorso);
+      }
+      uscita.enqueue(pezzo);
+    },
+  }));
+  return new Response(flusso, { status: risposta.status, statusText: risposta.statusText, headers: risposta.headers });
 }
 
 // Una richiesta che non resta appesa: il servizio code o il server potrebbero non rispondere.
