@@ -105,6 +105,7 @@ if ($Configura) {
 # --- Domande -----------------------------------------------------------------------------
 Scrivi "`nFuturaPro - installazione del player`n" "Green"
 # Su un PC già installato, senza -Server e -Tipo valgono quelli della prima installazione.
+$precedenti = $null
 if (Test-Path $Impostazioni) {
     try {
         $precedenti = Get-Content $Impostazioni -Raw | ConvertFrom-Json
@@ -357,11 +358,21 @@ Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name ScreenSaveActive -Val
 Scrivi "Sospensione e spegnimento dello schermo disattivati." "Green"
 
 # --- Avvio adesso ---------------------------------------------------------------------------------------
+# Reinstallazione: il profilo del browser resta, quindi lo schermo è già abbinato.
+$giaAbbinato = $null -ne $precedenti -and (Test-Path (Join-Path $Profilo "Default"))
 if ($Utente -eq $env:USERNAME) {
     Start-ScheduledTask -TaskName $NomeAttivita
-    Scrivi "`nIl player si sta avviando: tra pochi secondi lo schermo mostra il codice di abbinamento." "Green"
+    if ($giaAbbinato) { Scrivi "`nIl player si sta riavviando con il guardiano." "Green" }
+    else { Scrivi "`nIl player si sta avviando: tra pochi secondi lo schermo mostra il codice di abbinamento." "Green" }
 } else {
     Scrivi "`nIl player partirà al prossimo accesso di $Utente." "Green"
+}
+
+if ($giaAbbinato) {
+    Scrivi "`nReinstallazione completata: lo schermo resta abbinato, nel pannello non c'è nulla da fare." "Green"
+    Write-Host "  Se invece compare un codice di 6 cifre, abbinalo di nuovo in Hardware -> Anagrafica Dispositivi Video -> Abbina uno schermo."
+    Write-Host "  Il guardiano annota cosa fa in $Cartella\guardiano.log."
+    exit 0
 }
 
 Scrivi "`nUltimi passi:" "Yellow"
