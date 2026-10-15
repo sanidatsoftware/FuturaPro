@@ -466,7 +466,7 @@ async function abbina() {
     if (stato.ok) {
       const dati = await stato.json();
       if (dati.abbinato) return token;
-      mostraAvviso("Abbina questo schermo", "Inserisci il codice nel pannello FuturaPro, in Monitor → Abbina.", dati.codice);
+      mostraAvviso("Abbina questo schermo", "Inserisci il codice nel pannello FuturaPro, in Hardware → Anagrafica Dispositivi Video → Abbina uno schermo.", dati.codice);
       await attendi(OGNI_STATO);
       continue;
     }

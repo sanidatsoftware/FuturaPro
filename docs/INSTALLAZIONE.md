@@ -82,14 +82,32 @@ browser del tuo PC mostrerà un avviso finché non installi il certificato anche
 
 ### Primo giro nel pannello
 
-1. **Clienti**: crea il cliente (es. «Nome azienda») e il suo primo Administrator.
-2. In alto scegli il cliente, poi **Sedi e gruppi**: crea la sede (es. «Catania via Etnea») e un
-   gruppo «Tutti».
-3. **Reparti ed eliminacode**: crea Salumeria, Macelleria, Gastronomia… con i loro colori.
-4. **Layout ↗**: parti da un modello (es. «Supermercato: offerte, ora, meteo e reparti» e
-   «Totem eliminacode») e adattalo; segna come *Predefinito* quello orizzontale e quello verticale.
-5. **Creazione palinsesto**: crea una campagna con i suoi destinatari (es. il gruppo «Tutti»),
-   poi carica le immagini delle offerte e crea la promozione con le sue date.
+Tutto questo si fa **prima** di andare in negozio: quando monitor e totem vengono abbinati
+trovano già layout, reparti e contenuti.
+
+1. **Clienti**: crea il cliente (es. «Nome azienda») e il suo primo Administrator; nelle
+   abilitazioni controlla il numero massimo di monitor (ed eventualmente i plugin).
+2. In alto scegli il cliente, poi **Impostazioni → Sedi e gruppi**: crea la sede (es. «Catania
+   via Etnea») e un gruppo «Tutti». L'IP del Totem Master si scrive dopo, quando il totem è
+   installato.
+3. **Code → Reparti ed eliminacode**: crea Salumeria, Macelleria, Gastronomia… con i loro colori.
+4. **Impostazioni → Layout Video**: parti da un modello (es. «Supermercato: offerte, ora, meteo e
+   reparti» e «Totem eliminacode») e adattalo; segna come *Predefinito* quello orizzontale e
+   quello verticale.
+5. **Impostazioni → Layout Ticket**: componi il biglietto; poi **Hardware → Anagrafica Stampanti
+   Ticket**: aggiungi la stampante del negozio (sede, tipo, layout ticket).
+6. **Contenuti → Creazione palinsesto**: crea una campagna con i suoi destinatari (es. il gruppo
+   «Tutti»), poi carica le immagini delle offerte e crea la promozione con le sue date.
+7. Facoltativo: **Hardware → Anagrafica Dispositivi Video**, riquadro «Immagini o video di
+   default»: cosa mostrare quando non c'è nessuna promozione in onda.
+
+**Come funziona l'abbinamento.** Al primo avvio il player crea una chiave segreta casuale, la
+tiene per sé e chiede al server un **codice di 6 cifre** (valido 15 minuti; scaduto, ne chiede da
+solo uno nuovo) che mostra a schermo. Scrivendo quel codice nel pannello (**Hardware → Anagrafica
+Dispositivi Video → Abbina uno schermo**) si decide nome, sede, tipo e gruppi: il server lega lo
+schermo a quella chiave (ne conserva solo l'impronta) e in pochi secondi il player scarica il
+palinsesto. Eliminando lo schermo dal pannello la chiave non vale più e il dispositivo torna a
+mostrare un codice. I player si aggiornano poi da soli alle versioni nuove.
 
 ### Gestione quotidiana
 
@@ -170,8 +188,9 @@ Lo script:
 - fa partire il browser a schermo intero sul player a ogni accesso, e lo riapre se si chiude;
 - disattiva sospensione e spegnimento dello schermo.
 
-Sullo schermo compare un **codice di 6 cifre**. Nel pannello: **Monitor → Abbina uno schermo** →
-codice, nome, sede, tipo *Monitor orizzontale*, gruppo «Tutti» → **Abbina**. In pochi secondi il
+Sullo schermo compare un **codice di 6 cifre**. Nel pannello: **Hardware → Anagrafica Dispositivi
+Video → Abbina uno schermo** → codice, nome, sede, tipo *Monitor orizzontale*, gruppo «Tutti» →
+**Abbina**. In pochi secondi il
 monitor mostra il layout.
 
 **Accesso automatico** (così dopo un'interruzione di corrente riparte da solo): `Win+R` →
@@ -179,7 +198,8 @@ monitor mostra il layout.
 nome utente e la password»* → inserisci la password dell'utente. Nel BIOS del PC imposta anche
 l'accensione automatica al ritorno della corrente (*Restore on AC power loss: Power On*).
 
-Monitor montato in verticale? Nel pannello, in **Monitor**, scegli *Verticale* e la **rotazione**
+Monitor montato in verticale? Nel pannello, in **Hardware → Anagrafica Dispositivi Video**, nella
+sua riga scegli *Verticale* e la **rotazione**
 (90° o 270°).
 
 **Uscire dal player**: `Ctrl+Alt+Canc` → *Esci*, oppure Gestione attività.
@@ -206,13 +226,14 @@ chiamano per indirizzo.
    - il suo certificato e le regole del firewall per le porte **8443** (monitor) e **8090** (bilance).
 
    Alla fine mostra l'**impronta del certificato del totem**: annotala, la chiederanno i monitor.
-3. Nel pannello: **Sedi e gruppi → Totem Master (server code)**, scrivi l'IP del totem accanto alla
-   sede e **Salva**. Da quel momento le code della sede le tiene il totem.
+3. Nel pannello: **Impostazioni → Sedi e gruppi**, riquadro del Totem Master, scrivi l'IP del
+   totem accanto alla sede e **Salva**. Da quel momento le code della sede le tiene il totem.
 4. Abbina il totem (**Hardware → Anagrafica Dispositivi Video → Abbina**) con il tipo **Totem
    verticale** e spunta **Totem Master (server code)**. Con più totem nello stesso negozio il
    master è uno solo (quello con l'IP indicato nella sede): gli altri si installano allo stesso
    modo, senza spunta, e chiedono a lui i numeri dei biglietti. Nel layout del totem
-   (**Layout ↗** → zona *Prendi il numero*) imposta **Stampa del biglietto: Stampante di sistema**.
+   (**Impostazioni → Layout Video** → zona *Prendi il numero*) imposta **Stampa del biglietto:
+   Stampante di sistema**; se nella riga del totem scegli una stampante dell'anagrafica, vale quella.
 
 Lo stato delle code è salvato sul totem (`C:\FuturaPro\code\stato.json`) e sopravvive ai
 riavvii; ogni giorno le code ripartono da 0. Registro delle operazioni:

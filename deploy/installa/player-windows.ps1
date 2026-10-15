@@ -304,7 +304,7 @@ if ($Utente -eq $env:USERNAME) {
 }
 
 Scrivi "`nUltimi passi:" "Yellow"
-Write-Host "  1. Nel pannello (https://$Server/pannello/) vai in Monitor -> Abbina e inserisci il codice mostrato."
+Write-Host "  1. Nel pannello (https://$Server/pannello/) vai in Hardware -> Anagrafica Dispositivi Video -> Abbina uno schermo e inserisci il codice mostrato."
 if ($Tipo -eq "totem") {
     Write-Host "     Poi in Sedi e gruppi scrivi $IndirizzoTotem come «Totem delle code» della sede del negozio."
 }
