@@ -1,13 +1,13 @@
 # Versioni di FuturaPro
 
 La versione si legge nella pagina di accesso e nella barra del pannello, accanto al nome
-(es. **ver. 1.6.071 · 10/2026**): `RELEASE.build · mese/anno`.
+(es. **ver. 1.6.072 · 20261015**): `RELEASE.build · AAAAMMGG`.
 
 - **RELEASE** (`1.6`) si cambia a mano in `server/futurapro/versione.py` quando si battezza una
   release, e si annota qui sotto.
 - **build** cresce da solo: è il numero di modifiche del codice (commit). Sul server lo scrive
   `deploy/aggiorna.sh` a ogni aggiornamento.
-- **mese/anno** sono quelli dell'ultima modifica del codice installato.
+- **AAAAMMGG** è la data (anno, mese, giorno) dell'ultima modifica del codice installato.
 - Il player web porta la stessa release più un'impronta dei suoi file (es. `web-1.6-3600b30`) e
   si aggiorna da solo; il servizio code del totem ha il suo numero (`code-totem.ps1`).
 

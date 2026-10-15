@@ -252,10 +252,10 @@ class VersioneTest(Base):
 
         from futurapro import versione
 
-        attesa = f"{versione.RELEASE}.071 · 10/2026"
-        with mock.patch.dict(os.environ, {"FUTURAPRO_BUILD": "71", "FUTURAPRO_BUILD_DATA": "2026-10"}):
+        attesa = f"{versione.RELEASE}.071 · 20261015"
+        with mock.patch.dict(os.environ, {"FUTURAPRO_BUILD": "71", "FUTURAPRO_BUILD_DATA": "20261015"}):
             versione.build.cache_clear()
-            versione.mese_anno.cache_clear()
+            versione.data_build.cache_clear()
             try:
                 self.assertEqual(versione.versione(), attesa)
                 self.assertContains(self.client.get("/accesso/"), f"ver. {attesa}")
@@ -264,4 +264,4 @@ class VersioneTest(Base):
                 self.assertEqual(self.client.get("/api/io/").json()["versione_app"], attesa)
             finally:
                 versione.build.cache_clear()
-                versione.mese_anno.cache_clear()
+                versione.data_build.cache_clear()

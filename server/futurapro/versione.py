@@ -1,8 +1,8 @@
-"""La versione di FuturaPro: «RELEASE.build · mese/anno», es. 1.6.071 · 10/2026.
+"""La versione di FuturaPro: «RELEASE.build · AAAAMMGG», es. 1.6.072 · 20261015.
 
 RELEASE si cambia a mano quando si battezza una release (vedi docs/VERSIONI.md); il numero di
-build cresce da solo: è il numero di modifiche del codice (commit); mese e anno sono quelli
-dell'ultima modifica. Sul server li scrive deploy/aggiorna.sh (e installa.sh) in .env come
+build cresce da solo: è il numero di modifiche del codice (commit); la data (anno, mese, giorno)
+è quella dell'ultima modifica. Sul server li scrive deploy/aggiorna.sh (e installa.sh) in .env come
 FP_BUILD e FP_BUILD_DATA, perché nel container il repository git non c'è; in sviluppo li si
 chiede direttamente a git.
 """
@@ -31,14 +31,12 @@ def build() -> str:
 
 
 @lru_cache(maxsize=1)
-def mese_anno() -> str:
-    """«10/2026»: il mese dell'ultima modifica del codice; "" se non si sa."""
-    data = os.environ.get("FUTURAPRO_BUILD_DATA", "").strip() or _git("log", "-1", "--format=%cd", "--date=format:%Y-%m")
-    if len(data) == 7 and data[4] == "-" and data.replace("-", "").isdigit():
-        return f"{data[5:]}/{data[:4]}"
-    return ""
+def data_build() -> str:
+    """«20261015» (AAAAMMGG): il giorno dell'ultima modifica del codice; "" se non si sa."""
+    data = os.environ.get("FUTURAPRO_BUILD_DATA", "").strip() or _git("log", "-1", "--format=%cd", "--date=format:%Y%m%d")
+    return data if len(data) == 8 and data.isdigit() else ""
 
 
 def versione() -> str:
-    """«1.6.071 · 10/2026»."""
-    return f"{RELEASE}.{build()}" + (f" · {mese_anno()}" if mese_anno() else "")
+    """«1.6.072 · 20261015»."""
+    return f"{RELEASE}.{build()}" + (f" · {data_build()}" if data_build() else "")
