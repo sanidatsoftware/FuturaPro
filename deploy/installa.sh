@@ -75,6 +75,10 @@ for chiave in FP_EMAIL_HOST FP_EMAIL_PORT FP_EMAIL_UTENTE FP_EMAIL_PASSWORD FP_E
     valore=$(precedente "$chiave")
     if [ -n "$valore" ]; then echo "$chiave=$valore" >> .env; fi
 done
+# Il numero di build della versione (es. 1.6.070) per il pannello: nel container git non c'è.
+numero=$(git -c safe.directory="$(cd .. && pwd)" -C .. rev-list --count HEAD 2>/dev/null || true)
+data=$(git -c safe.directory="$(cd .. && pwd)" -C .. log -1 --format=%cd --date=format:%Y-%m 2>/dev/null || true)
+if [ -n "$numero" ]; then echo "FP_BUILD=$numero" >> .env; echo "FP_BUILD_DATA=$data" >> .env; fi
 umask 022
 
 # --- 4. Caddy (HTTPS) --------------------------------------------------------------

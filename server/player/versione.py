@@ -10,7 +10,9 @@ import hashlib
 from functools import lru_cache
 from pathlib import Path
 
-BASE = "1.5"
+from futurapro.versione import RELEASE
+
+BASE = RELEASE
 CARTELLA = Path(__file__).resolve().parent
 
 

@@ -241,3 +241,27 @@ class PanoramicaTest(Base):
         g = self.client.get("/api/piattaforma/panoramica/").json()
         self.assertEqual(g["totali"]["aziende"], 2)
         self.assertEqual(g["totali"]["biglietti"], 2)
+
+
+class VersioneTest(Base):
+    """La versione (RELEASE.build) si vede nella pagina di accesso, nella barra del pannello e in /api/io/."""
+
+    def test_versione_in_accesso_pannello_e_api(self):
+        import os
+        from unittest import mock
+
+        from futurapro import versione
+
+        attesa = f"{versione.RELEASE}.071 · 10/2026"
+        with mock.patch.dict(os.environ, {"FUTURAPRO_BUILD": "71", "FUTURAPRO_BUILD_DATA": "2026-10"}):
+            versione.build.cache_clear()
+            versione.mese_anno.cache_clear()
+            try:
+                self.assertEqual(versione.versione(), attesa)
+                self.assertContains(self.client.get("/accesso/"), f"ver. {attesa}")
+                self.come(self.admin_a)
+                self.assertContains(self.client.get("/pannello/"), f"ver. {attesa}")
+                self.assertEqual(self.client.get("/api/io/").json()["versione_app"], attesa)
+            finally:
+                versione.build.cache_clear()
+                versione.mese_anno.cache_clear()

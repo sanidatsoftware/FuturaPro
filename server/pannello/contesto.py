@@ -9,4 +9,6 @@ def aspetto(request):
 
     attuale = Aspetto.attuale()
     riquadro = pulita(attuale.accesso, attuale.sottotitolo)["logo"]["riquadro_barra"]
-    return {"aspetto": attuale, "tema": tema, "logo_riquadro": riquadro}
+    from futurapro.versione import versione
+
+    return {"aspetto": attuale, "tema": tema, "logo_riquadro": riquadro, "versione_app": versione()}

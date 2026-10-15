@@ -642,3 +642,5 @@ body.trascina-libreria .pista { outline: 2px dashed color-mix(in srgb, var(--acc
 .gruppo-menu .tendina .scheda:hover { background: color-mix(in srgb, currentColor 8%, transparent) !important; }
 .gruppo-menu .tendina .scheda.attiva { font-weight: 700; }
 .menu .gruppo-menu .tendina { background: var(--fondo); }
+
+.testata .versione-app { font-size: 11px; opacity: .7; align-self: flex-end; margin-bottom: 3px; font-weight: 400; }

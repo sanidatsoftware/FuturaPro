@@ -9,7 +9,7 @@
 </head>
 <body>
   <header class="barra" style="background: {{ aspetto.colore }}">
-    <strong class="marchio{% if logo_riquadro %} con-riquadro{% endif %}">{% if aspetto.icona %}<img class="icona" src="/aspetto/icona/?v={{ aspetto.modificato|date:'U' }}" alt="">{% elif aspetto.logo %}<img src="/aspetto/logo/?v={{ aspetto.modificato|date:'U' }}" alt="">{% endif %}{{ aspetto.nome_app }}</strong>
+    <strong class="marchio{% if logo_riquadro %} con-riquadro{% endif %}">{% if aspetto.icona %}<img class="icona" src="/aspetto/icona/?v={{ aspetto.modificato|date:'U' }}" alt="">{% elif aspetto.logo %}<img src="/aspetto/logo/?v={{ aspetto.modificato|date:'U' }}" alt="">{% endif %}{{ aspetto.nome_app }}<span class="versione-app" title="Versione di {{ aspetto.nome_app }}">ver. {{ versione_app }}</span></strong>
     <label id="scelta-cliente" hidden>Cliente <select id="cliente"></select></label>
     <span class="spazio"></span>
     <span id="utente" class="utente"></span>

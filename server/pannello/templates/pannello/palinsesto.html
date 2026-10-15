@@ -13,6 +13,7 @@
     <a class="marchio{% if logo_riquadro %} con-riquadro{% endif %}" href="/pannello/" id="al-pannello">
       {% if aspetto.icona %}<img class="icona" src="/aspetto/icona/?v={{ aspetto.modificato|date:'U' }}" alt="">{% elif aspetto.logo %}<img src="/aspetto/logo/?v={{ aspetto.modificato|date:'U' }}" alt="">{% endif %}
       <span>{{ aspetto.nome_app }}</span>
+      <small class="versione-app" title="Versione di {{ aspetto.nome_app }}">ver. {{ versione_app }}</small>
     </a>
     <h1>Creazione palinsesto</h1>
     <label id="scelta-cliente" class="cliente" hidden>Cliente <select id="cliente"></select></label>

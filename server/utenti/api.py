@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from audit.models import registra
+from futurapro.versione import versione as versione_app
 from clienti.models import Abilitazioni, Sede
 from core.api import GESTIONE, SOLO_ASSOLUTO, RiferimentoCliente, ViewSetCliente
 from core.contesto import contesto_cliente, contesto_corrente, contesto_piattaforma
@@ -89,6 +90,7 @@ class IoView(APIView):
                 "last_name": utente.last_name,
                 "email": utente.email,
                 "pagina_iniziale": utente.pagina_iniziale,
+                "versione_app": versione_app(),
                 "apertura": utente.apertura,
             }
         )

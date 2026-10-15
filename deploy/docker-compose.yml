@@ -47,6 +47,9 @@ services:
       FUTURAPRO_CA_URL: http://caddy/futurapro-ca.crt
       # L'indirizzo con cui monitor e totem raggiungono il server (per lo stesso comando).
       FUTURAPRO_INDIRIZZO: ${FP_INDIRIZZO}
+      # Il numero di build (commit) della versione mostrata nel pannello: lo scrive aggiorna.sh.
+      FUTURAPRO_BUILD: ${FP_BUILD:-}
+      FUTURAPRO_BUILD_DATA: ${FP_BUILD_DATA:-}
     volumes:
       - media:/dati/media
       - static:/dati/static
