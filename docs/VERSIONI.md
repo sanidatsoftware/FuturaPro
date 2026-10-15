@@ -30,3 +30,59 @@ layout video, eliminacode, player per monitor e totem, teleassistenza, registro)
   browser se la pagina si blocca.
 - **Installazione** dei PC con i comandi pronti nel pannello: le impronte dei certificati le
   controlla lo script.
+
+### Come ci si è arrivati: le tappe della 1.6 (ricostruite dallo storico)
+
+Prima della 1.6 non c'erano numeri di versione: le tappe sono indicate con i numeri di build
+(il «xxx» di `1.6.xxx`) e la data. Il dettaglio di ogni build è nello storico di git.
+
+**Build 001–015 · 20261013 — La base**
+- Server con aziende clienti, ruoli e isolamento dei dati tra aziende; contenuti, playlist e
+  pubblicazione sugli schermi.
+- Layout grafici a zone (orientamento, meteo, notizie) ed editor visuale per monitor e totem.
+- Motore di rendering e player nel browser, con anteprima.
+- Eliminacode: reparti, banco, pulsantiere e totem; numeri sugli schermi.
+- Installazione: server Ubuntu con un comando, player su Windows; backup.
+
+**Build 016–019 · 20261014 — Negozio autonomo**
+- Code gestite dal totem del negozio; player che funziona senza rete.
+- Adattamenti delle immagini (sfondo sfocato, allunga) e formati standard nell'editor.
+
+**Build 020–035 · 20261014 — Palinsesto e contenuti**
+- Pagina «Creazione palinsesto»: libreria, cartelle, campagne che raggruppano promozioni, insegne,
+  calendario, import da CSV; pagina di accesso con nome e logo; tema chiaro/scuro.
+- Immagine o video di riserva (poi «di default») per ogni schermo.
+- Dirette in streaming (liste M3U, intermezzi, audio per diretta).
+- Fotografia vera dello schermo su richiesta; timeline della sequenza delle promozioni.
+- Annunci registrati dei numeri delle code; eventi straordinari con precedenza su tutto.
+
+**Build 036–048 · 20261014 — Gestione e controllo**
+- Menu a gruppi; accensione e spegnimento degli schermi per orari, chiusure e festività.
+- Stato degli schermi, storico e allarmi email; fasce di download con velocità massima.
+- Listini prezzi; registro dei biglietti, tempi d'attesa, coda sul telefono con QR.
+- Registro di messa in onda con rapporti; email per azienda e rapporti automatici.
+- Ruoli SystemAdministrator e Administrator; gruppo «Report & Log» con registro operazioni e
+  storico allarmi.
+
+**Build 049–056 · 20261015 — Hardware, stampanti e plugin**
+- Menu Hardware: anagrafica dei dispositivi video e delle stampanti ticket; Totem Master per sede;
+  ruolo User.
+- Plugin Info Prezzo e Info Ingredienti (gestionali EvoPos e DIGI, copie dei file per orari).
+- Layout Ticket componibile per stampante (Epson TM-T20IV); spiegazioni su tutti i controlli.
+- Layout Video e Banchi Code dentro il pannello; anteprime in un riquadro.
+
+**Build 057–062 · 20261015 — Pannello per chi gestisce**
+- Distribuzione contenuti, profilo personale, utenti di piattaforma, prova di accesso dei plugin.
+- Layout Ticket libero e ridimensionabile; icona della piattaforma.
+- Pagina di accesso con gli stili «Oro» e «Oro con sfondo animato».
+- Panoramica come pagina iniziale.
+
+**Build 063–070 · 20261015 — Player e installazione robusti**
+- Player con versione calcolata dai file e aggiornamento automatico; download senza tenere i file
+  in memoria; cache permanente.
+- Guardiano di Windows che riapre il browser se la pagina si blocca.
+- Script di installazione più chiaro; comandi pronti nel pannello con le impronte dei certificati
+  controllate dallo script.
+
+**Build 071–072 · 20261015 — Release 1.6**
+- Numero di versione visibile nella pagina di accesso e nel pannello (`1.6.xxx · AAAAMMGG`).
