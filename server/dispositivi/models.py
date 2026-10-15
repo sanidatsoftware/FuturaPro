@@ -69,7 +69,9 @@ class StampanteTicket(ModelloCliente):
     tipo = models.CharField(max_length=10, choices=Tipo.choices, default=Tipo.EPSON)
     # Epson: indirizzo IP o nome in rete, eventualmente con la porta.
     indirizzo = models.CharField(max_length=100, blank=True)
-    modello = models.CharField(max_length=60, blank=True)
+    # Il modello (vedi ticket.MODELLI) e la carta montata: decidono la larghezza stampabile.
+    modello = models.CharField(max_length=60, default="generica")
+    carta = models.PositiveSmallIntegerField(choices=[(80, "80 mm"), (58, "58 mm")], default=80)
     # Com'è fatto il biglietto; vuoto: quello semplice, con i testi della zona «prendi il numero».
     layout = models.ForeignKey(LayoutTicket, on_delete=models.SET_NULL, null=True, blank=True, related_name="stampanti")
     # Vuoti: valgono quelli del layout ticket, o della zona «prendi il numero» del layout.

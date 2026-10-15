@@ -68,13 +68,18 @@ def abilitato(tipo: str) -> bool:
 class ImpostazioniPluginSerializer(serializers.ModelSerializer):
     class Meta:
         model = ImpostazioniPlugin
-        fields = ["tipo", "attivo", "mappatura", "query", "aspetto", "timeout", "prefissi", "plu_inizio", "plu_lunghezza", "mostra_prezzo"]
+        fields = ["tipo", "attivo", "formato", "mappatura", "query", "aspetto", "timeout", "prefissi", "plu_inizio", "plu_lunghezza", "mostra_prezzo"]
         read_only_fields = ["tipo"]
         extra_kwargs = {"timeout": {"min_value": 2, "max_value": 120}, "plu_inizio": {"min_value": 1, "max_value": 12},
                         "plu_lunghezza": {"min_value": 1, "max_value": 7}}
 
     def validate_aspetto(self, valore):
         return aspetto_pulito(valore)
+
+    def validate_formato(self, valore):
+        if valore and valore not in q.PREIMPOSTAZIONI.get(self.instance.tipo, {}):
+            raise serializers.ValidationError("Gestionale non previsto.")
+        return valore
 
     def validate_query(self, valore):
         try:
@@ -99,7 +104,7 @@ class ImpostazioniPluginSerializer(serializers.ModelSerializer):
     def validate(self, dati):
         tipo = self.instance.tipo
         attivo = dati.get("attivo", self.instance.attivo)
-        query = dati.get("query", self.instance.query)
+        query = dati.get("query", self.instance.query) or dati.get("formato", self.instance.formato)
         try:
             dati["mappatura"] = q.valida_mappatura(tipo, dati.get("mappatura", self.instance.mappatura), obbligatoria=attivo and not query)
         except ValueError as errore:
@@ -170,6 +175,7 @@ class PluginView(VistaConContesto, APIView):
         dati["campi"] = [{"chiave": c, "obbligatoria": o, "etichetta": e} for c, o, e in q.CAMPI[impostazioni.tipo]]
         dati["uscite"] = q.USCITE[impostazioni.tipo]
         dati["query_generata"] = q.query_di(impostazioni) if not impostazioni.query else None
+        dati["preimpostazioni"] = [{"chiave": k, "nome": v[0]} for k, v in q.PREIMPOSTAZIONI[impostazioni.tipo].items()]
         dati["prezzo_attivo"] = bool(
             abilitato("prezzo") and ImpostazioniPlugin.objects.filter(tipo="prezzo", attivo=True).exists()
         )

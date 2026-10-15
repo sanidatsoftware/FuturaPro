@@ -10,6 +10,7 @@
 .plugin-titolo { font-size: 1.25em; font-weight: 800; line-height: 1.15; }
 .plugin-prezzi { display: flex; justify-content: center; align-items: baseline; gap: .6em; flex-wrap: wrap; margin-top: .2em; }
 .plugin-prezzo { font-size: 2.6em; font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; }
+.plugin-unita { font-size: .4em; font-weight: 700; margin-left: .15em; white-space: nowrap; }
 .plugin-pieno { font-size: 1.2em; text-decoration: line-through; opacity: .6; }
 .plugin-prezzo.lampeggia { animation: plugin-lampeggia 1s ease-in-out infinite; }
 .plugin-nota { font-size: .65em; opacity: .75; }

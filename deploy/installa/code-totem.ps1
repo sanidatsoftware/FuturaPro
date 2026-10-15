@@ -417,7 +417,11 @@ function Aggiorna-Plugin {
                 if ($esito.cambiato) {
                     try {
                         # Le modifiche ancora nel «-wal» entrano nel file: poi lo si apre in sola lettura.
-                        if ($sqliteCaricato) { [FpSqlite]::SenzaWal("$destinazione.tmp") }
+                        if ($sqliteCaricato) {
+                            [FpSqlite]::SenzaWal("$destinazione.tmp")
+                            # Copiata mentre il gestionale scriveva? Si tiene la copia precedente e si riprova.
+                            if (-not [FpSqlite]::Integro("$destinazione.tmp")) { throw "copia non integra (il file era in scrittura): riprovo tra poco" }
+                        }
                         Remove-Item -Force -ErrorAction SilentlyContinue $destinazione, "$destinazione-wal", "$destinazione-shm"
                         Move-Item -Force "$destinazione.tmp" $destinazione
                         Remove-Item -Force -ErrorAction SilentlyContinue "$destinazione.tmp-wal", "$destinazione.tmp-shm"
@@ -426,6 +430,8 @@ function Aggiorna-Plugin {
                         Registra "plugin $($tipo): file aggiornato ($($s.dimensione) byte)"
                     } catch {
                         $s.errore = "copia locale: $($_.Exception.Message)"
+                        $s.firma = ""
+                        Remove-Item -Force -ErrorAction SilentlyContinue "$destinazione.tmp", "$destinazione.tmp-wal", "$destinazione.tmp-shm"
                     }
                 }
             }

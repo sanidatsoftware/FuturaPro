@@ -137,12 +137,14 @@ async function schedaPlugin(tipo) {
     testo: "Il nome della tabella e delle colonne nel file .db (come le mostra un programma come «DB Browser for SQLite»). "
       + "Per i file con una struttura particolare si può scrivere la query a mano: in quel caso la mappatura non serve.",
   }, dove);
-  const griglia = crea("div", { classe: "riga" }, dove);
+  const formato = campo("Gestionale", scelta([["", "Altro: indico tabella e colonne (o la query)"], ...p.preimpostazioni.map((x) => [x.chiave, x.nome])], p.formato), crea("div", { classe: "riga" }, dove));
+  const personalizzato = crea("div", {}, dove);
+  const griglia = crea("div", { classe: "riga" }, personalizzato);
   const colonne = {};
   for (const c of p.campi) {
     colonne[c.chiave] = campo(`${c.etichetta}${c.obbligatoria ? " *" : ""}`, crea("input", { value: p.mappatura[c.chiave] || "", size: 16 }), griglia);
   }
-  const avanzata = crea("details", {}, dove);
+  const avanzata = crea("details", {}, personalizzato);
   crea("summary", { testo: "Query scritta a mano (avanzato)" }, avanzata);
   crea("p", {
     classe: "tenue",
@@ -151,10 +153,14 @@ async function schedaPlugin(tipo) {
   }, avanzata);
   const query = crea("textarea", { rows: 4, cols: 90, value: p.query, placeholder: "SELECT descr AS descrizione, prezzo FROM articoli WHERE ean = :codice" }, avanzata);
   if (p.query_generata) {
-    crea("p", { classe: "tenue", testo: "La query che viene usata ora (dalla mappatura):" }, dove);
-    crea("pre", { classe: "query-plugin", testo: p.query_generata }, dove);
+    const usata = crea("details", {}, dove);
+    crea("summary", { testo: p.formato ? "La query del gestionale (pronta)" : "La query che viene usata ora (dalla mappatura)" }, usata);
+    crea("pre", { classe: "query-plugin", testo: p.query_generata }, usata);
   }
   if (p.query) avanzata.open = true;
+  const aggiornaFormato = () => (personalizzato.hidden = Boolean(formato.value));
+  formato.addEventListener("change", aggiornaFormato);
+  aggiornaFormato();
 
   // --- Codici bilancia ---
   let prefissi = null, pluInizio = null, pluLunghezza = null;
@@ -235,7 +241,7 @@ async function schedaPlugin(tipo) {
   crea("button", {
     classe: "primario", testo: `Salva ${NOMI[tipo]}`,
     onclick: () => prova(() => api("PUT", `/api/plugin/${tipo}/`, {
-      attivo: attivo.checked, timeout: parseInt(timeout.value, 10) || 8, query: query.value,
+      attivo: attivo.checked, timeout: parseInt(timeout.value, 10) || 8, query: query.value, formato: formato.value,
       mappatura: Object.fromEntries(Object.entries(colonne).map(([k, c]) => [k, c.value.trim()])),
       aspetto: aspetto(),
       ...(tipo === "ingredienti" ? {

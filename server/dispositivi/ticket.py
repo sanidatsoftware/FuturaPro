@@ -30,6 +30,25 @@ CARATTERI = ["sans-serif", "serif", "monospace", "Arial", "Arial Black", "Verdan
 ALLINEAMENTI = ["sinistra", "centro", "destra"]
 PUNTI = {80: 576, 58: 384}
 
+# Le stampanti conosciute: la larghezza stampabile (in punti a 203 dpi) per ogni carta, e come
+# si collegano. TM-T20IV: 48 colonne da 12 punti su 80 mm (576 punti, 72 mm), 35 su 58 mm
+# (420 punti); con la scheda di rete parla ePOS-Print, in USB usa il driver Windows (APD).
+MODELLI = {
+    "TM-T20IV": {
+        "nome": "Epson TM-T20IV", "carte": {80: 576, 58: 420}, "collegamenti": ["epson", "browser"],
+        "note": "203 dpi, taglierina. Ethernet: «Epson di rete» (ePOS-Print, IP fisso). USB: «Stampante di sistema» con il driver Epson APD come predefinita.",
+    },
+    "generica": {
+        "nome": "Altra stampante termica (203 dpi)", "carte": {80: 576, 58: 384}, "collegamenti": ["epson", "browser"],
+        "note": "Larghezze standard: 72 mm su carta da 80 mm, 48 mm su carta da 58 mm.",
+    },
+}
+
+
+def punti_stampante(modello: str, carta: int) -> int:
+    voce = MODELLI.get(modello) or MODELLI["generica"]
+    return voce["carte"].get(carta) or PUNTI.get(carta, 576)
+
 
 def elemento(campo, **valori):
     base = {"campo": campo, "visibile": True, "carattere": "sans-serif", "dimensione": 28, "grassetto": False,
@@ -115,10 +134,11 @@ def prepara_logo(file, carta: int) -> str:
     return base64.b64encode(uscita.getvalue()).decode()
 
 
-def per_il_player(layout) -> dict | None:
+def per_il_player(layout, punti: int | None = None) -> dict | None:
+    """Il layout per il totem; «punti»: la larghezza stampabile della stampante che lo usa."""
     if layout is None:
         return None
     return {
-        "id": str(layout.id), "nome": layout.nome, "punti": PUNTI.get(layout.carta, 576), "carta": layout.carta,
+        "id": str(layout.id), "nome": layout.nome, "punti": punti or PUNTI.get(layout.carta, 576), "carta": layout.carta,
         "elementi": layout.elementi, "logo": f"data:image/png;base64,{layout.logo}" if layout.logo else "",
     }

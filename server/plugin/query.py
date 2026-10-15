@@ -96,6 +96,9 @@ def genera(tipo: str, m: dict) -> str:
 
 
 def query_di(impostazioni) -> str | None:
+    pronta = PREIMPOSTAZIONI.get(impostazioni.tipo, {}).get(impostazioni.formato)
+    if pronta:
+        return pronta[1]
     if impostazioni.query:
         return impostazioni.query
     try:
@@ -103,3 +106,37 @@ def query_di(impostazioni) -> str | None:
     except ValueError:
         return None
     return genera(impostazioni.tipo, mappatura)
+
+
+# Gestionali già conosciuti: la query è pronta, non serve la mappatura.
+EVOPOS = """
+SELECT a.Descrizione AS descrizione,
+       p.Valore AS prezzo,
+       CASE WHEN l.CodiceOfferta IS NOT NULL AND l.ValoreEffetto1 > 0 AND l.ValoreEffetto1 < p.Valore
+            THEN round(p.Valore - l.ValoreEffetto1, 2) END AS prezzo_offerta,
+       l.DataInizio AS offerta_dal,
+       l.DataFine AS offerta_al,
+       CASE WHEN a.Tipo = 'KG' THEN 'kg' ELSE '' END AS unita
+FROM CodiceEan e
+JOIN Articoli a ON a.Codice = e.CodiceArticolo
+JOIN PrezziDiVendita p ON p.CodiceArticolo = a.Codice AND p.numeroPrezzo = 1
+LEFT JOIN LinkArticoliLegacypromo k ON k.CodiceArticolo = a.Codice
+LEFT JOIN LegacyPromo l ON l.CodiceOfferta = k.CodiceOfferta AND l.Attivo = 1 AND l.CodiceEffetto = 11
+     AND datetime('now', 'localtime') BETWEEN l.DataInizio AND l.DataFine
+WHERE a.Stato = 1 AND (
+      e.Ean IN (:codice, :codice_corto, substr('0000000000000' || :codice_corto, -13), substr('00000000000000' || :codice_corto, -14))
+   OR (length(:codice) = 13 AND substr(:codice, 1, 1) = '2' AND e.Ean = substr(:codice, 1, 7)))
+ORDER BY CASE WHEN e.Ean = substr(:codice, 1, 7) AND length(:codice) = 13 THEN 1 ELSE 0 END, l.ValoreEffetto1 DESC
+LIMIT 1
+""".strip()
+
+PREIMPOSTAZIONI = {
+    "prezzo": {
+        # EvoPos (evoPosDb.db): codici in CodiceEan (anche a 14 cifre con zeri davanti), prezzo n. 1 in
+        # PrezziDiVendita, offerte «SCONTO OFFERTA» (effetto 11) in LegacyPromo: ValoreEffetto1 è lo
+        # sconto in euro. Le etichette della bilancia (EAN-13 che inizia per 2) sono registrate con le
+        # prime 7 cifre (prefisso + PLU); il prezzo è al kg per gli articoli di tipo KG.
+        "evopos": ("EvoPos (evoPosDb.db)", EVOPOS),
+    },
+    "ingredienti": {},
+}

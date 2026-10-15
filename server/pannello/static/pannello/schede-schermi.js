@@ -392,7 +392,10 @@ let attesaProva = null;
 export async function schedaStampanti() {
   const { crea, sezione, api, prova, campo, scelta, tabella, avvisa } = H;
   clearTimeout(attesaProva);
-  const [stampanti, sedi, layoutTicket] = await Promise.all([H.elenco("/api/stampanti/"), H.elenco("/api/sedi/"), H.elenco("/api/layout-ticket/").catch(() => [])]);
+  const [stampanti, sedi, layoutTicket, modelli] = await Promise.all([
+    H.elenco("/api/stampanti/"), H.elenco("/api/sedi/"), H.elenco("/api/layout-ticket/").catch(() => []), api("GET", "/api/stampanti/modelli/"),
+  ]);
+  const nomeModello = (k) => modelli.find((m) => m.chiave === k)?.nome || "Altra stampante";
   const modifica = H.ruoloGestione() || H.stato.io.ruolo === "tecnico";
   const nomeSede = (id) => sedi.find((s) => s.id === id)?.nome || "";
 
@@ -402,8 +405,18 @@ export async function schedaStampanti() {
     const nome = campo("Nome", crea("input", { value: st?.nome || "", placeholder: "es. Epson banco salumi", maxLength: 100 }), riga);
     const sede = campo("Sede", scelta(sedi.map((x) => [x.id, x.nome]), st?.sede), riga);
     const tipo = campo("Tipo", scelta(TIPI_STAMPANTE, st?.tipo || "epson"), riga);
-    const indirizzo = campo("Indirizzo IP", crea("input", { value: st?.indirizzo || "", placeholder: "es. 192.168.1.50", maxLength: 100 }), riga);
-    const modello = campo("Modello", crea("input", { value: st?.modello || "", placeholder: "es. TM-m30III", maxLength: 60 }), riga);
+    const indirizzo = campo("Indirizzo IP (Epson di rete)", crea("input", { value: st?.indirizzo || "", placeholder: "es. 192.168.1.50", maxLength: 100 }), riga);
+    const modello = campo("Modello", scelta(modelli.map((m) => [m.chiave, m.nome]), modelli.some((m) => m.chiave === st?.modello) ? st.modello : "TM-T20IV"), riga);
+    const carta = campo("Carta", scelta([[80, "80 mm"], [58, "58 mm"]], st?.carta || 80), riga);
+    const larghezza = crea("p", { classe: "tenue" }, box);
+    const descriviModello = () => {
+      const m = modelli.find((x) => x.chiave === modello.value);
+      const punti = m?.carte[carta.value] || 576;
+      larghezza.textContent = `Larghezza stampabile: ${(punti / 8).toFixed(1).replace(".", ",")} mm (${punti} punti a 203 dpi). ${m?.note || ""}`;
+    };
+    modello.addEventListener("change", descriviModello);
+    carta.addEventListener("change", descriviModello);
+    descriviModello();
     const layout = campo("Layout ticket", scelta([["", "— biglietto semplice —"], ...layoutTicket.map((l) => [l.id, `🧾 ${l.nome} (${l.carta} mm)`])], st?.layout || ""), riga);
     const riga2 = crea("div", { classe: "riga" }, box);
     const intestazione = campo("Intestazione (vuoto = dal layout)", crea("input", { value: st?.intestazione || "", maxLength: 60, size: 28 }), riga2);
@@ -414,7 +427,7 @@ export async function schedaStampanti() {
     aggiorna();
     return () => ({
       nome: nome.value.trim(), sede: sede.value, tipo: tipo.value, indirizzo: tipo.value === "epson" ? indirizzo.value : "",
-      modello: modello.value, layout: layout.value || null, intestazione: intestazione.value, messaggio: messaggio.value, note: note.value,
+      modello: modello.value, carta: parseInt(carta.value, 10), layout: layout.value || null, intestazione: intestazione.value, messaggio: messaggio.value, note: note.value,
     });
   };
 
@@ -426,7 +439,7 @@ export async function schedaStampanti() {
   }, intro);
   crea("p", {
     classe: "tenue",
-    testo: "Epson: in rete con indirizzo fisso e ePOS-Print attivo (TM-m30, TM-T88VI/VII, TM-T20III…); se il totem usa il player in HTTPS, il certificato della stampante va accettato una volta dal browser del totem. "
+    testo: "Epson di rete (es. TM-T20IV con scheda Ethernet): indirizzo IP fisso e ePOS-Print attivo; se il totem usa il player in HTTPS, il certificato della stampante va accettato una volta dal browser del totem. "
       + "Stampante di sistema: quella predefinita di Windows sul PC del totem (Chrome con --kiosk-printing).",
   }, intro);
   if (modifica) {
@@ -450,7 +463,7 @@ export async function schedaStampanti() {
     crea("td", { testo: nomeSede(st.sede) }, riga);
     crea("td", { testo: TIPI_STAMPANTE.find(([v]) => v === st.tipo)?.[1] || st.tipo }, riga);
     crea("td", { testo: st.indirizzo || "—" }, riga);
-    crea("td", { testo: st.modello || "—" }, riga);
+    crea("td", { testo: `${nomeModello(st.modello)} · ${st.carta} mm (${st.punti} punti)` }, riga);
     crea("td", { testo: layoutTicket.find((l) => l.id === st.layout)?.nome || "biglietto semplice" }, riga);
     const abbinati = crea("td", {}, riga);
     if (!st.abbinata_a.length) abbinati.append("— nessuno —");

@@ -369,6 +369,7 @@ class LayoutTicketViewSet(ViewSetCliente):
 class StampanteTicketSerializer(serializers.ModelSerializer):
     sede = RiferimentoCliente(Sede)
     layout = RiferimentoCliente(LayoutTicket, required=False, allow_null=True)
+    punti = serializers.SerializerMethodField()
     abbinata_a = serializers.SerializerMethodField()
     prova = serializers.SerializerMethodField()
 
@@ -378,9 +379,17 @@ class StampanteTicketSerializer(serializers.ModelSerializer):
     def get_prova(self, stampante):
         return stampanti.stato_prova(stampante)
 
+    def get_punti(self, stampante):
+        return ticket.punti_stampante(stampante.modello, stampante.carta)
+
+    def validate_modello(self, valore):
+        if valore not in ticket.MODELLI:
+            raise serializers.ValidationError("Modello non previsto.")
+        return valore
+
     class Meta:
         model = StampanteTicket
-        fields = ["id", "nome", "sede", "tipo", "indirizzo", "modello", "layout", "intestazione", "messaggio", "note", "abbinata_a", "prova"]
+        fields = ["id", "nome", "sede", "tipo", "indirizzo", "modello", "carta", "punti", "layout", "intestazione", "messaggio", "note", "abbinata_a", "prova"]
 
     def validate_indirizzo(self, valore):
         valore = valore.strip()
@@ -430,6 +439,14 @@ class StampantiViewSet(ViewSetCliente):
     def perform_destroy(self, stampante):
         registra(self.request.user, "stampante_eliminata", stampante, nome=stampante.nome)
         stampante.delete()
+
+    @action(detail=False, methods=["get"])
+    def modelli(self, request):
+        """Il catalogo dei modelli, con la larghezza stampabile per carta."""
+        return Response([
+            {"chiave": k, "nome": v["nome"], "carte": {str(c): p for c, p in v["carte"].items()}, "collegamenti": v["collegamenti"], "note": v["note"]}
+            for k, v in ticket.MODELLI.items()
+        ])
 
     @action(detail=True, methods=["post"])
     def prova(self, request, pk=None):

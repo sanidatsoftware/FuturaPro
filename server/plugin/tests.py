@@ -92,3 +92,43 @@ class PluginTest(Base):
         self.assertEqual(self.client.get("/api/plugin/prezzo/").status_code, 403)
         self.come(self.admin_b)
         self.assertEqual(self.ids(self.client.get("/api/fonti-plugin/")), set())
+
+
+class EvoPosTest(Base):
+    """La query pronta per EvoPos, su un file con lo stesso schema (dati inventati)."""
+
+    def test_codici_offerte_e_bilancia(self):
+        from datetime import datetime, timedelta
+
+        db = sqlite3.connect(":memory:")
+        db.row_factory = sqlite3.Row
+        db.executescript("""
+            CREATE TABLE Articoli (Codice TEXT, Descrizione TEXT, CodiceReparto TEXT, Tipo TEXT, Stato INTEGER);
+            CREATE TABLE CodiceEan (Ean TEXT, CodiceArticolo TEXT);
+            CREATE TABLE PrezziDiVendita (CodiceArticolo TEXT, numeroPrezzo INTEGER, Valore NUMERIC);
+            CREATE TABLE LegacyPromo (CodiceOfferta TEXT, Attivo INTEGER, CodiceEffetto INTEGER, ValoreEffetto1 NUMERIC, DataInizio TEXT, DataFine TEXT);
+            CREATE TABLE LinkArticoliLegacypromo (CodiceArticolo TEXT, CodiceOfferta TEXT);
+            INSERT INTO Articoli VALUES ('00800000000011', 'PIATTI', '0005', 'PZ', 1), ('8000000000028', 'BISCOTTI', '0001', 'PZ', 1),
+                                        ('2105120', 'MORTADELLA', '0012', 'KG', 1), ('8000000000035', 'VECCHIO', '0001', 'PZ', -48);
+            INSERT INTO CodiceEan VALUES ('00800000000011', '00800000000011'), ('8000000000028', '8000000000028'),
+                                         ('2105120', '2105120'), ('8000000000035', '8000000000035');
+            INSERT INTO PrezziDiVendita VALUES ('00800000000011', 1, 1.19), ('00800000000011', 3, 1.0), ('8000000000028', 1, 2.5),
+                                               ('2105120', 1, 14.9), ('8000000000035', 1, 1);
+            INSERT INTO LinkArticoliLegacypromo VALUES ('00800000000011', 'A'), ('8000000000028', 'B');
+        """)
+        adesso = datetime.now()
+        fmt = "%Y-%m-%d %H:%M:%S"
+        db.execute("INSERT INTO LegacyPromo VALUES ('A', 1, 11, 0.3, ?, ?)", ((adesso - timedelta(days=1)).strftime(fmt), (adesso + timedelta(days=3)).strftime(fmt)))
+        db.execute("INSERT INTO LegacyPromo VALUES ('B', 1, 11, 0.5, ?, ?)", ((adesso - timedelta(days=9)).strftime(fmt), (adesso - timedelta(days=2)).strftime(fmt)))
+
+        def cerca(codice):
+            riga = db.execute(q.EVOPOS, {"codice": codice, "codice_corto": codice.lstrip("0"), "plu": "", "reparto": ""}).fetchone()
+            return dict(riga) if riga else None
+
+        piatti = cerca("0800000000011")  # letto a 13 cifre, salvato a 14
+        self.assertEqual((piatti["prezzo"], piatti["prezzo_offerta"]), (1.19, 0.89))
+        self.assertIsNone(cerca("8000000000028")["prezzo_offerta"])  # offerta scaduta
+        mortadella = cerca("2105120012345")  # etichetta della bilancia: prime 7 cifre
+        self.assertEqual((mortadella["descrizione"], mortadella["unita"]), ("MORTADELLA", "kg"))
+        self.assertIsNone(cerca("8000000000035"))  # articolo non attivo
+        self.assertIsNone(cerca("1234567890123"))

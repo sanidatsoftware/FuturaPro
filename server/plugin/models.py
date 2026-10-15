@@ -23,6 +23,8 @@ class ImpostazioniPlugin(ModelloCliente):
     # Dove sono i dati nel file: tabella e colonne (vedi «query»), oppure una query scritta a mano.
     mappatura = models.JSONField(default=dict, blank=True)
     query = models.TextField(blank=True)
+    # Un gestionale conosciuto (es. «evopos»): la query è già pronta (vedi query.PREIMPOSTAZIONI).
+    formato = models.CharField(max_length=30, blank=True)
     # Il popup: caratteri, grandezze, colori, banner «Offerta», lampeggio.
     aspetto = models.JSONField(default=dict, blank=True)
     timeout = models.PositiveSmallIntegerField(default=8)

@@ -18,11 +18,13 @@ def per_il_player(stampante) -> dict | None:
     if stampante is None:
         return None
     from .ticket import per_il_player as ticket
+    from .ticket import punti_stampante
 
     return {
         "id": str(stampante.id), "nome": stampante.nome, "stampa": stampante.tipo,
         "stampante": stampante.indirizzo, "intestazione": stampante.intestazione, "messaggio": stampante.messaggio,
-        "ticket": ticket_con_testi(ticket(stampante.layout), stampante),
+        "punti": punti_stampante(stampante.modello, stampante.carta),
+        "ticket": ticket_con_testi(ticket(stampante.layout, punti_stampante(stampante.modello, stampante.carta)), stampante),
     }
 
 

@@ -271,11 +271,15 @@ class LayoutTicketTest(Base):
             Zona.objects.create(cliente=self.a, layout=video, tipo="prendi_numero", x=0, y=0, larghezza=100, altezza=100, configurazione={})
             Monitor.objects.filter(id=self.mon_a_milano.id).update(layout=video)
         stampante = self.client.post("/api/stampanti/", {"nome": "Epson", "sede": str(self.a_milano.id), "tipo": "epson", "indirizzo": "10.0.0.5",
-                                                         "layout": layout["id"], "messaggio": "Buona spesa"}, format="json").json()
+                                                         "modello": "TM-T20IV", "carta": 58, "layout": layout["id"], "messaggio": "Buona spesa"}, format="json").json()
+        self.assertEqual(stampante["punti"], 420)  # TM-T20IV su carta da 58 mm
+        modelli = {m["chiave"]: m for m in self.client.get("/api/stampanti/modelli/").json()}
+        self.assertEqual(modelli["TM-T20IV"]["carte"], {"80": 576, "58": 420})
+        self.assertEqual(self.client.patch(f"/api/stampanti/{stampante['id']}/", {"modello": "XYZ"}, format="json").status_code, 400)
         self.client.patch(f"/api/monitor/{self.mon_a_milano.id}/", {"stampante": stampante["id"]}, format="json")
         with contesto_cliente(self.a.id):
             zona = palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))["layout"]["zone"][0]["configurazione"]
-        self.assertEqual(zona["ticket"]["punti"], 576)
+        self.assertEqual(zona["ticket"]["punti"], 420)  # la larghezza è quella della stampante
         self.assertTrue(zona["ticket"]["logo"].startswith("data:image/png;base64,"))
         self.assertEqual((zona["ticket"]["messaggio"], zona["ticket"]["elementi"][2]["testo"]), ("Buona spesa", "Grazie"))
 

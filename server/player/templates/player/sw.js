@@ -3,7 +3,7 @@
 // Rete prima (per prendere subito gli aggiornamenti), copia salvata se la rete manca.
 // Le chiamate alle API e i file dei contenuti non passano di qui: li gestisce avvio.js.
 
-const CACHE = "futurapro-app-v16";
+const CACHE = "futurapro-app-v17";
 const FILE = [
   "/player/",
   "/static/player/avvio.js",

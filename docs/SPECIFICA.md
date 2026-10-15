@@ -509,7 +509,11 @@ intestazione, reparto (il tasto toccato sul totem), numero, persone in coda, tes
 biglietto, data e ora, QR della coda sul telefono, testi liberi e linee. Per ogni elemento:
 visibile, carattere, grandezza (in punti della stampante, 8 = 1 mm), grassetto, corsivo,
 maiuscolo, bianco su nero, allineamento, spazio sotto; per logo e QR la larghezza. Carta 80 mm
-(576 punti) o 58 mm (384). L'editor del pannello ha l'elenco da trascinare, le proprietà
+di riferimento (80 o 58 mm); la larghezza vera è quella della stampante che lo usa: il catalogo
+dei modelli (`ticket.MODELLI`, `GET /api/stampanti/modelli/`) dà i punti stampabili per carta.
+**Epson TM-T20IV**: 203 dpi, 80 mm → 576 punti (72 mm, 48 colonne da 12 punti), 58 mm → 420
+punti (35 colonne); con la scheda Ethernet si usa come «Epson di rete» (ePOS-Print), in USB come
+«stampante di sistema» con il driver Epson APD. Le altre stampanti: 576 / 384 punti. L'editor del pannello ha l'elenco da trascinare, le proprietà
 dell'elemento scelto e l'anteprima, in cui un clic sceglie l'elemento. Il logo caricato diventa
 un PNG in scala di grigi alla larghezza della carta. Ogni stampante sceglie il suo layout (vuoto:
 biglietto semplice). Il totem disegna il biglietto come immagine (`player/ticket.js`, lo stesso
@@ -562,7 +566,12 @@ Li abilita il SystemAdministrator per l'azienda (`Abilitazioni.plugin_prezzo`,
 (`\\indirizzo\condivisione\…\file.db`, con utente e password). Il server centrale non lo vede:
 lo copia il **servizio code del Totem Master** (`code-totem.ps1` 1.4), ogni N minuti e solo se è
 cambiato (dimensione e data, anche del `-wal`), in un processo a parte per non fermare le code;
-la copia locale è letta in sola lettura con `winsqlite3.dll` (presente in Windows 10/11,
+dopo la copia un `PRAGMA quick_check`: se il file era in scrittura e la copia non è integra, la si
+scarta, resta la precedente e si riprova dopo 2 minuti. Perché non leggerlo direttamente dalla
+cartella condivisa: SQLite su una condivisione di rete non ha lock affidabili (lo sconsiglia la
+documentazione di SQLite, e il modo WAL non funziona in rete), quindi si rischierebbero errori
+«database is locked» proprio mentre la cassa lavora; inoltre ogni ricerca dipenderebbe dalla rete e
+dal PC del negozio acceso. La copia locale è letta in sola lettura con `winsqlite3.dll` (presente in Windows 10/11,
 `FpSqlite.cs`). I dispositivi del negozio interrogano `GET /plugin/prezzo` e
 `GET /plugin/ingredienti` del master (`codice`, `plu`, `reparto`, `prezzo=1`), senza
 internet. La password arriva solo al master (nel suo manifest, mai nell'anteprima del pannello) e
@@ -574,7 +583,15 @@ parametri `:codice`, `:codice_corto`, `:plu`, `:reparto`) oppure una query scrit
 SELECT, una sola istruzione). Le colonne del risultato hanno nomi fissi: `descrizione`, `prezzo`,
 `prezzo_offerta`, `offerta_dal`, `offerta_al`, `unita` per Info Prezzo; `descrizione`,
 `ingredienti`, `allergeni`, `conservazione` per Info Ingredienti. La mappatura predefinita
-andrà adattata ai file campione del gestionale.
+va adattata al file del gestionale.
+
+**Gestionali pronti.** Per **EvoPos** (`evoPosDb.db`) basta scegliere «Gestionale: EvoPos»: la
+query è già pronta (`plugin/query.py`, `EVOPOS`). Codici in `CodiceEan` (anche salvati a 14 cifre
+con zeri davanti: si provano le varianti), articolo attivo (`Articoli.Stato = 1`), prezzo n. 1 di
+`PrezziDiVendita` (al kg per gli articoli di tipo `KG`), offerte «SCONTO OFFERTA» (effetto 11)
+attive oggi da `LegacyPromo` tramite `LinkArticoliLegacypromo`, con `ValoreEffetto1` sconto in
+euro (prezzo in offerta = prezzo − sconto) e la data di fine. Le etichette della bilancia
+(EAN-13 che inizia per 2) si cercano con le prime 7 cifre (prefisso + PLU), come le registra EvoPos.
 
 ## 8. Player
 

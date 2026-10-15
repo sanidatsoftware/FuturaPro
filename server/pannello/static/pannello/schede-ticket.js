@@ -33,7 +33,9 @@ async function urlLogo(layout) {
 
 export async function schedaLayoutTicket() {
   const { crea, sezione, api, prova, campo, scelta } = H;
-  const [elenco, base] = await Promise.all([H.elenco("/api/layout-ticket/"), api("GET", "/api/layout-ticket/predefiniti/")]);
+  const [elenco, base, modelli] = await Promise.all([
+    H.elenco("/api/layout-ticket/"), api("GET", "/api/layout-ticket/predefiniti/"), api("GET", "/api/stampanti/modelli/"),
+  ]);
   const modifica = H.ruoloGestione() || H.stato.io.ruolo === "tecnico";
 
   const intro = sezione("Layout Ticket");
@@ -75,7 +77,14 @@ export async function schedaLayoutTicket() {
   const editor = sezione(`Componi «${layout.nome}»`);
   const testa = crea("div", { classe: "riga" }, editor);
   const nomeLayout = campo("Nome", crea("input", { value: layout.nome, maxLength: 100 }), testa);
-  const carta = campo("Carta", scelta([[80, "80 mm"], [58, "58 mm"]], layout.carta), testa);
+  const carta = campo("Carta di riferimento", scelta([[80, "80 mm"], [58, "58 mm"]], layout.carta), testa);
+  // L'anteprima alla larghezza di una stampante vera (il totem usa quella della sua stampante).
+  const misure = [];
+  for (const m of modelli) for (const [c, punti] of Object.entries(m.carte)) misure.push([`${m.chiave}|${c}`, `${m.nome} · ${c} mm (${punti} punti)`, punti]);
+  const anteprimaSu = campo("Anteprima su", scelta(misure.map(([k, t]) => [k, t]), `TM-T20IV|${layout.carta}`), testa);
+  const puntiAnteprima = () => misure.find(([k]) => k === anteprimaSu.value)?.[2] || 576;
+  carta.addEventListener("change", () => { anteprimaSu.value = `TM-T20IV|${carta.value}`; ridisegna(); });
+  anteprimaSu.addEventListener("change", () => ridisegna());
   if (layout.stampanti.length) crea("span", { classe: "tenue", testo: `Usato da: ${layout.stampanti.join(", ")}` }, testa);
 
   const area = crea("div", { classe: "editor-ticket" }, editor);
@@ -86,7 +95,7 @@ export async function schedaLayoutTicket() {
   crea("p", { classe: "tenue", testo: "Anteprima con dati di esempio. Clicca un elemento per modificarlo." }, colAnteprima);
 
   const ridisegna = async () => {
-    const tela = await disegnaTicket({ punti: parseInt(carta.value, 10) === 58 ? 384 : 576, elementi, logo }, ESEMPIO);
+    const tela = await disegnaTicket({ punti: puntiAnteprima(), elementi, logo }, ESEMPIO);
     tela.classList.add("tela-ticket");
     // L'elemento scelto, evidenziato.
     const blocco = tela.blocchi.find((b) => b.indice === selezionato);
@@ -205,7 +214,6 @@ export async function schedaLayoutTicket() {
   };
 
   const disegnaTutto = () => { disegnaElenco(); disegnaProprieta(); ridisegna(); };
-  carta.addEventListener("change", ridisegna);
   disegnaTutto();
 
   if (modifica) {

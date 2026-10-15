@@ -103,12 +103,14 @@ export function disegnaRiquadro(contenitore, { tipo, esito, aspetto, dimensioni,
     if (prezzo.offerta !== null) {
       if (a.mostra_prezzo_pieno !== false && prezzo.pieno !== null) crea("span", "plugin-pieno", riga).textContent = euro(prezzo.pieno);
       const offerta = crea("span", `plugin-prezzo${a.lampeggia !== false ? " lampeggia" : ""}`, riga);
-      offerta.textContent = `${euro(prezzo.offerta)}${unita}`;
+      offerta.textContent = euro(prezzo.offerta);
+      if (unita) crea("small", "plugin-unita", offerta).textContent = unita;
       offerta.style.color = a.colore_offerta || "#d32f2f";
       if (prezzo.fino) crea("div", "plugin-nota", box).textContent = `Offerta valida fino al ${giorno(prezzo.fino)}`;
     } else {
       const pieno = crea("span", "plugin-prezzo", riga);
-      pieno.textContent = `${euro(prezzo.pieno)}${unita}`;
+      pieno.textContent = euro(prezzo.pieno);
+      if (unita) crea("small", "plugin-unita", pieno).textContent = unita;
       pieno.style.color = a.colore_prezzo || "#1f4e79";
     }
   }

@@ -100,6 +100,15 @@ public static class FpSqlite
         }
     }
 
+    // La copia è integra? (presa mentre il gestionale scriveva potrebbe non esserlo)
+    public static bool Integro(string percorso)
+    {
+        Hashtable riga = Cerca(percorso, "PRAGMA quick_check", new Hashtable());
+        if (riga == null) return false;
+        foreach (DictionaryEntry v in riga) return Convert.ToString(v.Value) == "ok";
+        return false;
+    }
+
     // Sulla copia locale: riporta nel file le modifiche rimaste nel «-wal», così poi si apre in sola lettura.
     public static void SenzaWal(string percorso)
     {
