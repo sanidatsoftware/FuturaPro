@@ -4,6 +4,7 @@
 import re
 
 from rest_framework import exceptions, serializers
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -126,11 +127,31 @@ class FontePluginSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = FontePlugin
-        fields = ["id", "tipo", "sede", "indirizzo", "percorso", "utente", "password", "ha_password", "aggiorna_minuti"]
-        extra_kwargs = {"aggiorna_minuti": {"min_value": 1, "max_value": 1440}}
+        fields = ["id", "tipo", "sede", "indirizzo", "percorso", "utente", "password", "ha_password", "aggiorna_minuti", "orari", "richiesta_copia"]
+        read_only_fields = ["richiesta_copia"]
+        extra_kwargs = {"aggiorna_minuti": {"min_value": 0, "max_value": 1440}}
+
+    def validate(self, dati):
+        minuti = dati.get("aggiorna_minuti", getattr(self.instance, "aggiorna_minuti", 15))
+        orari = dati.get("orari", getattr(self.instance, "orari", []))
+        if not minuti and not orari:
+            raise serializers.ValidationError({"orari": "Indica almeno un orario o ogni quanti minuti copiare il file."})
+        return dati
 
     def get_ha_password(self, fonte):
         return bool(fonte.password_cifrata)
+
+    def validate_orari(self, valore):
+        if not isinstance(valore, list) or len(valore) > 8:
+            raise serializers.ValidationError("Al massimo 8 orari.")
+        orari = set()
+        for orario in valore:
+            orario = str(orario).strip()
+            if not re.fullmatch(r"([01]?\d|2[0-3])[:.][0-5]\d", orario):
+                raise serializers.ValidationError(f"Orario non valido: «{orario}» (es. 06:30).")
+            ore, minuti = re.split(r"[:.]", orario)
+            orari.add(f"{int(ore):02d}:{minuti}")
+        return sorted(orari)
 
     def validate_indirizzo(self, valore):
         valore = valore.strip().strip("\\/")
@@ -232,3 +253,15 @@ class FontiPluginViewSet(ViewSetCliente):
     def perform_destroy(self, fonte):
         registra(self.request.user, "fonte_plugin_eliminata", fonte)
         fonte.delete()
+
+    @action(detail=True, methods=["post"])
+    def aggiorna(self, request, pk=None):
+        """«Aggiorna adesso»: il Totem Master ricopia il file appena riceve la configurazione."""
+        from django.utils import timezone
+
+        fonte = self.get_object()
+        self._verifica(fonte.tipo)
+        fonte.richiesta_copia = timezone.now()
+        fonte.save(update_fields=["richiesta_copia"])
+        registra(request.user, "fonte_plugin_aggiorna", fonte)
+        return Response(self.get_serializer(fonte).data)

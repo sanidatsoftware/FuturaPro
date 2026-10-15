@@ -6,6 +6,7 @@
 // I testi che arrivano dai dati passano sempre da textContent.
 
 import { attivaAiuti } from "../pannello/aiuto.js";
+import { osservaAiutiPagina } from "../pannello/aiuti-campi.js";
 
 const parametri = new URLSearchParams(location.search);
 const cliente = parametri.get("cliente");
@@ -94,6 +95,79 @@ const ADATTAMENTO = [
   ["riempi", "Riempi (taglia i bordi)"],
   ["allunga", "Allunga (riempie deformando)"],
 ];
+
+
+// La spiegazione di ogni campo (al passaggio del mouse); «tipo.nome» vale solo per quel tipo di zona.
+const AIUTI_CAMPI = {
+  sorgente: "Cosa va in onda in questa zona: le promozioni pubblicate sullo schermo (palinsesto) o una playlist fissa.",
+  transizione: "L'effetto con cui si passa da una slide alla successiva.",
+  durata_transizione: "Quanto dura l'effetto di passaggio, in millesimi di secondo (800 = poco meno di un secondo).",
+  adattamento: "Come entra l'immagine nella zona se le proporzioni sono diverse: intera, con sfondo sfocato, ritagliata o deformata.",
+  mostra_data: "Mostra anche la data sotto l'ora.",
+  secondi: "Mostra anche i secondi.",
+  colore: "Il colore del testo.",
+  sfondo: "Il colore di fondo della zona (o trasparente, per vedere lo sfondo del layout).",
+  allineamento: "Dove si allinea il testo nella zona.",
+  localita: "La città di cui mostrare il meteo: scrivi il nome e scegli dall'elenco.",
+  feed: "Indirizzi RSS di notizie (es. di un giornale), uno per riga: le notizie scorrono nel rullo.",
+  messaggi: "Frasi vostre da far scorrere (es. orari, promozioni), una per riga.",
+  velocita: "Quanto veloce scorre il testo: più alto, più veloce.",
+  aggiornamento_minuti: "Ogni quanto si rileggono le notizie dai feed.",
+  testo: "Il testo da mostrare nella zona.",
+  dimensione: "La grandezza del testo rispetto all'altezza della zona.",
+  contenuto: "L'immagine fissa da mostrare (es. il logo).",
+  listino: "Quale listino prezzi mostrare (Contenuti · Listini).",
+  titolo: "La scritta nella barra in alto della zona. Vuoto: niente barra.",
+  colore_titolo: "Il colore della scritta del titolo.",
+  sfondo_titolo: "Il colore della barra del titolo.",
+  colore_prezzo: "Il colore dei prezzi.",
+  colore_evidenza: "Il colore di fondo delle righe messe in evidenza (★) nel listino.",
+  righe_per_pagina: "Quante righe per pagina; se non entrano tutte, le pagine si alternano. 0: le calcola da solo.",
+  secondi_pagina: "Quanti secondi resta ogni pagina del listino.",
+  mostra_unita: "Mostra l'unità accanto al prezzo (al kg, all'etto…).",
+  mostra_nota: "Mostra la nota della riga (es. OFFERTA).",
+  reparti: "Quali reparti mostrare in questa zona. Nessuno scelto: tutti quelli della sede dello schermo.",
+  disposizione: "Come si dispongono i riquadri dei reparti: in colonna, in riga, a griglia, o da soli.",
+  testo_coda: "La scritta con le persone in coda: {n} diventa il numero (es. «Clienti in coda: {n}»). Vuoto: nascosta.",
+  bordo: "Una linea sottile tra i riquadri dei reparti.",
+  annuncio: "Cosa succede quando il banco chiama un numero: solo lampeggio, l'audio del numero (mp3) o il din-don, e la voce.",
+  volume_annunci: "Il volume degli annunci dei numeri, indipendente da quello di video e dirette.",
+  personalizza: "Nome, colori ed etichetta dei reparti solo in questa zona (senza cambiarli negli altri schermi).",
+  "prendi_numero.colore": "Il colore della scritta del titolo.",
+  "prendi_numero.sfondo": "Il colore della barra del titolo.",
+  sfondo_pulsanti: "Il colore di fondo dell'area dei pulsanti.",
+  colonne: "Su quante colonne si mettono i pulsanti dei reparti. 0: le calcola da solo.",
+  arrotondamento: "Quanto sono arrotondati gli angoli dei pulsanti.",
+  stampa: "Come stampa il biglietto il totem, se non ha una stampante abbinata (Hardware · Anagrafica Stampanti Ticket).",
+  stampante: "L'IP della stampante Epson di rete (solo con «Stampante Epson di rete»).",
+  intestazione: "La prima riga del biglietto (es. il nome del negozio).",
+  messaggio: "Il testo in fondo al biglietto.",
+};
+
+const AIUTI_EDITOR = {
+  "Nome (facoltativo)": "Un nome per riconoscere la zona (es. «Offerte grandi»): non si vede sullo schermo.",
+  "Da sinistra": "La distanza della zona dal bordo sinistro, in % della larghezza dello schermo.",
+  "Dall'alto": "La distanza della zona dal bordo in alto, in % dell'altezza dello schermo.",
+  Larghezza: "La larghezza della zona, in % dello schermo.",
+  Altezza: "L'altezza della zona, in % dello schermo.",
+  "pulsante:Proporzioni del formato immagini": "Dà alla zona le proporzioni delle immagini che prepari di solito: si vedono senza tagli né bande.",
+  "pulsante:Porta avanti": "Mette la zona sopra quelle che la coprono.",
+  "pulsante:Porta indietro": "Mette la zona sotto quelle sovrapposte.",
+  "pulsante:Duplica": "Crea una copia della zona, con le stesse impostazioni.",
+  "pulsante:Elimina": "Toglie la zona dal layout.",
+  "pulsante:Annulla modifiche": "Torna all'ultima versione salvata.",
+  "pulsante:Salva": "Salva il layout: gli schermi che lo usano lo ricevono entro un minuto.",
+  Sfondo: "Il colore di fondo di tutto lo schermo, sotto le zone.",
+  Predefinito: "Il layout usato dagli schermi con questo orientamento che non ne hanno uno scelto.",
+  "Nome del layout": "Il nome del layout, da scegliere per ogni schermo in Anagrafica Dispositivi Video.",
+  "esempio:Nome del layout": "Il nome del layout, da scegliere per ogni schermo in Anagrafica Dispositivi Video.",
+  "esempio:Nome": "Il nome del nuovo layout.",
+  "scelta:Orizzontale": "Per monitor orizzontali o totem verticali.",
+  "pulsante:Crea vuoto": "Crea un layout senza zone: le aggiungi dalla colonna a sinistra.",
+  "pulsante:": "Crea un layout partendo da questo modello pronto: poi lo modifichi a piacere.",
+  "esempio:Etichetta": "Il nome del reparto solo in questa zona (vuoto: quello del reparto).",
+  "pixel": "La misura in pixel delle immagini che prepari di solito: serve a scegliere le proporzioni delle zone.",
+};
 
 const CAMPI = {
   slide: [
@@ -608,6 +682,7 @@ function mostraProprieta() {
   for (const campo of CAMPI[zona.tipo]) {
     const valore = zona.configurazione[campo.nome] ?? campo.predefinito;
     const riga = crea("div", { classe: "campo" }, pannello);
+    riga.dataset.aiuto = AIUTI_CAMPI[`${zona.tipo}.${campo.nome}`] || AIUTI_CAMPI[campo.nome] || campo.etichetta;
     crea("span", { classe: "etichetta-campo", testo: campo.etichetta }, riga);
     switch (campo.tipo) {
       case "testo":
@@ -895,5 +970,6 @@ async function avviaElenco() {
 
 const id = document.body.dataset.layout;
 attivaAiuti();
+osservaAiutiPagina(document.body, AIUTI_EDITOR);
 if (id) avviaEditor(id);
 else avviaElenco();

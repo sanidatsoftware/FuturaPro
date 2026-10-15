@@ -70,6 +70,15 @@ class PluginTest(Base):
         self.assertNotIn("password", r.json())
         self.assertTrue(r.json()["ha_password"])
 
+        # Quando copiarlo: orari e/o minuti, almeno uno; «Aggiorna adesso» arriva al totem.
+        fonte_id = r.json()["id"]
+        url_fonte = f"/api/fonti-plugin/{fonte_id}/"
+        self.assertEqual(self.client.patch(url_fonte, {"aggiorna_minuti": 0, "orari": []}, format="json").status_code, 400)
+        self.assertEqual(self.client.patch(url_fonte, {"orari": ["25:00"]}, format="json").status_code, 400)
+        r = self.client.patch(url_fonte, {"aggiorna_minuti": 0, "orari": ["13:00", "6.30"]}, format="json")
+        self.assertEqual(r.json()["orari"], ["06:30", "13:00"])
+        self.assertIsNotNone(self.client.post(f"{url_fonte}aggiorna/").json()["richiesta_copia"])
+
         # Senza totem nella sede i dati del negozio non si raggiungono: niente plugin.
         self.assertIsNone(self.manifest(self.mon_a_milano)["plugin"])
         self.client.patch(f"/api/sedi/{self.a_milano.id}/", {"indirizzo_totem": "192.168.1.70"})
@@ -80,10 +89,15 @@ class PluginTest(Base):
         servizio = master["code"]["plugin"]["prezzo"]
         self.assertEqual((servizio["condivisione"], servizio["file"], servizio["password"]), ("\\\\192.168.1.20\\Dati", "Prezzi\\articoli.db", "segreta"))
         self.assertIn('FROM "articoli"', servizio["query"])
+        self.assertEqual((servizio["orari"], servizio["minuti"]), (["06:30", "13:00"], 0))
+        self.assertTrue(servizio["richiesta"])
         self.assertEqual(master["plugin"]["prezzo"]["timeout"], 6)
         altro = self.manifest(secondo)
         self.assertEqual(altro["plugin"]["prezzo"]["aspetto"]["sfondo"], "#000000")
         self.assertNotIn("plugin", altro["code"])  # la password resta al master
+        # Un totem o monitor non master cerca prezzi e ingredienti nel servizio del Totem Master.
+        self.assertEqual(altro["code"]["indirizzo"], "https://192.168.1.70:8443")
+        self.assertNotIn("reparti", altro["code"])
         anteprima = self.client.get(f"/api/anteprima/{self.mon_a_milano.id}/manifest/").json()
         self.assertNotIn("plugin", anteprima["code"])  # e non passa dal pannello
 
@@ -132,3 +146,40 @@ class EvoPosTest(Base):
         self.assertEqual((mortadella["descrizione"], mortadella["unita"]), ("MORTADELLA", "kg"))
         self.assertIsNone(cerca("8000000000035"))  # articolo non attivo
         self.assertIsNone(cerca("1234567890123"))
+        self.assertIsNone(piatti["prezzo_etichetta"])
+        self.assertEqual(mortadella["prezzo_etichetta"], 12.34)  # cifre 8-12 dell'etichetta
+
+
+class DigiTest(Base):
+    """La query pronta per DIGI (DigiProject.db), su un file con lo stesso schema (dati inventati)."""
+
+    def test_etichetta_bilancia(self):
+        db = sqlite3.connect(":memory:")
+        db.row_factory = sqlite3.Row
+        db.executescript("""
+            CREATE TABLE Plus (Id INT, Code INT, Label TEXT, SellPriceWithTaxes NUMERIC, BarCode1 TEXT, QuantityType INT,
+                               IsEnabled BOOL, IngredientId INT, Text5Id INT, UpdatedAt DATETIME);
+            CREATE TABLE Ingredients (Id INT, Description TEXT);
+            CREATE TABLE Texts (Id INT, Message TEXT);
+            CREATE TABLE PluDepartments (PluId INT, DepartmentId INT);
+            CREATE TABLE Departments (Id INT, Name TEXT);
+            INSERT INTO Departments VALUES (2, 'Macelleria'), (7, 'Salumeria');
+            INSERT INTO Plus VALUES (1, 162, 'SALSICCIA FINA', 8.9, '2110162000003', 0, 1, 10, NULL, '2026-01-01'),
+                                    (2, 254, 'COTTO', 9.9, '2120254000002', 0, 1, NULL, 20, '2026-01-01'),
+                                    (3, 99, 'VECCHIO', 1, '2110099000004', 0, 0, NULL, NULL, NULL);
+            INSERT INTO PluDepartments VALUES (1, 2), (2, 7), (3, 2);
+            INSERT INTO Ingredients VALUES (10, 'INGREDIENTI: carne di suino - sale - pepe nero - a' || char(13) || char(10) || 'cqua');
+            INSERT INTO Texts VALUES (20, 'INGREDIENTI: coscia di suino, sale');
+        """)
+
+        def cerca(codice):
+            riga = db.execute(q.DIGI, {"codice": codice, "codice_corto": codice.lstrip("0"), "plu": "", "reparto": ""}).fetchone()
+            return dict(riga) if riga else None
+
+        salsiccia = cerca("2110162005664")
+        self.assertEqual((salsiccia["descrizione"], salsiccia["reparto"], salsiccia["prezzo_etichetta"], salsiccia["unita"]),
+                         ("SALSICCIA FINA", "Macelleria", 5.66, "kg"))
+        self.assertTrue(salsiccia["ingredienti"].startswith("INGREDIENTI: carne di suino"))
+        self.assertEqual(cerca("2120254002242")["ingredienti"], "INGREDIENTI: coscia di suino, sale")  # dal testo 5
+        self.assertIsNone(cerca("2110099001000"))  # PLU disattivato
+        self.assertIsNone(cerca("8001234567890"))

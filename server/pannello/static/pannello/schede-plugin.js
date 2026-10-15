@@ -82,9 +82,10 @@ async function schedaPlugin(tipo) {
   crea("p", {
     classe: "tenue",
     testo: "Percorso: la cartella condivisa e il file, come in \\\\192.168.1.20\\Dati\\Prezzi\\articoli.db → indirizzo «192.168.1.20», percorso «Dati\\Prezzi\\articoli.db». "
-      + "Utente e password sono quelli per aprire la cartella condivisa (vuoti se è aperta a tutti). La password resta cifrata e va solo al Totem Master.",
+      + "Utente e password sono quelli per aprire la cartella condivisa (vuoti se è aperta a tutti). La password resta cifrata e va solo al Totem Master. "
+      + "Il file si copia solo se è cambiato; per i file grandi che cambiano a ogni pesata (bilancia) meglio uno o due orari fissi, e «Aggiorna adesso» quando servono subito le modifiche. Sul totem serve spazio libero per due volte il file.",
   }, negozi);
-  const corpo = tabella(["Negozio", "Totem Master", "File", "Utente", "Copia ogni", "Ultima copia", ""], negozi);
+  const corpo = tabella(["Negozio", "Totem Master", "File", "Utente", "Quando copiarlo", "Ultima copia", ""], negozi);
   for (const n of p.negozi) {
     const r = crea("tr", {}, corpo);
     crea("td", { testo: n.nome }, r);
@@ -96,33 +97,55 @@ async function schedaPlugin(tipo) {
       master.append(` ${n.master}`);
     }
     const f = n.fonte;
-    const indirizzo = crea("input", { value: f?.indirizzo || "", placeholder: "192.168.1.20", size: 13 });
-    const percorso = crea("input", { value: f?.percorso || "", placeholder: "Dati\\Prezzi\\articoli.db", size: 24 });
+    const indirizzo = crea("input", { value: f?.indirizzo || "", placeholder: "192.168.1.20", size: 13, "data-aiuto": "L'indirizzo IP (o il nome) del PC del negozio che ha il file, es. 192.168.1.20." });
+    const percorso = crea("input", { value: f?.percorso || "", placeholder: "Dati\\Prezzi\\articoli.db", size: 24, "data-aiuto": "La cartella condivisa e il file .db, es. Utility\\DigiProject\\DigiProject.db (la prima parte è il nome della condivisione)." });
     const cellaFile = crea("td", { classe: "file-plugin" }, r);
     cellaFile.append("\\\\", indirizzo, "\\", percorso);
     const cellaUtente = crea("td", {}, r);
-    const utente = crea("input", { value: f?.utente || "", placeholder: "utente", size: 10, autocomplete: "off" }, cellaUtente);
-    const password = crea("input", { type: "password", placeholder: f?.ha_password ? "•••••• (invariata)" : "password", size: 10, autocomplete: "new-password" }, cellaUtente);
-    const minuti = crea("input", { type: "number", min: 1, max: 1440, value: f?.aggiorna_minuti || 15, classe: "corto" });
-    const cellaMinuti = crea("td", {}, r);
-    cellaMinuti.append(minuti, " min");
+    const utente = crea("input", { value: f?.utente || "", placeholder: "utente", size: 10, autocomplete: "off", "data-aiuto": "L'utente Windows che può leggere la cartella condivisa (es. PCNEGOZIO\\utente). Vuoto se la cartella è aperta a tutti." }, cellaUtente);
+    const password = crea("input", { type: "password", placeholder: f?.ha_password ? "•••••• (invariata)" : "password", size: 10, autocomplete: "new-password", "data-aiuto": "La password di quell'utente. Resta cifrata e va solo al Totem Master; lasciala vuota per non cambiarla." }, cellaUtente);
+    // Quando copiare: agli orari fissi e/o ogni N minuti, entrambi facoltativi (almeno uno). Il file
+    // si copia comunque solo se è cambiato.
+    const cellaCopia = crea("td", { classe: "copia-plugin" }, r);
+    const conOrari = crea("input", { type: "checkbox", checked: f ? f.orari.length > 0 : tipo === "ingredienti" });
+    const orari = crea("input", { value: (f?.orari?.length ? f.orari : ["06:30"]).join(", "), placeholder: "06:30, 13:00", size: 11 });
+    const conMinuti = crea("input", { type: "checkbox", checked: f ? f.aggiorna_minuti > 0 : tipo === "prezzo" });
+    const minuti = crea("input", { type: "number", min: 1, max: 1440, value: f?.aggiorna_minuti || (tipo === "ingredienti" ? 120 : 15), classe: "corto" });
+    const riga1 = crea("label", { classe: "spunta" }, cellaCopia);
+    riga1.append(conOrari, " alle ", orari);
+    const riga2 = crea("label", { classe: "spunta" }, cellaCopia);
+    riga2.append(conMinuti, " ogni ", minuti, " min");
+    const aggiornaModo = () => { orari.disabled = !conOrari.checked; minuti.disabled = !conMinuti.checked; };
+    conOrari.addEventListener("change", aggiornaModo);
+    conMinuti.addEventListener("change", aggiornaModo);
+    aggiornaModo();
     const stato = crea("td", {}, r);
     if (!f) stato.textContent = "—";
     else if (!n.stato) stato.textContent = n.master_online ? "in attesa del totem…" : "—";
     else {
       stato.textContent = n.stato.copiato ? quando(n.stato.copiato) : "non ancora copiato";
+      if (n.stato.dimensione > 0) stato.append(` · ${(n.stato.dimensione / 1048576).toFixed(0)} MB`);
+      if (n.stato.in_corso === "True" || n.stato.in_corso === true) crea("div", { classe: "tenue", testo: "⏳ copia in corso…" }, stato);
+      else if (n.stato.prossimo) crea("div", { classe: "tenue", testo: `prossima: ${quando(n.stato.prossimo)}` }, stato);
       if (n.stato.errore) crea("div", { classe: "attenzione", testo: `⚠️ ${n.stato.errore}` }, stato);
     }
     const azioni = crea("td", { classe: "azioni" }, r);
     const dati = () => ({
       tipo, sede: n.sede, indirizzo: indirizzo.value, percorso: percorso.value, utente: utente.value,
-      aggiorna_minuti: parseInt(minuti.value, 10) || 15, ...(password.value ? { password: password.value } : {}),
+      aggiorna_minuti: conMinuti.checked ? parseInt(minuti.value, 10) || 15 : 0,
+      orari: conOrari.checked ? orari.value.split(/[,;\s]+/).filter(Boolean) : [],
+      ...(password.value ? { password: password.value } : {}),
     });
     crea("button", {
       classe: "primario", testo: f ? "Salva" : "Aggiungi",
       onclick: () => prova(() => (f ? api("PATCH", `/api/fonti-plugin/${f.id}/`, dati()) : api("POST", "/api/fonti-plugin/", dati())), "Salvato: il Totem Master lo riceve entro un minuto."),
     }, azioni);
     if (f) {
+      crea("button", {
+        testo: "⟳ Aggiorna adesso",
+        "data-aiuto": "Il Totem Master ricopia subito il file (per esempio dopo aver cambiato gli ingredienti), senza aspettare l'orario.",
+        onclick: () => prova(() => api("POST", `/api/fonti-plugin/${f.id}/aggiorna/`), "Richiesta inviata: il Totem Master ricopia il file entro un minuto."),
+      }, azioni);
       crea("button", {
         testo: "Togli", classe: "pericolo",
         onclick: () => confirm(`Togliere il file di «${n.nome}»? In quel negozio ${NOMI[tipo]} non risponderà più.`) && prova(() => api("DELETE", `/api/fonti-plugin/${f.id}/`), "Tolto."),
@@ -179,9 +202,9 @@ async function schedaPlugin(tipo) {
     const aggiungi = (v = {}) => {
       const r = crea("tr", {}, corpoPref);
       const voce = {
-        prefisso: crea("input", { value: v.prefisso || "", size: 4, maxLength: 3, placeholder: "20" }, crea("td", {}, r)),
-        reparto: crea("input", { value: v.reparto || "", size: 18, maxLength: 40, placeholder: "Salumeria" }, crea("td", {}, r)),
-        codice: crea("input", { value: v.codice || "", size: 8, maxLength: 20 }, crea("td", {}, r)),
+        prefisso: crea("input", { value: v.prefisso || "", size: 4, maxLength: 3, placeholder: "20", "data-aiuto": "Le prime cifre delle etichette della bilancia (es. 21): un codice che inizia così cerca gli ingredienti invece del prezzo." }, crea("td", {}, r)),
+        reparto: crea("input", { value: v.reparto || "", size: 18, maxLength: 40, placeholder: "Salumeria", "data-aiuto": "Il nome del banco da mostrare nel riquadro, se il file non lo indica già (con DIGI il banco arriva dal file)." }, crea("td", {}, r)),
+        codice: crea("input", { value: v.codice || "", size: 8, maxLength: 20, "data-aiuto": "Come il banco è scritto nella colonna reparto del file. Vuoto: il prefisso stesso. Con EvoPos e DIGI non serve." }, crea("td", {}, r)),
       };
       crea("button", { testo: "✕", onclick: () => { r.remove(); righe.splice(righe.indexOf(voce), 1); } }, crea("td", {}, r));
       righe.push(voce);

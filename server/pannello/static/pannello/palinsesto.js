@@ -8,6 +8,7 @@
 
 import { avviaDiretta } from "../player/motore.js";
 import { attivaAiuti } from "./aiuto.js";
+import { AIUTI_PALINSESTO, osservaAiutiPagina } from "./aiuti-campi.js";
 import { clienteRicordato, disegnaMenu, ricordaCliente } from "./menu.js";
 import { apriEventi, caricaEventi, eventiCaricati, preparaEventi } from "./eventi.js";
 import { FORMATO_LIBRERIA, apriAnteprima, disegnaSequenza, preparaSequenza } from "./sequenza.js";
@@ -910,7 +911,7 @@ function disegnaRiquadroCampagne(box) {
     crea("p", { classe: "vuoto", testo: "Ancora nessuna campagna: creane una, oppure importale da CSV." }, box);
     return;
   }
-  const scelta = crea("select", { "aria-label": "Campagna", classe: "scelta-campagna" }, box);
+  const scelta = crea("select", { "aria-label": "Campagna", classe: "scelta-campagna", "data-aiuto": "La campagna su cui lavorare: le sue promozioni, i contenuti e dove vanno in onda." }, box);
   crea("option", { value: "", testo: S.campagna && !S.campagna.id ? `${S.campagna.nome || "Nuova campagna"} (non salvata)` : "— scegli una campagna —" }, scelta);
   for (const c of S.campagne) {
     const validita = c.data_inizio ? ` · ${data(c.data_inizio)} → ${data(c.data_fine)}` : "";
@@ -1451,13 +1452,14 @@ function disegnaCalendario() {
       const barra = crea("button", {
         type: "button", classe: `barra-campagna ${STATI[p.stato]?.classe || ""}${S.promozione?.id === p.id ? " aperta" : ""}`,
         "aria-label": `${p.nome}, ${periodo(p)}`,
+        "data-aiuto": `${p.nome} · ${periodo(p)} · ${p.contenuti.length} contenut${p.contenuti.length === 1 ? "o" : "i"}. Clic per vedere e modificare la promozione.`,
         onclick: (e) => { e.stopPropagation(); apriDettaglio(campagna, p, barra); },
       }, righe);
       Object.assign(barra.style, { left: `${sinistra}%`, width: `${larghezza}%`, top: `${corsia * ALTEZZA_CORSIA}px` });
       barra.style.setProperty("--colore", campagna.colore);
       if (stretta) {
         crea("span", { classe: "numeri", testo: String(p.contenuti.length) }, barra);
-        const nome = crea("button", { type: "button", classe: "nome-accanto", testo: p.nome, onclick: (e) => { e.stopPropagation(); apriDettaglio(campagna, p, barra); } }, righe);
+        const nome = crea("button", { type: "button", classe: "nome-accanto", testo: p.nome, "data-aiuto": `${periodo(p)}: clic per vedere e modificare la promozione.`, onclick: (e) => { e.stopPropagation(); apriDettaglio(campagna, p, barra); } }, righe);
         // Verso il bordo destro il nome va a sinistra della barra, per non uscire dal calendario.
         if (sinistra + larghezza > 78) Object.assign(nome.style, { right: `calc(${100 - sinistra}% + 6px)`, top: `${corsia * ALTEZZA_CORSIA}px`, textAlign: "right" });
         else Object.assign(nome.style, { left: `calc(${sinistra + larghezza}% + 6px)`, top: `${corsia * ALTEZZA_CORSIA}px` });
@@ -1811,6 +1813,7 @@ async function avvia() {
   }
   disegnaMenu(document.getElementById("menu"), { io: S.io, attiva: "palinsesto", cliente });
   attivaAiuti();
+  osservaAiutiPagina(document.body, AIUTI_PALINSESTO);
   if (!(await sceltaCliente())) return;
   preparaCaricamento();
   preparaImportazione();

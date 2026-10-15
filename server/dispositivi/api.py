@@ -798,7 +798,7 @@ class HeartbeatView(VistaPlayer):
             plugin = request.data.get("plugin")
             if isinstance(plugin, dict):
                 info["plugin"] = {
-                    tipo: {k: str(v)[:300] for k, v in stato.items() if k in ("copiato", "errore", "dimensione", "controllato")}
+                    tipo: {k: str(v)[:300] for k, v in stato.items() if k in ("copiato", "errore", "dimensione", "controllato", "prossimo", "in_corso")}
                     for tipo, stato in plugin.items() if tipo in ("prezzo", "ingredienti") and isinstance(stato, dict)
                 }
             else:

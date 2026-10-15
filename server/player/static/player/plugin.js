@@ -47,6 +47,60 @@ export function leggiPrezzo(articolo, oggi = new Date()) {
   return { pieno, offerta: valida ? promo : null, fino: valida && al ? al : null, unita: articolo.unita ? String(articolo.unita) : "" };
 }
 
+// I testi delle bilance arrivano in righe di larghezza fissa (es. 50 caratteri), spezzate anche a
+// metà parola: si ricompongono. Riga piena e lettere ai due lati: parola spezzata, si unisce;
+// altrimenti era un a capo fra due parole. Una parola in MAIUSCOLO spezzata (es. «LAT|TE») si
+// unisce comunque. Il prefisso «INGREDIENTI:» si toglie: c'è già il titolo.
+const PAROLE_CORTE = new Set(["a", "e", "i", "o", "è", "di", "da", "in", "su", "al", "il", "la", "lo", "le", "ed", "ad", "se", "un", "si", "ai", "ne", "kg", "gr", "g", "ml", "cl", "dl", "l", "mg", "pz", "uv", "vs", "n", "nr"]);
+
+export function testoEtichetta(testo) {
+  const righe = String(testo ?? "").split(/\r?\n/);
+  const larga = Math.max(...righe.map((r) => r.length));
+  let uscita = righe[0] || "";
+  righe.slice(1).forEach((riga, i) => {
+    const prima = righe[i];
+    const fine = prima.match(/([\p{L}\d]+)$/u)?.[1] || "";
+    const inizio = riga.match(/^([\p{L}\d]+)/u)?.[1] || "";
+    const maiuscola = (x) => x === x.toUpperCase() && /\p{L}/u.test(x);
+    // Un pezzetto che non è una parola (es. «c|aglio», «aromatizza|to») è una parola spezzata.
+    const pezzetto = (x, dopo) => x.length <= 2 && !PAROLE_CORTE.has(x.toLowerCase()) && !/^[/.'’]/.test(dopo);
+    const minuscola = (x) => x === x.toLowerCase() && /\p{L}/u.test(x);
+    // Da minuscolo a MAIUSCOLO cambia la parola (es. «microbico|NATURALMENTE»).
+    const cambioScrittura = minuscola(fine) && maiuscola(inizio) && (inizio.length > 1 || riga[1] === ".");
+    const spezzata = fine && inizio && !cambioScrittura && !/^\p{L}{1,2}\//u.test(riga) && (
+      (prima.length >= larga && prima.length >= 40)
+      || (maiuscola(fine) && maiuscola(inizio) && fine.length >= 2 && inizio.length >= 2)
+      || pezzetto(fine, "") || pezzetto(inizio, riga.slice(inizio.length))
+    );
+    uscita += spezzata || /[\s-]$/.test(uscita) || /^[\s,.;:)-]/.test(riga) ? riga : ` ${riga}`;
+  });
+  return uscita.replace(/^\s*ingr[\p{L}]*\.?\s*:\s*/iu, "").replace(/ {2,}/g, " ").trim();
+}
+
+// «… FATTORI ALLERGENI: GLUTINE, LATTE» → ingredienti e allergeni separati.
+export function separaAllergeni(testo) {
+  const m = testo.match(/^(.*?)[\s.;-]*(?:fattori\s+)?allergeni\s*:\s*(.+)$/is);
+  return m ? [m[1].trim(), m[2].trim()] : [testo, ""];
+}
+
+// Le parole in MAIUSCOLO (in un testo scritto in minuscolo) sono gli allergeni: si evidenziano.
+function conEvidenza(genitore, testo, colore) {
+  const lettere = testo.replace(/[^\p{L}]/gu, "");
+  const maiuscole = lettere.replace(/[^\p{Lu}]/gu, "").length;
+  if (!lettere || maiuscole / lettere.length > 0.5) {
+    genitore.textContent = testo;
+    return;
+  }
+  for (const pezzo of testo.split(/(\b[\p{Lu}]{3,}(?:\s+[\p{Lu}]{2,})*\b)/u)) {
+    if (!pezzo) continue;
+    if (/^[\p{Lu}\s]{3,}$/u.test(pezzo)) {
+      const forte = crea("strong", "plugin-evidenza", genitore);
+      forte.textContent = pezzo;
+      forte.style.color = colore;
+    } else genitore.append(pezzo);
+  }
+}
+
 // Codice bilancia? Prefisso dichiarato (es. 20 = Salumeria) e il PLU nella sua posizione.
 export function codiceBilancia(codice, config) {
   if (!config || codice.length !== 13) return null;
@@ -72,29 +126,37 @@ export function disegnaRiquadro(contenitore, { tipo, esito, aspetto, dimensioni,
     return box;
   }
   const articolo = esito.articolo || {};
-  const prezzo = leggiPrezzo(tipo === "prezzo" ? articolo : mostraPrezzo ? esito.prezzo : null);
+  const daBilancia = articolo.prezzo_bilancia !== undefined && articolo.prezzo_bilancia !== null
+    ? { prezzo: articolo.prezzo_bilancia, unita: articolo.unita } : null;
+  const prezzo = leggiPrezzo(tipo === "prezzo" ? articolo : mostraPrezzo ? (esito.prezzo || daBilancia) : null);
   if (prezzo?.offerta !== null && prezzo?.offerta !== undefined) {
     const banner = crea("div", "plugin-banner", box);
     banner.textContent = a.banner_testo || "OFFERTA";
     Object.assign(banner.style, { background: a.banner_sfondo || "#d32f2f", color: a.banner_colore || "#fff" });
   }
-  if (reparto) crea("div", "plugin-reparto", box).textContent = reparto;
+  const nomeReparto = articolo.reparto || reparto;
+  if (nomeReparto) crea("div", "plugin-reparto", box).textContent = nomeReparto;
   crea("div", "plugin-titolo", box).textContent = articolo.descrizione || "";
   if (tipo === "ingredienti") {
+    const colore = a.colore_allergeni || "#b71c1c";
     const testo = crea("div", "plugin-ingredienti", box);
-    if (articolo.ingredienti) {
+    let [ingredienti, allergeni] = separaAllergeni(testoEtichetta(articolo.ingredienti));
+    if (articolo.allergeni) allergeni = testoEtichetta(articolo.allergeni);
+    if (ingredienti) {
       crea("div", "plugin-etichetta", testo).textContent = "Ingredienti";
-      crea("div", "plugin-testo", testo).textContent = articolo.ingredienti;
+      conEvidenza(crea("div", "plugin-testo", testo), ingredienti, colore);
     }
-    if (articolo.allergeni) {
+    if (allergeni) {
       crea("div", "plugin-etichetta", testo).textContent = "Allergeni";
-      const allergeni = crea("div", "plugin-testo plugin-allergeni", testo);
-      allergeni.textContent = articolo.allergeni;
-      allergeni.style.color = a.colore_allergeni || "#b71c1c";
+      const riga = crea("div", "plugin-testo plugin-allergeni", testo);
+      riga.textContent = allergeni;
+      riga.style.color = colore;
     }
-    if (articolo.conservazione) {
-      crea("div", "plugin-etichetta", testo).textContent = "Conservazione";
-      crea("div", "plugin-testo", testo).textContent = articolo.conservazione;
+    if (!ingredienti && !allergeni) crea("div", "plugin-nota", testo).textContent = "Ingredienti non indicati per questo prodotto: chiedi al banco.";
+    for (const [chiave, titolo] of [["conservazione", "Conservazione"], ["note", "Note"]]) {
+      if (!articolo[chiave]) continue;
+      crea("div", "plugin-etichetta", testo).textContent = titolo;
+      crea("div", "plugin-testo", testo).textContent = testoEtichetta(articolo[chiave]);
     }
   }
   if (prezzo && (prezzo.pieno !== null || prezzo.offerta !== null)) {
@@ -113,6 +175,11 @@ export function disegnaRiquadro(contenitore, { tipo, esito, aspetto, dimensioni,
       if (unita) crea("small", "plugin-unita", pieno).textContent = unita;
       pieno.style.color = a.colore_prezzo || "#1f4e79";
     }
+  }
+  // Il prezzo stampato sull'etichetta della bilancia: quello di questa confezione.
+  const confezione = numero(articolo.prezzo_etichetta);
+  if ((tipo === "prezzo" || mostraPrezzo) && confezione) {
+    crea("div", "plugin-confezione", box).textContent = `Questa confezione: ${euro(confezione)}`;
   }
   return box;
 }

@@ -249,3 +249,5 @@ td.attenzione, div.attenzione { color: var(--errore); }
   box-shadow: 0 6px 20px rgba(0, 0, 0, .18); background-image: linear-gradient(-45deg, transparent 8px, #fff 0), linear-gradient(45deg, transparent 8px, #fff 0); }
 .tela-ticket { display: block; width: 300px; height: auto; cursor: pointer; }
 .segno-ticket { position: absolute; left: 4px; right: 4px; margin-top: 14px; border: 2px dashed #1f6feb; border-radius: 4px; pointer-events: none; }
+.copia-plugin { white-space: nowrap; }
+.copia-plugin label { display: block; margin: 2px 0; }

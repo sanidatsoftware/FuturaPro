@@ -17,6 +17,8 @@
 .plugin-ingredienti { text-align: left; overflow: hidden; font-size: .78em; line-height: 1.35; display: flex; flex-direction: column; gap: .2em; }
 .plugin-etichetta { font-weight: 800; text-transform: uppercase; font-size: .8em; letter-spacing: .06em; opacity: .7; margin-top: .4em; }
 .plugin-allergeni { font-weight: 800; }
+.plugin-evidenza { font-weight: 800; }
+.plugin-confezione { font-size: .8em; font-weight: 700; opacity: .85; }
 .plugin-riquadro.vuoto .plugin-titolo { font-size: 1.1em; }
 @keyframes plugin-lampeggia { 50% { opacity: .25; } }
 @keyframes plugin-entra { from { opacity: 0; } }

@@ -316,6 +316,16 @@ pianificatore` (servizio `pianificatore`, ogni minuto, dalle 7): una volta per p
 nuovo tentativo dopo 30 minuti se il server di posta non risponde. «Invia adesso» manda subito
 il periodo appena concluso.
 
+### Spiegazioni al passaggio del mouse
+
+Ogni controllo del pannello, della creazione palinsesto e degli editor (layout e ticket) ha una
+spiegazione al passaggio del mouse (`data-aiuto`). Quelle dei campi stanno in
+`pannello/static/pannello/aiuti-campi.js`, scheda per scheda, e si applicano da sole anche ai
+controlli che compaiono dopo (es. le proprietà dell'elemento scelto): la chiave è l'etichetta del
+campo, il testo del pulsante, l'intestazione della colonna della tabella o il testo di esempio.
+I campi delle zone dei layout le hanno in `AIUTI_CAMPI` di `layout/static/layout/editor.js`. Una
+funzione nuova deve aggiungere le sue spiegazioni lì.
+
 ### Menu del pannello
 
 - **Hardware**: Anagrafica Dispositivi Video (abbinamento, sede, layout anche diverso per ogni
@@ -592,6 +602,30 @@ con zeri davanti: si provano le varianti), articolo attivo (`Articoli.Stato = 1`
 attive oggi da `LegacyPromo` tramite `LinkArticoliLegacypromo`, con `ValoreEffetto1` sconto in
 euro (prezzo in offerta = prezzo − sconto) e la data di fine. Le etichette della bilancia
 (EAN-13 che inizia per 2) si cercano con le prime 7 cifre (prefisso + PLU), come le registra EvoPos.
+
+Per **DIGI** (`DigiProject.db`, «Gestionale: DIGI» in Info Ingredienti): il PLU si trova con le
+prime 7 cifre dell'etichetta, uguali a quelle del suo `Plus.BarCode1` (es. `21 1 0162` = PLU 162
+della Macelleria, `21 2 0254` = Salumeria; verificato su 20.000 etichette vere); le cifre 8-12
+sono il prezzo della confezione (verificato su 50.000), mostrato come «Questa confezione». Banco
+da `PluDepartments` → `Departments`, ingredienti da `Ingredients` (o dal testo 5 se inizia con
+«INGR»), prezzo al kg della bilancia come riserva se Info Prezzo non trova il prodotto. I testi
+DIGI sono in righe da 50 caratteri spezzate anche a metà parola: il player le ricompone (circa il
+91% degli a capo ricostruiti come nel testo originale, il resto è ambiguo anche a occhio), toglie
+il prefisso «INGREDIENTI:», separa la parte «ALLERGENI: …» e mette in evidenza le parole in
+MAIUSCOLO (gli allergeni, come in etichetta).
+
+**Quando copiare.** Per ogni file (negozio e plugin): agli **orari** indicati e/o **ogni N
+minuti**, almeno uno; il file si copia solo se è cambiato. Il file DIGI cambia a ogni pesata e può
+superare 1,5 GB: meglio uno o due orari fissi e il pulsante **Aggiorna adesso** del pannello
+(`POST /api/fonti-plugin/<id>/aggiorna/`) quando servono subito le modifiche. La firma dell'ultima
+copia resta sul totem (`plugin/copie.json`): dopo un riavvio un file uguale non si ricopia e,
+con gli orari, si aspetta l'orario. Sul totem serve spazio libero per due volte il file.
+
+**Più totem.** Solo il Totem Master legge i file; gli altri totem e i monitor del negozio
+chiedono prezzi e ingredienti al suo servizio (`https://IP-master:8443/plugin/…`).
+
+**File troppo grandi da spedire.** `deploy/installa/struttura-sqlite.ps1` scrive struttura e
+righe di esempio in un testo di pochi KB e cerca dei codici in tutte le colonne.
 
 ## 8. Player
 

@@ -34,7 +34,7 @@ export class Motore {
     };
     const quando = new Date().toLocaleString("it-IT", { timeZone: this.fuso, dateStyle: "short", timeStyle: "short" });
     const dati = {
-      reparto: "PROVA STAMPA", numero: "00", davanti: `Stampante: ${stampante.nome}`, quando,
+      reparto: "PROVA STAMPA", numero: "00", davanti: `Stampante: ${stampante.nome}`, quando, istante: Date.now(), fuso: this.fuso,
       intestazione: config.intestazione, messaggio: config.messaggio,
     };
     const telefono = this.manifest?.telefono;
@@ -1192,7 +1192,7 @@ class ZonaPrendiNumero {
       biglietto.colore_testo = coda.colore_testo;
       const quando = new Date().toLocaleString("it-IT", { timeZone: this.motore.fuso, dateStyle: "short", timeStyle: "short" });
       const davanti = biglietto.davanti > 0 ? `Persone prima di te: ${biglietto.davanti}` : "Sei il prossimo!";
-      const dati = { ...biglietto, davanti, quando, intestazione: this.config.intestazione, messaggio: this.config.messaggio };
+      const dati = { ...biglietto, davanti, quando, istante: Date.now(), fuso: this.motore.fuso, intestazione: this.config.intestazione, messaggio: this.config.messaggio };
       // Coda sul telefono (se attiva): il QR porta alla pagina del biglietto.
       const telefono = this.motore.manifest.telefono;
       if (telefono && biglietto.codice) Object.assign(dati, { qr: `${telefono.url}${biglietto.codice}`, testo_qr: telefono.testo });

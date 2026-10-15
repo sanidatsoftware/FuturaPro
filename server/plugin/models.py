@@ -51,8 +51,13 @@ class FontePlugin(ModelloCliente):
     utente = models.CharField(max_length=150, blank=True)
     # Cifrata con una chiave derivata da SECRET_KEY: non si legge dall'API.
     password_cifrata = models.TextField(blank=True)
-    # Ogni quanti minuti il totem ricopia il file (solo se è cambiato).
+    # Quando il totem ricopia il file (solo se è cambiato): agli orari indicati (es. ["06:30"],
+    # per i file grandi che cambiano di continuo, come quello della bilancia) e/o ogni N minuti
+    # (0 = no); almeno uno dei due.
     aggiorna_minuti = models.PositiveSmallIntegerField(default=15)
+    orari = models.JSONField(default=list, blank=True)
+    # «Aggiorna adesso» dal pannello: il totem ricopia appena riceve la configurazione.
+    richiesta_copia = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name_plural = "fonti plugin"

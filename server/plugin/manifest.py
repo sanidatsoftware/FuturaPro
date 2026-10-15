@@ -33,6 +33,7 @@ def per_il_monitor(monitor, code: dict):
             servizio[tipo] = {
                 "condivisione": f"\\\\{fonte.indirizzo}\\{condivisione}", "file": file,
                 "utente": fonte.utente, "password": decifra(fonte.password_cifrata),
-                "minuti": fonte.aggiorna_minuti, "query": sql,
+                "minuti": fonte.aggiorna_minuti, "orari": fonte.orari, "query": sql,
+                "richiesta": fonte.richiesta_copia.isoformat() if fonte.richiesta_copia else "",
             }
     return player or None, servizio or None

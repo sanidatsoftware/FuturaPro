@@ -40,6 +40,12 @@ USCITE = {
     "prezzo": ["descrizione", "prezzo", "prezzo_offerta", "offerta_dal", "offerta_al", "unita"],
     "ingredienti": ["descrizione", "ingredienti", "allergeni", "conservazione"],
 }
+# Facoltative, se la query le restituisce: reparto (il banco), note (es. origine), prezzo_bilancia,
+# unita e prezzo_etichetta (il prezzo stampato sulla confezione).
+USCITE_FACOLTATIVE = {
+    "prezzo": ["prezzo_etichetta"],
+    "ingredienti": ["reparto", "note", "prezzo_bilancia", "unita", "prezzo_etichetta"],
+}
 
 
 def colonna(nome: str) -> str:
@@ -116,7 +122,9 @@ SELECT a.Descrizione AS descrizione,
             THEN round(p.Valore - l.ValoreEffetto1, 2) END AS prezzo_offerta,
        l.DataInizio AS offerta_dal,
        l.DataFine AS offerta_al,
-       CASE WHEN a.Tipo = 'KG' THEN 'kg' ELSE '' END AS unita
+       CASE WHEN a.Tipo = 'KG' THEN 'kg' ELSE '' END AS unita,
+       CASE WHEN length(:codice) = 13 AND substr(:codice, 1, 1) = '2' AND e.Ean = substr(:codice, 1, 7)
+            THEN CAST(substr(:codice, 8, 5) AS INTEGER) / 100.0 END AS prezzo_etichetta
 FROM CodiceEan e
 JOIN Articoli a ON a.Codice = e.CodiceArticolo
 JOIN PrezziDiVendita p ON p.CodiceArticolo = a.Codice AND p.numeroPrezzo = 1
@@ -130,6 +138,26 @@ ORDER BY CASE WHEN e.Ean = substr(:codice, 1, 7) AND length(:codice) = 13 THEN 1
 LIMIT 1
 """.strip()
 
+DIGI = """
+SELECT p.Label AS descrizione,
+       d.Name AS reparto,
+       trim(coalesce(i.Description, CASE WHEN t5.Message LIKE 'INGR%' THEN t5.Message END)) AS ingredienti,
+       '' AS allergeni,
+       '' AS conservazione,
+       CASE WHEN t5.Message LIKE 'ORIGINE%' THEN t5.Message END AS note,
+       p.SellPriceWithTaxes AS prezzo_bilancia,
+       CASE WHEN p.QuantityType = 0 THEN 'kg' ELSE '' END AS unita,
+       CASE WHEN length(:codice) = 13 THEN CAST(substr(:codice, 8, 5) AS INTEGER) / 100.0 END AS prezzo_etichetta
+FROM Plus p
+LEFT JOIN Ingredients i ON i.Id = p.IngredientId
+LEFT JOIN Texts t5 ON t5.Id = p.Text5Id
+LEFT JOIN PluDepartments pd ON pd.PluId = p.Id
+LEFT JOIN Departments d ON d.Id = pd.DepartmentId
+WHERE p.IsEnabled = 1 AND length(:codice) >= 7 AND substr(p.BarCode1, 1, 7) = substr(:codice, 1, 7)
+ORDER BY (i.Id IS NOT NULL) DESC, p.UpdatedAt DESC
+LIMIT 1
+""".strip()
+
 PREIMPOSTAZIONI = {
     "prezzo": {
         # EvoPos (evoPosDb.db): codici in CodiceEan (anche a 14 cifre con zeri davanti), prezzo n. 1 in
@@ -138,5 +166,11 @@ PREIMPOSTAZIONI = {
         # prime 7 cifre (prefisso + PLU); il prezzo è al kg per gli articoli di tipo KG.
         "evopos": ("EvoPos (evoPosDb.db)", EVOPOS),
     },
-    "ingredienti": {},
+    "ingredienti": {
+        # DIGI (DigiProject.db): il PLU si trova con le prime 7 cifre dell'etichetta, uguali a quelle
+        # del suo BarCode1 (es. 21 1 0162 = PLU 162 della Macelleria); le cifre 8-12 sono il
+        # prezzo della confezione. Ingredienti in Ingredients (o nel testo 5 se inizia con
+        # «INGR»), in righe da 50 caratteri che il player ricompone; banco da PluDepartments.
+        "digi": ("DIGI (DigiProject.db)", DIGI),
+    },
 }

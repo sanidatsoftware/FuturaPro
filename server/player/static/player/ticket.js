@@ -27,6 +27,19 @@ function immagine(src) {
   });
 }
 
+// La data e l'ora del biglietto nel formato scelto (es. «15/10/26 10:42», «giovedì 15 ottobre 2026, 10:42»).
+function dataDelBiglietto(formato, dati) {
+  const istante = dati.istante ? new Date(dati.istante) : null;
+  if (!istante) return dati.quando;
+  const opzioni = { timeZone: dati.fuso || undefined };
+  if (formato === "data") return istante.toLocaleDateString("it-IT", { ...opzioni, dateStyle: "short" });
+  if (formato === "ora") return istante.toLocaleTimeString("it-IT", { ...opzioni, hour: "2-digit", minute: "2-digit" });
+  if (formato === "esteso") {
+    return istante.toLocaleString("it-IT", { ...opzioni, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+  return dati.quando || istante.toLocaleString("it-IT", { ...opzioni, dateStyle: "short", timeStyle: "short" });
+}
+
 // Il testo di ogni elemento: i dati del biglietto, o il testo fisso del layout.
 function testoDi(el, layout, dati) {
   switch (el.campo) {
@@ -36,7 +49,7 @@ function testoDi(el, layout, dati) {
     case "reparto": return dati.reparto;
     case "numero": return dati.numero === null || dati.numero === undefined ? "" : String(dati.numero);
     case "davanti": return dati.davanti;
-    case "data": return dati.quando;
+    case "data": return dataDelBiglietto(el.formato, dati);
     default: return "";
   }
 }

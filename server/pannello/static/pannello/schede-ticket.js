@@ -14,7 +14,7 @@ export function preparaSchedeTicket(strumenti) {
 
 const ESEMPIO = {
   reparto: "Salumeria", numero: 27, davanti: "Persone prima di te: 3",
-  quando: new Date().toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" }),
+  quando: new Date().toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" }), istante: Date.now(),
   qr: "https://esempio.it/b/ab12cd34ef", testo_qr: "Segui la coda dal telefono",
 };
 
@@ -199,6 +199,11 @@ export async function schedaLayoutTicket() {
       car.disabled = !modifica;
       car.addEventListener("change", () => cambia("carattere", car.value));
       numero("Grandezza (punti: 8 = 1 mm)", "dimensione", 10, 400, 2);
+      if (el.campo === "data") {
+        const formato = campo("Formato", scelta([["data_ora", "Data e ora (15/10/26 10:42)"], ["data", "Solo la data"], ["ora", "Solo l'ora"], ["esteso", "Esteso (giovedì 15 ottobre 2026, 10:42)"]], el.formato || "data_ora"), colProprieta);
+        formato.disabled = !modifica;
+        formato.addEventListener("change", () => cambia("formato", formato.value));
+      }
       const all = campo("Allineamento", scelta([["sinistra", "A sinistra"], ["centro", "Al centro"], ["destra", "A destra"]], el.allineamento), colProprieta);
       all.disabled = !modifica;
       all.addEventListener("change", () => cambia("allineamento", all.value));

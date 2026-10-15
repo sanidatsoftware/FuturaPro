@@ -296,8 +296,9 @@ New-Item -ItemType Directory -Force -Path $cartellaPlugin | Out-Null
 $script:plugin = @{}        # tipo -> configurazione (condivisione, file, utente, password, minuti, query)
 $script:statoPlugin = @{}   # tipo -> copiato, errore, dimensione, controllato, firma, prossimo, lavoro
 $sqliteCaricato = $false
+$fileSqlite = Join-Path $PSScriptRoot "FpSqlite.cs"
 try {
-    Add-Type -Path (Join-Path $PSScriptRoot "FpSqlite.cs")
+    Add-Type -Path $fileSqlite
     $sqliteCaricato = $true
 } catch {
     # Senza FpSqlite.cs (installazione vecchia) le code funzionano lo stesso.
@@ -318,6 +319,40 @@ function Sproteggi([string]$testo) {
     } catch { return "" }
 }
 
+# Quando fare la prossima copia: il primo fra gli orari fissi e «tra N minuti» (0 = senza).
+function Prossima-Copia($c) {
+    $adesso = Get-Date
+    $candidati = @(foreach ($giorno in 0, 1) {
+        foreach ($orario in @($c.orari)) {
+            $parti = $orario -split ":"
+            $adesso.Date.AddDays($giorno).AddHours([int]$parti[0]).AddMinutes([int]$parti[1])
+        }
+    })
+    if ([int]$c.minuti -gt 0) { $candidati += $adesso.AddMinutes([int]$c.minuti) }
+    $prima = $candidati | Where-Object { $_ -gt $adesso } | Sort-Object | Select-Object -First 1
+    if (-not $prima) { $prima = $adesso.AddDays(1) }
+    return $prima
+}
+
+# Firma e data dell'ultima copia di ogni file: restano dopo un riavvio, così un file uguale non si ricopia.
+$fileFirme = Join-Path $cartellaPlugin "copie.json"
+$script:firmeSalvate = @{}
+if (Test-Path $fileFirme) {
+    try {
+        $letto = Get-Content -Raw -Encoding UTF8 $fileFirme | ConvertFrom-Json
+        foreach ($p in $letto.PSObject.Properties) { $script:firmeSalvate[$p.Name] = $p.Value }
+    } catch { }
+}
+
+function Salva-Firme {
+    $dati = @{}
+    foreach ($tipo in $script:statoPlugin.Keys) {
+        $s = $script:statoPlugin[$tipo]
+        $dati[$tipo] = @{ firma = $s.firma; copiato = $s.copiato; dimensione = $s.dimensione; richiesta = $s.richiesta }
+    }
+    [System.IO.File]::WriteAllText($fileFirme, ($dati | ConvertTo-Json -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
+}
+
 function Imposta-Plugin($configurazione) {
     $nuovo = @{}
     foreach ($tipo in @("prezzo", "ingredienti")) {
@@ -326,23 +361,41 @@ function Imposta-Plugin($configurazione) {
         if (-not $c) { continue }
         $nuovo[$tipo] = @{
             condivisione = [string]$c.condivisione; file = [string]$c.file; utente = [string]$c.utente
-            password = [string]$c.password; minuti = [Math]::Max(1, [int]$c.minuti); query = [string]$c.query
+            password = [string]$c.password; minuti = [Math]::Max(0, [int]$c.minuti); query = [string]$c.query
+            orari = @($c.orari | Where-Object { $_ -match "^\d{2}:\d{2}$" }); richiesta = [string]$c.richiesta
         }
+        $locale = Join-Path $cartellaPlugin "$tipo.db"
         if (-not $script:statoPlugin.ContainsKey($tipo)) {
-            $script:statoPlugin[$tipo] = @{ copiato = ""; errore = ""; dimensione = 0; controllato = ""; firma = ""; prossimo = (Get-Date); lavoro = $null }
+            $ricordato = $script:firmeSalvate[$tipo]
+            # PowerShell 7 rilegge le date del JSON come date: si riportano al formato ISO.
+            $copiato = $ricordato.copiato
+            if ($copiato -is [datetime]) { $copiato = $copiato.ToUniversalTime().ToString("o") }
+            $script:statoPlugin[$tipo] = @{
+                copiato = [string]$copiato; errore = ""; dimensione = [long]$ricordato.dimensione; controllato = ""
+                firma = [string]$ricordato.firma; prossimo = (Get-Date); lavoro = $null; richiesta = [string]$ricordato.richiesta
+            }
+            # Con gli orari fissi e una copia già qui, dopo un riavvio si aspetta l'orario (i file grandi non si ricopiano a ogni accensione).
+            if ($nuovo[$tipo].orari.Count -gt 0 -and (Test-Path $locale)) { $script:statoPlugin[$tipo].prossimo = Prossima-Copia $nuovo[$tipo] }
         }
+        $s = $script:statoPlugin[$tipo]
         $vecchio = $script:plugin[$tipo]
-        # Cambiata la fonte: si ricopia subito.
-        if (-not $vecchio -or $vecchio.condivisione -ne $nuovo[$tipo].condivisione -or $vecchio.file -ne $nuovo[$tipo].file -or $vecchio.utente -ne $nuovo[$tipo].utente -or $vecchio.password -ne $nuovo[$tipo].password) {
-            $script:statoPlugin[$tipo].firma = ""
-            $script:statoPlugin[$tipo].prossimo = (Get-Date)
+        if ($vecchio -and (($vecchio.orari -join ",") -ne ($nuovo[$tipo].orari -join ",") -or $vecchio.minuti -ne $nuovo[$tipo].minuti)) {
+            $s.prossimo = Prossima-Copia $nuovo[$tipo]
         }
+        # Cambiata la fonte, o «Aggiorna adesso» dal pannello: si ricopia subito, anche se il file sembra uguale.
+        $cambiata = $vecchio -and ($vecchio.condivisione -ne $nuovo[$tipo].condivisione -or $vecchio.file -ne $nuovo[$tipo].file -or $vecchio.utente -ne $nuovo[$tipo].utente -or $vecchio.password -ne $nuovo[$tipo].password)
+        $richiesta = $nuovo[$tipo].richiesta -and $nuovo[$tipo].richiesta -ne $s.richiesta
+        if ($cambiata -or $richiesta -or -not (Test-Path $locale)) {
+            if ($cambiata -or $richiesta) { $s.firma = "" }
+            $s.prossimo = (Get-Date)
+        }
+        $s.richiesta = $nuovo[$tipo].richiesta
     }
     $script:plugin = $nuovo
     $salvato = @{}
     foreach ($tipo in $nuovo.Keys) {
         $c = $nuovo[$tipo]
-        $salvato[$tipo] = @{ condivisione = $c.condivisione; file = $c.file; utente = $c.utente; password = (Proteggi $c.password); minuti = $c.minuti; query = $c.query }
+        $salvato[$tipo] = @{ condivisione = $c.condivisione; file = $c.file; utente = $c.utente; password = (Proteggi $c.password); minuti = $c.minuti; query = $c.query; orari = @($c.orari); richiesta = $c.richiesta }
     }
     [System.IO.File]::WriteAllText($filePlugin, ($salvato | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
 }
@@ -362,7 +415,7 @@ function Carica-Plugin {
 
 # La copia dal PC del negozio, in un processo a parte: una rete lenta non ferma le code.
 $copiaFonte = {
-    param($condivisione, $file, $utente, $password, $destinazione, $firmaPrecedente)
+    param($condivisione, $file, $utente, $password, $destinazione, $firmaPrecedente, $sorgenteSqlite)
     $esito = @{ cambiato = $false; firma = $firmaPrecedente; dimensione = 0; errore = "" }
     $nome = "FP" + [guid]::NewGuid().ToString("N").Substring(0, 8)
     try {
@@ -383,6 +436,14 @@ $copiaFonte = {
             Remove-Item -Force -ErrorAction SilentlyContinue "$destinazione.tmp", "$destinazione.tmp-wal"
             Copy-Item -LiteralPath $sorgente -Destination "$destinazione.tmp" -Force
             if ($conWal) { Copy-Item -LiteralPath $wal -Destination "$destinazione.tmp-wal" -Force }
+            # Anche il controllo si fa qui, fuori dal servizio: un file grande non ferma le code.
+            if ($sorgenteSqlite -and (Test-Path $sorgenteSqlite)) {
+                Add-Type -Path $sorgenteSqlite
+                # Le modifiche ancora nel «-wal» entrano nel file: poi lo si apre in sola lettura.
+                [FpSqlite]::SenzaWal("$destinazione.tmp")
+                # Copiata mentre il gestionale scriveva? Si tiene la copia precedente e si riprova.
+                if (-not [FpSqlite]::Integro("$destinazione.tmp")) { throw "copia non integra (il file era in scrittura): riprovo tra poco" }
+            }
             $esito.cambiato = $true
             $esito.firma = $firma
         }
@@ -416,12 +477,6 @@ function Aggiorna-Plugin {
                 $s.dimensione = [long]$esito.dimensione
                 if ($esito.cambiato) {
                     try {
-                        # Le modifiche ancora nel «-wal» entrano nel file: poi lo si apre in sola lettura.
-                        if ($sqliteCaricato) {
-                            [FpSqlite]::SenzaWal("$destinazione.tmp")
-                            # Copiata mentre il gestionale scriveva? Si tiene la copia precedente e si riprova.
-                            if (-not [FpSqlite]::Integro("$destinazione.tmp")) { throw "copia non integra (il file era in scrittura): riprovo tra poco" }
-                        }
                         Remove-Item -Force -ErrorAction SilentlyContinue $destinazione, "$destinazione-wal", "$destinazione-shm"
                         Move-Item -Force "$destinazione.tmp" $destinazione
                         Remove-Item -Force -ErrorAction SilentlyContinue "$destinazione.tmp-wal", "$destinazione.tmp-shm"
@@ -435,13 +490,14 @@ function Aggiorna-Plugin {
                     }
                 }
             }
-            $s.prossimo = (Get-Date).AddMinutes($c.minuti)
-            if ($s.errore) { $s.prossimo = (Get-Date).AddMinutes([Math]::Min(2, $c.minuti)) }
+            $s.prossimo = Prossima-Copia $c
+            if ($s.errore) { $s.prossimo = (Get-Date).AddMinutes(2) }
+            Salva-Firme
             continue
         }
         if ((Get-Date) -ge $s.prossimo) {
-            $s.lavoro = Start-Job -ScriptBlock $copiaFonte -ArgumentList $c.condivisione, $c.file, $c.utente, $c.password, $destinazione, $s.firma
-            $s.prossimo = (Get-Date).AddMinutes($c.minuti)
+            $s.lavoro = Start-Job -ScriptBlock $copiaFonte -ArgumentList $c.condivisione, $c.file, $c.utente, $c.password, $destinazione, $s.firma, $(if ($sqliteCaricato) { $fileSqlite } else { "" })
+            $s.prossimo = Prossima-Copia $c
         }
     }
 }
@@ -489,7 +545,7 @@ function Stato-Plugin {
     $stato = @{}
     foreach ($tipo in $script:plugin.Keys) {
         $s = $script:statoPlugin[$tipo]
-        $stato[$tipo] = @{ copiato = $s.copiato; errore = $s.errore; dimensione = $s.dimensione; controllato = $s.controllato }
+        $stato[$tipo] = @{ copiato = $s.copiato; errore = $s.errore; dimensione = $s.dimensione; controllato = $s.controllato; prossimo = $s.prossimo.ToUniversalTime().ToString("o"); in_corso = [bool]$s.lavoro }
     }
     return $stato
 }

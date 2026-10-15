@@ -28,6 +28,8 @@ CON_TESTO = {"intestazione", "messaggio", "testo"}
 CARATTERI = ["sans-serif", "serif", "monospace", "Arial", "Arial Black", "Verdana", "Tahoma", "Trebuchet MS",
              "Georgia", "Times New Roman", "Courier New", "Impact", "Segoe UI", "Roboto"]
 ALLINEAMENTI = ["sinistra", "centro", "destra"]
+# Come si stampa l'elemento «Data e ora».
+FORMATI_DATA = ["data_ora", "data", "ora", "esteso"]
 PUNTI = {80: 576, 58: 384}
 
 # Le stampanti conosciute: la larghezza stampabile (in punti a 203 dpi) per ogni carta, e come
@@ -66,7 +68,7 @@ def predefiniti() -> list:
         elemento("numero", dimensione=180, grassetto=True, spazio=4),
         elemento("davanti", dimensione=26),
         elemento("messaggio", testo="Attendi il tuo turno, grazie!", dimensione=26, spazio=10),
-        elemento("data", dimensione=22),
+        elemento("data", dimensione=22, formato="data_ora"),
         elemento("qr", larghezza=45),
     ]
 
@@ -102,6 +104,7 @@ def valida_elementi(valore) -> list:
             "spazio": numero("spazio", 0, 200, 8),
             "larghezza": numero("larghezza", 10, 100, 60),
             "testo": str(grezzo.get("testo") or "")[:300] if campo in CON_TESTO else "",
+            "formato": grezzo.get("formato") if grezzo.get("formato") in FORMATI_DATA else "data_ora",
         })
     return puliti
 

@@ -23,3 +23,21 @@ test("codici bilancia: prefisso, PLU e reparto", () => {
   assert.equal(codiceBilancia("20001230", config), null);
   assert.equal(codiceBilancia("2000123012345", null), null);
 });
+
+test("testi della bilancia: righe ricomposte, prefisso tolto, allergeni separati", async () => {
+  const { testoEtichetta, separaAllergeni } = await import("./plugin.js");
+  const testo = "INGREDIENTI: carne di suino - sale - pepe nero - a\r\ncqua - aceto aromatico. FATTORI ALLERGENI: GLU\r\nTINE, LATTE E DERIVATI.";
+  const pulito = testoEtichetta(testo);
+  assert.equal(pulito, "carne di suino - sale - pepe nero - acqua - aceto aromatico. FATTORI ALLERGENI: GLUTINE, LATTE E DERIVATI.");
+  assert.deepEqual(separaAllergeni(pulito), ["carne di suino - sale - pepe nero - acqua - aceto aromatico", "GLUTINE, LATTE E DERIVATI."]);
+  // Riga corta: a capo fra due parole.
+  assert.equal(testoEtichetta("grana - granella di pistacchio - farina\r\ndi pistacchio - pesto di pistacchio - pangrattato x"), "grana - granella di pistacchio - farina di pistacchio - pesto di pistacchio - pangrattato x");
+  assert.equal(testoEtichetta("Ingr.: latte - sale"), "latte - sale");
+  assert.equal(testoEtichetta(null), "");
+});
+
+test("testi della bilancia: cambio di scrittura e sigle", async () => {
+  const { testoEtichetta } = await import("./plugin.js");
+  assert.equal(testoEtichetta("Latte non pastorizzato, sale, caglio microbico\r\nNATURALMENTE SENZA LATTOSIO"), "Latte non pastorizzato, sale, caglio microbico NATURALMENTE SENZA LATTOSIO");
+  assert.equal(testoEtichetta("carne - Mix dry 17041- ROSSO PIU con una riga lunga\r\nA.G."), "carne - Mix dry 17041- ROSSO PIU con una riga lunga A.G.");
+});
