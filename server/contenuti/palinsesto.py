@@ -20,6 +20,7 @@ from django.conf import settings
 from django.db.models import Q
 from django.urls import reverse
 
+from dispositivi.stampanti import applica as applica_stampante
 from layout.manifest import descrivi, layout_del_monitor, riferimenti
 
 from .models import DURATA_IMMAGINE, Contenuto, ElementoPlaylist, EventoStraordinario, Pubblicazione, Tipo
@@ -170,6 +171,10 @@ def manifest(monitor) -> dict:
     """Tutto ciò che serve al player per andare avanti da solo: layout, file, playlist e regole."""
     pubblicazioni = list(pubblicazioni_del_monitor(monitor))
     layout = descrivi(layout_del_monitor(monitor), monitor.orientamento)
+    for zona in layout["zone"]:
+        # La stampante dei biglietti è del totem, non del layout (vedi dispositivi.stampanti).
+        if zona["tipo"] == "prendi_numero":
+            zona["configurazione"] = applica_stampante(monitor, zona["configurazione"])
     playlist_fisse, immagini_layout = riferimenti(layout)
     playlist_ids = {str(p.playlist_id) for p in pubblicazioni} | playlist_fisse
     elementi = (

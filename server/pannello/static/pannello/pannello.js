@@ -7,7 +7,7 @@ import { preparaSchedeImpostazioni, schedaEmail } from "./schede-impostazioni.js
 import { preparaSchedeReport, schedaRegistro, schedaStoricoAllarmi } from "./schede-report.js";
 import { preparaSchedeCode, schedaAttese, schedaTelefono } from "./schede-code.js";
 import { preparaSchedeContenuti, schedaListini, schedaMessaInOnda } from "./schede-contenuti.js";
-import { preparaSchedeSchermi, schedaAccensione, schedaDownload, schedaStato } from "./schede-schermi.js";
+import { preparaSchedeSchermi, schedaAccensione, schedaDownload, schedaStampanti, schedaStato } from "./schede-schermi.js";
 
 const stato = { io: null, cliente: null, clienti: [], scheda: null };
 
@@ -138,6 +138,7 @@ const SCHEDE = {
   accensione: schedaAccensione,
   stato: schedaStato,
   download: schedaDownload,
+  stampanti: schedaStampanti,
   listini: schedaListini,
   messa_in_onda: schedaMessaInOnda,
   email: schedaEmail,

@@ -316,9 +316,20 @@ pianificatore` (servizio `pianificatore`, ogni minuto, dalle 7): una volta per p
 nuovo tentativo dopo 30 minuti se il server di posta non risponde. «Invia adesso» manda subito
 il periodo appena concluso.
 
+### Menu del pannello
+
+- **Hardware**: Anagrafica Dispositivi Video (abbinamento, sede, layout, riserva), Stampante dei
+  biglietti dei totem.
+- **Contenuti**: Creazione palinsesto, Listini.
+- **Code**: Reparti ed eliminacode, Coda sul telefono.
+- **Report & Log**: Stato e allarmi, Messa in onda, Tempi d'attesa, Registro operazioni,
+  Storico allarmi.
+- **Impostazioni**: Layout, Sedi e gruppi, Utenti, Email, Accensione e spegnimento, Fasce di
+  download, Banco, Aspetto interfaccia.
+
 ### Report & Log
 
-Il gruppo di menu «Report & Log» raccoglie messa in onda, tempi d'attesa, il **registro delle
+Il gruppo di menu «Report & Log» raccoglie stato e allarmi, messa in onda, tempi d'attesa, il **registro delle
 operazioni** (`/api/audit/` per l'azienda, `/api/piattaforma/audit/` per il SystemAdministrator
 con «tutta la piattaforma»; filtri per periodo, utente e testo, 100 righe per pagina, CSV) e lo
 **storico degli allarmi** (`/api/storico-allarmi/`: eventi per periodo e schermo, con il
@@ -480,6 +491,15 @@ le persone che lo precedono e il player stampa:
   attuale), all'indirizzo indicato. Se la pagina è in HTTPS anche la stampante va usata in HTTPS
   (il suo certificato si accetta una volta sul totem). Se la stampante non risponde il totem lo
   dice e mostra comunque il numero.
+
+Le impostazioni della zona sono quelle di partenza: ogni totem può avere le sue
+(`Monitor.stampante`, menu **Hardware · Stampante dei biglietti**, `/api/stampanti/`), perché lo
+stesso layout gira in negozi con stampanti diverse; il manifest del totem le applica sopra la zona.
+Le cambiano Administrator e tecnici. La **stampa di prova** la chiede il pannello
+(`POST /api/stampanti/<id>/`) e la esegue il totem stesso — il server non vede la rete del
+negozio: la scopre nella domanda periodica `/api/player/schermata/` (`prova_stampa`), stampa un
+biglietto «PROVA STAMPA» che non consuma numeri e riferisce l'esito a `/api/player/prova-stampa/`
+(la richiesta vale due minuti).
 
 Le app native stamperanno direttamente sulla stampante (USB o rete).
 

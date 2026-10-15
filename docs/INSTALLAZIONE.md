@@ -216,8 +216,13 @@ riavvii; ogni giorno le code ripartono da 0. Registro delle operazioni:
 
 La stampante non risponde? Il totem lo dice e mostra comunque il numero al cliente.
 
-> **Stampante Epson di rete senza driver (ePOS).** Nel layout scegli *Stampante Epson di rete* e
-> scrivi l'indirizzo IP della stampante. Siccome il player è in HTTPS, anche la stampante va usata in
+> **Dove si configura.** Pannello → **Hardware · Stampante dei biglietti**: per ogni totem il tipo
+> di stampa, l'indirizzo della Epson, intestazione e messaggio (altrimenti valgono quelli della zona
+> nel layout), e il pulsante **Stampa di prova**, che fa stampare al totem un biglietto di prova e
+> mostra l'esito nel pannello.
+
+> **Stampante Epson di rete senza driver (ePOS).** In *Hardware · Stampante dei biglietti* scegli
+> *Stampante di rete Epson TM* e scrivi l'indirizzo IP della stampante. Siccome il player è in HTTPS, anche la stampante va usata in
 > HTTPS: rilancia lo script con `-Configura`, apri `https://IP-STAMPANTE`, accetta il certificato,
 > chiudi la finestra. La strada con il driver di Windows è più semplice e robusta.
 
@@ -296,7 +301,7 @@ $c = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 "
 |---|---|
 | Il player resta su «Server non raggiungibile» | Dal PC apri `https://SERVER/player/` nel browser: se dà errore di certificato, rilancia lo script di installazione; se non si apre, controlla rete e firewall della VM. |
 | Lo schermo mostra il codice ma il pannello dice «Codice inesistente o scaduto» | Il codice vale 15 minuti; se è scaduto lo schermo ne mostra uno nuovo da solo. |
-| Il totem non stampa | Stampa una pagina di prova da Windows; la stampante deve essere la *predefinita*; il layout deve avere *Stampante di sistema*. |
+| Il totem non stampa | Usa *Stampa di prova* in Hardware · Stampante dei biglietti e leggi l'esito; stampa una pagina di prova da Windows; la stampante deve essere la *predefinita*; il totem deve avere *Stampante di sistema*. |
 | La bilancia dice «Non collegato» | Il collegamento è stato revocato o rigenerato: creane uno nuovo dal pannello. |
 | Lo script Windows dice che l'impronta non coincide | **Non proseguire**: il PC potrebbe non parlare con il tuo server. Controlla l'indirizzo. |
 | Log del server | `sudo docker compose -f /opt/futurapro/deploy/docker-compose.yml logs --tail 200 app` |

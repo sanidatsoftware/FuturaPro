@@ -20,7 +20,7 @@ from core.api import GESTIONE, RiferimentoCliente, VistaConContesto, ViewSetClie
 from core.contesto import contesto_cliente
 from utenti.models import Ruolo
 
-from . import schermate
+from . import schermate, stampanti
 from .models import (
     acceso_secondo_orario, orario_del_monitor,
     CredenzialeDispositivo, EventoSchermo, GruppoMonitor, ImpostazioniAllarmi, ImpostazioniDownload, Monitor, OrarioSchermi, Piattaforma,
@@ -287,6 +287,95 @@ class DownloadView(VistaConContesto, APIView):
         return Response(ImpostazioniDownloadSerializer(impostazioni).data)
 
 
+class StampanteSerializer(serializers.Serializer):
+    """Le impostazioni proprie di un totem; «personalizzata» falso = quelle del layout."""
+
+    personalizzata = serializers.BooleanField()
+    stampa = serializers.ChoiceField(["nessuna", "browser", "epson"], required=False, default="nessuna")
+    stampante = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    intestazione = serializers.CharField(max_length=60, required=False, allow_blank=True, default="")
+    messaggio = serializers.CharField(max_length=120, required=False, allow_blank=True, default="Attendi il tuo turno, grazie!")
+
+    def validate_stampante(self, valore):
+        valore = valore.strip()
+        for prefisso in ("https://", "http://"):
+            if valore.lower().startswith(prefisso):
+                valore = valore[len(prefisso):]
+        valore = valore.rstrip("/")
+        if valore and not all(c.isalnum() or c in ".-:[]" for c in valore):
+            raise serializers.ValidationError("Indirizzo non valido: es. 192.168.1.50 oppure stampante.negozio.lan")
+        return valore
+
+    def validate(self, dati):
+        if dati["personalizzata"] and dati["stampa"] == "epson" and not dati["stampante"]:
+            raise serializers.ValidationError({"stampante": "Indica l'indirizzo della stampante Epson."})
+        return dati
+
+
+def _descrivi_totem(monitor, zone):
+    layout = stampanti.dal_layout(zone)
+    proprie = monitor.stampante or {}
+    return {
+        "id": str(monitor.id), "nome": monitor.nome, "sede": monitor.sede.nome, "online": monitor.online,
+        "layout": zone[0].layout.nome, "totem_sede": monitor.sede.indirizzo_totem or "",
+        "dal_layout": layout, "personalizzata": bool(proprie),
+        "effettiva": {**layout, **proprie}, "prova": stampanti.stato_prova(monitor),
+    }
+
+
+class StampantiView(VistaConContesto, APIView):
+    """Le stampanti dei biglietti: ogni schermo con la zona «prendi il numero» (un totem).
+
+    GET l'elenco; PUT <id> le impostazioni del totem; POST <id>/prova una stampa di prova.
+    Le cambiano la gestione e i tecnici; la prova la può chiedere chiunque veda il totem.
+    """
+
+    ruoli_scrittura = GESTIONE | {Ruolo.TECNICO}
+
+    def _monitor(self, request):
+        monitor = Monitor.objects.select_related("sede", "layout").order_by("sede__nome", "nome")
+        limitate = sedi_visibili(request.user)
+        return monitor if limitate is None else monitor.filter(sede_id__in=limitate)
+
+    def _totem(self, request, monitor_id):
+        monitor = self._monitor(request).filter(id=monitor_id).first()
+        zone = stampanti.zone_del_totem(monitor) if monitor else []
+        if not zone:
+            raise exceptions.NotFound("Questo schermo non ha la zona «prendi il numero».")
+        return monitor, zone
+
+    def get_permissions(self):
+        if self.request.method == "POST":
+            self.ruoli_scrittura = self.ruoli_lettura
+        return super().get_permissions()
+
+    def get(self, request, monitor_id=None):
+        if monitor_id:
+            return Response(_descrivi_totem(*self._totem(request, monitor_id)))
+        totem = []
+        for monitor in self._monitor(request):
+            zone = stampanti.zone_del_totem(monitor)
+            if zone:
+                totem.append(_descrivi_totem(monitor, zone))
+        return Response(totem)
+
+    def put(self, request, monitor_id=None):
+        monitor, zone = self._totem(request, monitor_id)
+        dati = StampanteSerializer(data=request.data)
+        dati.is_valid(raise_exception=True)
+        valori = dati.validated_data
+        monitor.stampante = {c: valori[c] for c in stampanti.CAMPI} if valori["personalizzata"] else {}
+        monitor.save(update_fields=["stampante"])
+        registra(request.user, "stampante_modificata", monitor, nome=monitor.nome, stampa=monitor.stampante.get("stampa", "layout"))
+        return Response(_descrivi_totem(monitor, zone))
+
+    def post(self, request, monitor_id=None):
+        monitor, zone = self._totem(request, monitor_id)
+        stampanti.richiedi_prova(monitor)
+        registra(request.user, "prova_stampa", monitor, nome=monitor.nome)
+        return Response(_descrivi_totem(monitor, zone), status=status.HTTP_202_ACCEPTED)
+
+
 def download_del_monitor(monitor):
     """Per il manifest: la fascia di download o None (si scarica sempre, senza limiti)."""
     impostazioni = ImpostazioniDownload.objects.first()
@@ -504,8 +593,11 @@ class SchermataPlayerView(VistaPlayer):
     def get(self, request):
         credenziale = credenziale_dalla_richiesta(request)
         with contesto_cliente(credenziale.cliente_id):
-            monitor = Monitor.objects.only("schermata_il", "schermata_richiesta").get(id=credenziale.monitor_id)
-        return Response({"richiesta": schermate.richiesta(monitor)})
+            monitor = Monitor.objects.only(
+                "schermata_il", "schermata_richiesta", "prova_stampa_richiesta", "prova_stampa_esito"
+            ).get(id=credenziale.monitor_id)
+        # Nella stessa domanda: c'è da fare una stampa di prova del biglietto?
+        return Response({"richiesta": schermate.richiesta(monitor), "prova_stampa": stampanti.prova_in_attesa(monitor)})
 
     def post(self, request):
         credenziale = credenziale_dalla_richiesta(request)
@@ -517,6 +609,20 @@ class SchermataPlayerView(VistaPlayer):
             raise exceptions.ValidationError({"immagine": "Dev'essere una JPEG."})
         with contesto_cliente(credenziale.cliente_id):
             schermate.salva(Monitor.objects.get(id=credenziale.monitor_id), dati)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProvaStampaPlayerView(VistaPlayer):
+    """Il totem riferisce com'è andata la stampa di prova chiesta dal pannello."""
+
+    def post(self, request):
+        credenziale = credenziale_dalla_richiesta(request)
+        ok = bool(request.data.get("ok"))
+        messaggio = str(request.data.get("messaggio") or "")
+        with contesto_cliente(credenziale.cliente_id):
+            monitor = Monitor.objects.get(id=credenziale.monitor_id)
+            if monitor.prova_stampa_richiesta and not monitor.prova_stampa_esito:
+                stampanti.salva_esito(monitor, ok, messaggio)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

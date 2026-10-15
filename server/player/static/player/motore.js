@@ -22,6 +22,11 @@ const attendi = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
 export class Motore {
   // L'ultimo problema da far sapere al pannello (es. una diretta che non parte), o null.
+  async provaStampa() {
+    const zona = this.zone.find((z) => z instanceof ZonaPrendiNumero);
+    return zona ? zona.provaStampa() : { ok: false, messaggio: "Lo schermo non mostra la zona «prendi il numero»." };
+  }
+
   segnala(testo) {
     this.problema = testo ? { testo, quando: new Date().toISOString() } : null;
   }
@@ -1123,6 +1128,25 @@ class ZonaPrendiNumero {
     for (const coda of code) {
       const contatore = this.contatori.get(coda.id);
       if (contatore) contatore.textContent = testoCoda(this.config.testo_coda, coda.in_coda);
+    }
+  }
+
+  // La stampa di prova chiesta dal pannello (Hardware · Stampante dei biglietti): non emette numeri.
+  async provaStampa() {
+    if (this.config.stampa === "nessuna") return { ok: false, messaggio: "Stampa disattivata per questo totem." };
+    const quando = new Date().toLocaleString("it-IT", { timeZone: this.motore.fuso, dateStyle: "short", timeStyle: "short" });
+    const dati = {
+      reparto: "PROVA STAMPA", numero: "00", davanti: "Biglietto di prova, non vale", quando,
+      intestazione: this.config.intestazione, messaggio: this.config.messaggio,
+    };
+    const telefono = this.motore.manifest.telefono;
+    if (telefono) Object.assign(dati, { qr: `${telefono.url}prova`, testo_qr: telefono.testo });
+    try {
+      if (this.config.stampa === "epson") await stampaEpson(this.config.stampante, dati);
+      else await stampaBrowser(dati);
+      return { ok: true, messaggio: this.config.stampa === "epson" ? `Inviato alla stampante ${this.config.stampante}.` : "Inviato alla stampante di sistema del totem." };
+    } catch (e) {
+      return { ok: false, messaggio: `Stampante non raggiungibile o spenta (${e.name === "AbortError" ? "tempo scaduto" : e.message}).` };
     }
   }
 

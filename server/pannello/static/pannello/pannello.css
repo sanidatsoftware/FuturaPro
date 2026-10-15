@@ -218,3 +218,6 @@ a.pulsante { display: inline-block; padding: 6px 12px; border-radius: 8px; borde
 .nuovo-invio summary { cursor: pointer; font-weight: 600; color: var(--primario); margin: 8px 0; }
 input.corto { width: 90px; }
 .dettagli-registro { font-size: 13px; color: var(--tenue); max-width: 520px; }
+.esito-prova { font-size: 13.5px; margin: 8px 0 0; }
+.esito-prova.ok { color: var(--ok); }
+.esito-prova.errore { color: var(--errore); }

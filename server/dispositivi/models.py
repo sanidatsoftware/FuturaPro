@@ -63,6 +63,10 @@ class Monitor(ModelloCliente):
     immagine_riserva = models.ForeignKey(
         "contenuti.Contenuto", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
+    # La stampante dei biglietti di questo totem (vedi «stampanti»): vuoto = come nel layout.
+    stampante = models.JSONField(default=dict, blank=True)
+    prova_stampa_richiesta = models.DateTimeField(null=True, blank=True)
+    prova_stampa_esito = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["nome"]

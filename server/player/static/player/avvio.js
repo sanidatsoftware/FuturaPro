@@ -509,7 +509,16 @@ async function avviaPlayer() {
     if (scatto || document.hidden) return;
     try {
       const risposta = await conLimite("/api/player/schermata/", { headers: intestazioni }, 5000);
-      if (!risposta.ok || !(await risposta.json()).richiesta) return;
+      if (!risposta.ok) return;
+      const domanda = await risposta.json();
+      if (domanda.prova_stampa) {
+        scatto = true;
+        const esito = await motore.provaStampa();
+        await conLimite("/api/player/prova-stampa/", {
+          method: "POST", headers: { ...intestazioni, "Content-Type": "application/json" }, body: JSON.stringify(esito),
+        }, 10000);
+      }
+      if (!domanda.richiesta) return;
       scatto = true;
       const foto = await fotografaSchermo(motore);
       const dati = new FormData();

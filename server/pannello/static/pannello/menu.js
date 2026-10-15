@@ -6,23 +6,21 @@ const nonTecnico = (io) => io.ruolo !== "tecnico";
 
 // pagina: un'altra pagina, nella stessa finestra; esterna: si apre in una scheda nuova;
 // le altre sono schede del pannello.
-export const GRUPPI = ["Schermi", "Contenuti", "Code", "Report & Log", "Impostazioni"];
+export const GRUPPI = ["Hardware", "Contenuti", "Code", "Report & Log", "Impostazioni"];
 
 export const VOCI = [
   { chiave: "clienti", titolo: "Clienti", visibile: (io) => io.ruolo === "admin_assoluto", serveCliente: false,
     aiuto: "Le aziende clienti: crearle, abilitarne le funzioni (monitor, utenti, spazio) e il loro primo amministratore." },
-  { chiave: "monitor", gruppo: "Schermi", titolo: "Monitor", visibile: () => true,
+  { chiave: "monitor", gruppo: "Hardware", titolo: "Anagrafica Dispositivi Video", visibile: () => true,
     aiuto: "Gli schermi e i totem: abbinarne di nuovi con il codice, sede, gruppi, layout, rotazione, cosa è in onda e se sono in linea." },
-  { chiave: "accensione", gruppo: "Schermi", titolo: "Accensione e spegnimento", visibile: nonTecnico,
-    aiuto: "Gli orari in cui gli schermi sono accesi, per giorno della settimana, e i giorni di chiusura (es. festivi)." },
-  { chiave: "stato", gruppo: "Schermi", titolo: "Stato e allarmi", visibile: () => true,
-    aiuto: "Quali schermi sono in linea, da quanto sono spenti o scollegati, la disponibilità degli ultimi giorni e gli avvisi via email." },
-  { chiave: "download", gruppo: "Schermi", titolo: "Fasce di download", visibile: gestione,
-    aiuto: "Quando e a quale velocità gli schermi scaricano i file nuovi, per non rallentare la rete del negozio (es. casse)." },
+  { chiave: "stampanti", gruppo: "Hardware", titolo: "Stampante dei biglietti", visibile: (io) => io.ruolo !== "user_cliente",
+    aiuto: "La stampante collegata a ogni totem: nessuna, quella di sistema del PC o una Epson di rete con il suo indirizzo; intestazione, messaggio e stampa di prova a distanza." },
   { chiave: "palinsesto", gruppo: "Contenuti", titolo: "Creazione palinsesto", visibile: nonTecnico, pagina: "/palinsesto/",
     aiuto: "Carica le immagini, raggruppale in promozioni con le loro date e decidi con le campagne dove vanno in onda. C'è anche il calendario e l'importazione da CSV." },
   { chiave: "listini", gruppo: "Contenuti", titolo: "Listini", visibile: nonTecnico,
     aiuto: "Tabelle di prodotti e prezzi (es. banco salumi, panetteria) da mostrare sugli schermi con la zona «Listino»; si compilano qui, da Excel o dal gestionale." },
+  { chiave: "stato", gruppo: "Report & Log", titolo: "Stato e allarmi", visibile: () => true,
+    aiuto: "Quali schermi sono in linea, da quanto sono spenti o scollegati, la disponibilità degli ultimi giorni e gli avvisi via email." },
   { chiave: "messa_in_onda", gruppo: "Report & Log", titolo: "Messa in onda", visibile: nonTecnico,
     aiuto: "Cosa è andato davvero in onda, dove e per quanto: rapporti per promozione, campagna, fornitore e negozio, da stampare o esportare." },
   { chiave: "attese", gruppo: "Report & Log", titolo: "Tempi d'attesa", visibile: nonTecnico,
@@ -35,8 +33,6 @@ export const VOCI = [
     aiuto: "I reparti con il «prendi il numero»: nomi, colori, ordine, annunci registrati e i collegamenti per bilance e pulsantiere." },
   { chiave: "telefono", gruppo: "Code", titolo: "Coda sul telefono", visibile: gestione,
     aiuto: "Il QR sul biglietto: il cliente segue la coda dal suo telefono e viene avvisato quando tocca a lui." },
-  { chiave: "banco", gruppo: "Code", titolo: "Banco", visibile: nonTecnico, esterna: "/banco/",
-    aiuto: "La pagina per chiamare i numeri dal banco (Avanti, Indietro, Ripeti), la stessa che usano le bilance." },
   { chiave: "layout", gruppo: "Impostazioni", titolo: "Layout", visibile: gestione, esterna: "/editor/",
     aiuto: "L'editor grafico: come si divide lo schermo tra slide, orologio, meteo, notizie, listini, numeri dei reparti e pulsanti del totem." },
   { chiave: "sedi", gruppo: "Impostazioni", titolo: "Sedi e gruppi", visibile: gestione,
@@ -45,6 +41,12 @@ export const VOCI = [
     aiuto: "Chi accede al pannello del cliente, con quale ruolo ed eventualmente limitato ad alcune sedi." },
   { chiave: "email", gruppo: "Impostazioni", titolo: "Email (server di posta)", visibile: gestione,
     aiuto: "Il server di posta dell'azienda da cui partono allarmi e rapporti: ogni azienda usa il suo dominio e la sua casella." },
+  { chiave: "accensione", gruppo: "Impostazioni", titolo: "Accensione e spegnimento", visibile: nonTecnico,
+    aiuto: "Gli orari in cui gli schermi sono accesi, per giorno della settimana, e i giorni di chiusura (es. festivi)." },
+  { chiave: "download", gruppo: "Impostazioni", titolo: "Fasce di download", visibile: gestione,
+    aiuto: "Quando e a quale velocità gli schermi scaricano i file nuovi, per non rallentare la rete del negozio (es. casse)." },
+  { chiave: "banco", gruppo: "Impostazioni", titolo: "Banco", visibile: nonTecnico, esterna: "/banco/",
+    aiuto: "La pagina per chiamare i numeri dal banco (Avanti, Indietro, Ripeti), la stessa che usano le bilance." },
   { chiave: "aspetto", gruppo: "Impostazioni", titolo: "Aspetto interfaccia", visibile: () => true, serveCliente: false,
     aiuto: "Tema chiaro, scuro o automatico delle pagine. Il SystemAdministrator qui sceglie anche nome e logo della piattaforma." },
 ];

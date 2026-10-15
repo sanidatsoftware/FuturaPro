@@ -144,3 +144,53 @@ class StoricoERegistroTest(Base):
         self.assertIn("monitor_modificato", self.client.get("/api/audit/?formato=csv").content.decode())
         self.come(self.user_a)
         self.assertEqual(self.client.get("/api/audit/").status_code, 403)
+
+
+class StampanteTest(Base):
+    def manifest(self, monitor):
+        with contesto_cliente(self.a.id):
+            return palinsesto.manifest(Monitor.objects.get(id=monitor.id))
+
+    def test_impostazioni_del_totem_nel_manifest_e_prova(self):
+        import secrets
+
+        from layout.models import Layout, Zona
+
+        from .models import CredenzialeDispositivo, impronta
+
+        with contesto_cliente(self.a.id):
+            layout = Layout.objects.create(cliente=self.a, nome="Totem", orientamento="orizzontale")
+            Zona.objects.create(cliente=self.a, layout=layout, tipo="prendi_numero", x=0, y=0, larghezza=100, altezza=100,
+                                configurazione={"stampa": "epson", "stampante": "10.0.0.9", "messaggio": "Grazie"})
+            Monitor.objects.filter(id=self.mon_a_milano.id).update(layout=layout)
+            token = secrets.token_urlsafe(32)
+            CredenzialeDispositivo.objects.create(impronta_token=impronta(token), monitor=self.mon_a_milano, cliente_id=self.a.id)
+        self.come(self.admin_a)
+        totem = self.client.get("/api/stampanti/").json()
+        self.assertEqual([t["nome"] for t in totem], ["Ingresso"])  # solo gli schermi con la zona
+        self.assertFalse(totem[0]["personalizzata"])
+
+        url = f"/api/stampanti/{self.mon_a_milano.id}/"
+        self.assertEqual(self.client.put(url, {"personalizzata": True, "stampa": "epson", "stampante": ""}, format="json").status_code, 400)
+        r = self.client.put(url, {"personalizzata": True, "stampa": "epson", "stampante": "https://192.168.5.20/", "intestazione": "Negozio"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["effettiva"]["stampante"], "192.168.5.20")
+        zona = self.manifest(self.mon_a_milano)["layout"]["zone"][0]["configurazione"]
+        self.assertEqual((zona["stampante"], zona["intestazione"]), ("192.168.5.20", "Negozio"))
+
+        # Il semplice utente non cambia la stampante, ma può chiedere la prova.
+        self.come(self.user_a)
+        self.assertEqual(self.client.put(url, {"personalizzata": False}, format="json").status_code, 403)
+        self.assertEqual(self.client.post(url).status_code, 202)
+        intestazione = {"HTTP_AUTHORIZATION": f"Device {token}"}
+        self.assertTrue(self.client.get("/api/player/schermata/", **intestazione).json()["prova_stampa"])
+        self.client.post("/api/player/prova-stampa/", {"ok": False, "messaggio": "tempo scaduto"}, format="json", **intestazione)
+        self.assertFalse(self.client.get("/api/player/schermata/", **intestazione).json()["prova_stampa"])
+        self.assertEqual(self.client.get(url).json()["prova"]["stato"], "fallita")
+
+        # Un altro cliente non lo vede; tornando al layout il manifest riprende quello.
+        self.come(self.admin_b)
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.come(self.admin_a)
+        self.client.put(url, {"personalizzata": False}, format="json")
+        self.assertEqual(self.manifest(self.mon_a_milano)["layout"]["zone"][0]["configurazione"]["stampante"], "10.0.0.9")
