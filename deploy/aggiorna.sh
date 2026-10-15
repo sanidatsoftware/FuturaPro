@@ -3,16 +3,20 @@
 # Il database si aggiorna da solo all'avvio (migrazioni). Prima fa un backup.
 set -euo pipefail
 cd "$(dirname "$0")"
-./backup.sh
 # Con sudo git rifiuta una cartella di un altro utente («dubious ownership»):
 # la cartella dell'installazione è sicura per definizione.
 git() { command git -c safe.directory="$(cd .. && pwd)" "$@"; }
-if git -C .. rev-parse --git-dir > /dev/null 2>&1; then
-    prima=$(git -C .. rev-parse --short HEAD)
-    git -C .. pull --ff-only
-    echo "Codice: $prima -> $(git -C .. rev-parse --short HEAD) (ramo $(git -C .. rev-parse --abbrev-ref HEAD))"
-else
-    echo "Codice non scaricato con git: copia la nuova versione in $(cd .. && pwd) e rilancia."
+if [ "${1:-}" != "--dopo-pull" ]; then
+    ./backup.sh
+    if git -C .. rev-parse --git-dir > /dev/null 2>&1; then
+        prima=$(git -C .. rev-parse --short HEAD)
+        git -C .. pull --ff-only
+        echo "Codice: $prima -> $(git -C .. rev-parse --short HEAD) (ramo $(git -C .. rev-parse --abbrev-ref HEAD))"
+        # Il pull può aver cambiato anche questo script: il resto lo fa la versione nuova.
+        exec bash "$0" --dopo-pull
+    else
+        echo "Codice non scaricato con git: copia la nuova versione in $(cd .. && pwd) e rilancia."
+    fi
 fi
 # Il numero di build della versione (es. 1.6.072 · 20261015) per il pannello: nel container git non c'è.
 numero=$(git -C .. rev-list --count HEAD 2>/dev/null || true)
