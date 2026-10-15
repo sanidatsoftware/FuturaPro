@@ -205,3 +205,39 @@ class StiliAccessoTest(Base):
         self.assertEqual(self.client.patch("/api/piattaforma/aspetto/", {"accesso": {"stile": "neon"}}, format="json").json()["accesso"]["stile"], "classico")
         self.client.logout()
         self.assertNotIn('class="sfondo"', self.client.get("/accesso/").content.decode())
+
+
+class PanoramicaTest(Base):
+    """La Panoramica: avvisi e riepiloghi dell'azienda; per la piattaforma tutte le aziende."""
+
+    def test_azienda_e_piattaforma(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from clienti.models import Abilitazioni
+        from core.contesto import contesto_cliente
+        from eliminacode.models import Biglietto, Reparto
+
+        adesso = timezone.now()
+        with contesto_cliente(self.a.id):
+            reparto = Reparto.objects.create(cliente=self.a, sede=self.a_milano, nome="Salumeria")
+            Biglietto.objects.create(cliente=self.a, reparto=reparto, giornata=timezone.localdate(), progressivo=1, numero=1,
+                                     emesso_il=adesso - timedelta(minutes=10), chiamato_il=adesso - timedelta(minutes=4))
+            Biglietto.objects.create(cliente=self.a, reparto=reparto, giornata=timezone.localdate(), progressivo=2, numero=2, emesso_il=adesso)
+            Abilitazioni.objects.update(spazio_mb=1)
+        self.come(self.admin_a)
+        d = self.client.get("/api/panoramica/").json()
+        self.assertEqual(d["schermi"]["totale"], 2)
+        self.assertTrue(any("non è in linea" in a["testo"] or "non in linea" in a["testo"] for a in d["avvisi"]))
+        self.assertEqual(d["code"], [{"reparto": "Salumeria", "sede": "Milano", "colore": reparto.colore, "emessi": 2, "chiamati": 1, "in_coda": 1, "attesa_media": 6.0}])
+        self.assertIn("registro", d)
+        # Lo User limitato a Milano non vede Roma né il registro.
+        self.come(self.user_a_milano)
+        d = self.client.get("/api/panoramica/").json()
+        self.assertEqual((d["schermi"]["totale"], d["registro"]), (1, []))
+        self.assertEqual(self.client.get("/api/piattaforma/panoramica/").status_code, 403)
+        self.come(self.assoluto)
+        g = self.client.get("/api/piattaforma/panoramica/").json()
+        self.assertEqual(g["totali"]["aziende"], 2)
+        self.assertEqual(g["totali"]["biglietti"], 2)

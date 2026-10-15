@@ -12,7 +12,7 @@ export function preparaSchedeDistribuzione(strumenti) {
 
 const OGNI = 10_000;
 
-const STATI = {
+export const STATI = {
   aggiornato: { testo: "In onda, aggiornato", icona: "✓", aiuto: "Lo schermo ha tutti i file del palinsesto attuale e lo sta mostrando." },
   pronto: { testo: "File arrivati", icona: "⇣", aiuto: "Tutti i file sono sullo schermo: il palinsesto nuovo parte al prossimo controllo (entro 30 secondi)." },
   scaricamento: { testo: "In scaricamento", icona: "⇣", aiuto: "Lo schermo sta scaricando i file nuovi; intanto continua a mostrare il palinsesto precedente." },
@@ -24,7 +24,7 @@ const STATI = {
 };
 const ORDINE = ["scaricamento", "errore", "fascia", "in_arrivo", "pronto", "offline", "mai_collegato", "aggiornato"];
 
-function peso(byte) {
+export function peso(byte) {
   if (!byte) return "0 B";
   const unita = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.min(unita.length - 1, Math.floor(Math.log(byte) / Math.log(1024)));
@@ -42,7 +42,7 @@ function fa(t) {
 }
 
 // L'anello della percentuale (SVG): verde quando è tutto arrivato.
-function anello(percentuale, genitore, { grande = false, aiuto = "" } = {}) {
+export function anello(percentuale, genitore, { grande = false, aiuto = "" } = {}) {
   const lato = grande ? 148 : 58;
   const spessore = grande ? 14 : 7;
   const r = (lato - spessore) / 2;
@@ -63,7 +63,7 @@ function anello(percentuale, genitore, { grande = false, aiuto = "" } = {}) {
   return box;
 }
 
-function barra(percentuale, genitore, { classe = "", aiuto = "" } = {}) {
+export function barra(percentuale, genitore, { classe = "", aiuto = "" } = {}) {
   const b = H.crea("div", { classe: `barra-avanzamento ${classe}`, "data-aiuto": aiuto }, genitore);
   const riempi = H.crea("div", { classe: "riempimento" }, b);
   riempi.style.width = `${Math.max(0, Math.min(100, percentuale ?? 0))}%`;
@@ -71,7 +71,7 @@ function barra(percentuale, genitore, { classe = "", aiuto = "" } = {}) {
 }
 
 // La barra a colori degli stati: quanti schermi in ogni stato.
-function barraStati(stati, totale, genitore) {
+export function barraStati(stati, totale, genitore) {
   const b = H.crea("div", { classe: "barra-stati" }, genitore);
   for (const chiave of [...ORDINE].reverse()) {
     if (!stati[chiave]) continue;

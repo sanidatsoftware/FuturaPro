@@ -41,12 +41,12 @@ class Utente(AbstractUser):
     @property
     def apertura(self) -> str:
         """La voce del menu da aprire dopo l'accesso: la scelta nel Profilo, o quella del ruolo.
-        SystemAdministrator e Administrator: «Distribuzione contenuti», il colpo d'occhio su
-        schermi, download e cosa va in onda; Tecnico: «Stato e allarmi»; User: la Creazione
-        palinsesto, dove lavora."""
+        SystemAdministrator e Administrator: la «Panoramica», il colpo d'occhio su schermi,
+        contenuti, palinsesto, code e le cose da guardare; Tecnico: «Stato e allarmi»; User: la
+        Creazione palinsesto, dove lavora."""
         if self.pagina_iniziale:
             return self.pagina_iniziale
-        return {Ruolo.TECNICO: "stato", Ruolo.USER_CLIENTE: "palinsesto"}.get(self.ruolo, "distribuzione")
+        return {Ruolo.TECNICO: "stato", Ruolo.USER_CLIENTE: "palinsesto"}.get(self.ruolo, "panoramica")
 
     class Meta:
         constraints = [

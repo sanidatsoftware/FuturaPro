@@ -3,11 +3,13 @@ import re
 from django.contrib.auth.views import LoginView, redirect_to_login
 from django.http import FileResponse, Http404
 from django.shortcuts import render
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from rest_framework import exceptions, serializers
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 
 from audit.models import registra
@@ -17,6 +19,8 @@ from rest_framework.decorators import action
 from core.api import GESTIONE, SOLO_ASSOLUTO, TUTTI, ViewSetCliente, VistaConContesto
 
 from .accesso import pulita as pulita_accesso
+from utenti.models import Ruolo
+
 from .models import Aspetto, ImpostazioniEmail, InvioRapporto
 
 LOGO_MAX = 3 * 1024 * 1024
@@ -367,3 +371,53 @@ class InviiRapportiViewSet(ViewSetCliente):
         except Exception as errore:
             raise exceptions.ValidationError(f"L'email non è partita: {errore}")
         return Response({"inviato": True, "dal": dal, "al": al})
+
+
+class PanoramicaView(VistaConContesto, APIView):
+    """La Panoramica dell'azienda: schermi, contenuti, palinsesto, code, plugin, spazio e le cose da guardare."""
+
+    ruoli_lettura = TUTTI
+
+    def get(self, request):
+        from core.api import sedi_visibili
+
+        from . import panoramica
+
+        limitate = sedi_visibili(request.user)
+        return Response(panoramica.azienda(set(limitate) if limitate is not None else None, con_registro=request.user.ruolo in GESTIONE))
+
+
+class PanoramicaPiattaformaView(VistaConContesto, APIView):
+    """La Panoramica di tutte le aziende, per il SystemAdministrator e il tecnico."""
+
+    ambito = "piattaforma"
+    ruoli_lettura = frozenset({Ruolo.ADMIN_ASSOLUTO, Ruolo.TECNICO})
+
+    def get(self, request):
+        from clienti.models import Cliente
+        from core.contesto import contesto_cliente
+
+        from . import panoramica
+
+        adesso = timezone.now()
+        aziende = []
+        for cliente in Cliente.objects.filter(attivo=True).order_by("nome"):
+            with contesto_cliente(cliente.id):
+                dati = panoramica.azienda(con_registro=False, adesso=adesso)
+            aziende.append({
+                "id": str(cliente.id), "nome": cliente.nome, "avvisi": dati["avvisi"], "schermi": dati["schermi"],
+                "distribuzione": {k: dati["distribuzione"][k] for k in ("percentuale", "stati", "velocita")},
+                "in_onda": len(dati["palinsesto"]["in_onda"]), "scadenza": len(dati["palinsesto"]["scadenza"]),
+                "biglietti": sum(c["emessi"] for c in dati["code"]), "spazio": dati["spazio"],
+            })
+        # Prima le aziende con qualcosa di critico.
+        aziende.sort(key=lambda a: (-sum(1 for v in a["avvisi"] if v["livello"] == "critico"), -len(a["avvisi"]), a["nome"].lower()))
+        totali = {
+            "aziende": len(aziende), "schermi": sum(a["schermi"]["totale"] for a in aziende),
+            "online": sum(a["schermi"]["online"] for a in aziende),
+            "aggiornati": sum(a["distribuzione"]["stati"]["aggiornato"] for a in aziende),
+            "critici": sum(1 for a in aziende for v in a["avvisi"] if v["livello"] == "critico"),
+            "attenzione": sum(1 for a in aziende for v in a["avvisi"] if v["livello"] == "attenzione"),
+            "biglietti": sum(a["biglietti"] for a in aziende),
+        }
+        return Response({"adesso": adesso, "totali": totali, "aziende": aziende})

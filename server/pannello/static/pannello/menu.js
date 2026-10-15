@@ -9,6 +9,8 @@ const nonTecnico = (io) => io.ruolo !== "tecnico";
 export const GRUPPI = ["Hardware", "Contenuti", "Code", "Plugin", "Report & Log", "Impostazioni"];
 
 export const VOCI = [
+  { chiave: "panoramica", titolo: "Panoramica", visibile: () => true, serveCliente: false,
+    aiuto: "La pagina iniziale: le cose da guardare subito e il colpo d'occhio su schermi, contenuti, palinsesto, code, plugin e spazio. Il SystemAdministrator vede anche tutte le aziende insieme." },
   { chiave: "clienti", titolo: "Clienti", visibile: (io) => io.ruolo === "admin_assoluto", serveCliente: false,
     aiuto: "Le aziende clienti: crearle, abilitarne le funzioni (monitor, utenti, spazio) e il loro primo amministratore." },
   { chiave: "monitor", gruppo: "Hardware", titolo: "Anagrafica Dispositivi Video", visibile: () => true,

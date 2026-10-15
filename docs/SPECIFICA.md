@@ -60,7 +60,7 @@ email e password nella scheda «Profilo» (menu Impostazioni, o clic sul proprio
 
 **Pagina iniziale.** Dopo l'accesso si apre la pagina scelta nel Profilo («Pagina iniziale»,
 `Utente.pagina_iniziale`), oppure quella consigliata per il ruolo: SystemAdministrator e
-Administrator «Distribuzione contenuti» (il SystemAdministrator nella vista di tutte le aziende),
+Administrator la «Panoramica» (il SystemAdministrator nella vista di tutte le aziende),
 Tecnico «Stato e allarmi», User «Creazione palinsesto». Un indirizzo con `next` vale su tutto.
 
 **Abilitazioni** (per cliente, le imposta solo il SystemAdministrator): numero massimo di
@@ -373,6 +373,7 @@ funzione nuova deve aggiungere le sue spiegazioni lì.
 - **Contenuti**: Creazione palinsesto, Listini.
 - **Code**: Reparti ed eliminacode, Coda sul telefono.
 - **Plugin** (facoltativi): Info Prezzo, Info Ingredienti.
+- **Panoramica** (prima voce, la pagina iniziale).
 - **Report & Log**: Stato e allarmi, Distribuzione contenuti, Messa in onda, Tempi d'attesa, Registro operazioni,
   Storico allarmi.
 - **Impostazioni**: Layout Video, Layout Ticket, Sedi e gruppi, Utenti, Email, Accensione e
@@ -393,6 +394,24 @@ operazioni** (`/api/audit/` per l'azienda, `/api/piattaforma/audit/` per il Syst
 con «tutta la piattaforma»; filtri per periodo, utente e testo, 100 righe per pagina, CSV) e lo
 **storico degli allarmi** (`/api/storico-allarmi/`: eventi per periodo e schermo, con il
 riepilogo di scollegamenti e tempo fuori linea, anche se lo schermo è ancora scollegato; CSV).
+
+### Panoramica
+
+La prima voce del menu e la pagina iniziale di SystemAdministrator e Administrator
+(`schede-panoramica.js`, `GET /api/panoramica/`, `pannello/panoramica.py`). In cima **«Da guardare»**:
+gli avvisi, prima i critici, ognuno con un clic sulla pagina dove si sistema: schermi non in
+linea (e da quanto), schermi che non riescono a scaricare, schermi accesi senza nulla in onda,
+promozioni che finiscono nei prossimi giorni senza che ne parta un'altra, copie o prove di accesso
+dei plugin non riuscite, spazio oltre il 90%. Sotto, una scheda per argomento con il collegamento
+al dettaglio: **Schermi** (in linea, fuori orario, in allarme, quelli spenti), **Contenuti sugli
+schermi** (quota aggiornati, banda degli stati con legenda, promozioni non ancora arrivate
+dappertutto), **Palinsesto** (in onda adesso, partono nei prossimi 7 giorni, finiscono nei
+prossimi 3), **Code di oggi** (biglietti, in coda, attesa media per reparto), **Plugin** (ultima
+copia, errori), **Spazio** e, per chi gestisce, **Ultime operazioni**. Lo User vede solo le sue
+sedi. Il SystemAdministrator (e il Tecnico) ha anche «Tutte le aziende»
+(`GET /api/piattaforma/panoramica/`): i totali della piattaforma e una riga per azienda con
+semaforo, numeri e primi avvisi, prima quelle con qualcosa di critico; «Apri» sceglie l'azienda e
+ne mostra la Panoramica. La pagina si aggiorna da sola ogni 30 secondi.
 
 ### Distribuzione contenuti
 
@@ -837,6 +856,8 @@ piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
 | `GET /api/piattaforma/audit/` | SystemAdministrator |
 | `PATCH /api/io/` (profilo: tema, nome utente, nome, email, password con `password_attuale`) | tutti gli autenticati, per sé |
 | `GET /api/distribuzione/` | tutti (User: le sue sedi) |
+| `GET /api/panoramica/` | tutti (User: le sue sedi, senza registro) |
+| `GET /api/piattaforma/panoramica/` | SystemAdministrator, Tecnico |
 | `GET /api/piattaforma/distribuzione/` | SystemAdministrator, Tecnico |
 | `GET/PATCH /api/abilitazioni/` | lettura: SystemAdministrator, Administrator — scrittura: SystemAdministrator |
 | `/api/sedi/`, `/api/gruppi/` | lettura: tutti — scrittura: SystemAdministrator, Administrator |

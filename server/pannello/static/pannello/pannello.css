@@ -389,3 +389,56 @@ td.attenzione, div.attenzione { color: var(--errore); }
 .dettaglio-azienda { padding: 12px; display: flex; flex-direction: column; gap: 14px; background: var(--fondo); }
 @media (max-width: 640px) { .anello.grande { width: 110px; height: 110px; } .filtri-distribuzione input[type="search"] { min-width: 0; width: 100%; } }
 #utente.cliccabile { cursor: pointer; text-decoration: underline dotted; }
+
+/* --- Panoramica ------------------------------------------------------------------------- */
+.panoramica .capo-panoramica { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.panoramica .capo-panoramica h1 { margin: 0; font-size: 26px; }
+.panoramica .capo-panoramica p { margin: 4px 0 0; }
+.panoramica .capo-panoramica .interruttore { margin-left: auto; }
+.avvisi-panoramica { background: var(--carta); border-radius: 12px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); border-left: 5px solid var(--st-errore); }
+.avvisi-panoramica.tutto-ok { border-left-color: var(--st-aggiornato); display: flex; align-items: center; gap: 10px; }
+.avvisi-panoramica.tutto-ok .icona { width: 28px; height: 28px; border-radius: 50%; background: var(--st-aggiornato); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+.avvisi-panoramica .titolo { display: block; margin-bottom: 8px; }
+.avvisi-panoramica .elenco, .avvisi-riga { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.panoramica .avviso { border-radius: 8px; padding: 5px 10px; font-size: 13px; text-align: left; border: 1px solid transparent; margin: 0; }
+.panoramica .avviso.critico { background: color-mix(in srgb, var(--st-errore) 13%, transparent); color: var(--errore); border-color: color-mix(in srgb, var(--st-errore) 35%, transparent); }
+.panoramica .avviso.attenzione { background: color-mix(in srgb, var(--st-fascia) 15%, transparent); color: color-mix(in srgb, var(--st-fascia) 70%, var(--testo)); border-color: color-mix(in srgb, var(--st-fascia) 40%, transparent); }
+.panoramica span.avviso { font-size: 12px; padding: 3px 8px; }
+.griglia-panoramica { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; align-items: start; }
+.carta-panoramica { background: var(--carta); border-radius: 14px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.carta-panoramica .testa { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.carta-panoramica h3 { margin: 0; font-size: 16px; }
+.carta-panoramica .apri { border: 0; background: none; color: var(--primario); font-size: 13px; padding: 2px 4px; }
+.carta-panoramica .corpo { display: flex; flex-direction: column; gap: 8px; }
+.panoramica .riga-anello { display: flex; align-items: center; gap: 14px; }
+.panoramica .numero { font-size: 28px; line-height: 1.1; }
+.panoramica .sottotitolo { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--tenue); margin-top: 6px; }
+.lista-panoramica { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font-size: 13.5px; }
+.lista-panoramica li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lista-panoramica li > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lista-panoramica li.cliccabile { cursor: pointer; }
+.panoramica .punto { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--primario); display: inline-block; }
+.panoramica .punto.critico { background: var(--st-errore); }
+.panoramica .punto.ok { background: var(--st-aggiornato); }
+.panoramica .punto.attesa { background: var(--st-offline); }
+.panoramica .promo-barra { font-size: 13px; }
+.panoramica .promo-barra .barra-avanzamento { margin-top: 3px; }
+.barra-avanzamento.piena .riempimento { background: var(--st-errore); }
+.tabella-panoramica { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.tabella-panoramica th { text-align: left; font-size: 12px; color: var(--tenue); font-weight: 600; padding: 4px 6px; }
+.tabella-panoramica td { padding: 5px 6px; border-top: 1px solid var(--linea); }
+.vuoto-carta { margin: 0; font-size: 13px; }
+.azienda-panoramica { display: flex; align-items: center; gap: 14px; padding: 10px 4px; border-top: 1px solid var(--linea); }
+.azienda-panoramica .centro { flex: 1; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.semaforo { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+.semaforo.critico { background: var(--st-errore); box-shadow: 0 0 0 4px color-mix(in srgb, var(--st-errore) 20%, transparent); }
+.semaforo.attenzione { background: var(--st-fascia); }
+.semaforo.ok { background: var(--st-aggiornato); }
+.carta-panoramica .apri { white-space: nowrap; flex: none; }
+.tabella-panoramica td:first-child { white-space: nowrap; }
+.tabella-panoramica .punto { margin-right: 6px; vertical-align: middle; }
+.lista-panoramica.registro li { flex-direction: column; align-items: flex-start; gap: 0; }
+.lista-panoramica.registro li > span:nth-child(2) { flex: none; }
+.legenda-stati { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--tenue); }
+.legenda-stati span { display: inline-flex; align-items: center; gap: 5px; }
+.legenda-stati i { width: 10px; height: 10px; border-radius: 3px; background: var(--st); display: inline-block; }

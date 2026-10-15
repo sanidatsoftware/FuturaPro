@@ -65,7 +65,7 @@ class PaginaInizialeTest(Base):
     def test_apertura(self):
         from utenti.models import Utente
 
-        for utente, attesa in ((self.assoluto, "/pannello/#distribuzione"), (self.admin_a, "/pannello/#distribuzione"),
+        for utente, attesa in ((self.assoluto, "/pannello/#panoramica"), (self.admin_a, "/pannello/#panoramica"),
                                (self.tecnico, "/pannello/#stato"), (self.user_a, "/palinsesto/")):
             u = Utente.objects.get(pk=utente.pk)
             u.set_password("Password-Lunga-1")

@@ -10,6 +10,7 @@ import { osservaAiuti } from "./aiuti-campi.js";
 import { apriRiquadro, paginaIncorporata } from "./riquadro.js";
 import { preparaSchedeReport, schedaRegistro, schedaStoricoAllarmi } from "./schede-report.js";
 import { preparaSchedeDistribuzione, schedaDistribuzione } from "./schede-distribuzione.js";
+import { preparaSchedePanoramica, schedaPanoramica } from "./schede-panoramica.js";
 import { preparaSchedeProfilo, schedaProfilo, schedaUtentiPiattaforma } from "./schede-profilo.js";
 import { preparaSchedeCode, schedaAttese, schedaTelefono } from "./schede-code.js";
 import { preparaSchedeContenuti, schedaListini, schedaMessaInOnda } from "./schede-contenuti.js";
@@ -139,6 +140,7 @@ const contenuto = document.getElementById("contenuto");
 
 // Le schede del pannello; titoli, visibilità e spiegazioni sono in menu.js.
 const SCHEDE = {
+  panoramica: schedaPanoramica,
   clienti: schedaClienti,
   monitor: schedaMonitor,
   accensione: schedaAccensione,
@@ -1153,6 +1155,7 @@ async function avvia() {
   preparaSchedeImpostazioni(strumenti);
   preparaSchedeReport(strumenti);
   preparaSchedeDistribuzione(strumenti);
+  preparaSchedePanoramica(strumenti);
   preparaSchedeProfilo(strumenti);
   // Il nome in alto apre il Profilo.
   const nomeUtente = document.getElementById("utente");

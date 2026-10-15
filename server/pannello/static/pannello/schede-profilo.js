@@ -20,7 +20,7 @@ export async function schedaProfilo() {
   const riga = crea("div", { classe: "riga" }, dati);
   const nome = campo("Nome", crea("input", { value: io.first_name || "", autocomplete: "given-name", "data-aiuto": "Il tuo nome, come compare nel registro delle operazioni." }), riga);
   const cognome = campo("Cognome", crea("input", { value: io.last_name || "", autocomplete: "family-name", "data-aiuto": "Il tuo cognome." }), riga);
-  const ruolo = { admin_assoluto: "Distribuzione contenuti", admin_cliente: "Distribuzione contenuti", tecnico: "Stato e allarmi", user_cliente: "Creazione palinsesto" }[io.ruolo];
+  const ruolo = { admin_assoluto: "Panoramica", admin_cliente: "Panoramica", tecnico: "Stato e allarmi", user_cliente: "Creazione palinsesto" }[io.ruolo];
   const voci = VOCI.filter((v) => v.visibile(io)).sort((a, b) => GRUPPI.indexOf(a.gruppo) - GRUPPI.indexOf(b.gruppo));
   const iniziale = campo("Pagina iniziale", H.scelta([["", `Quella consigliata per il ruolo (${ruolo})`], ...voci.map((v) => [v.chiave, v.gruppo ? `${v.gruppo} · ${v.titolo}` : v.titolo])], io.pagina_iniziale), riga);
   iniziale.dataset.aiuto = "La pagina che si apre dopo l'accesso.";
