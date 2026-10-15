@@ -1,6 +1,8 @@
 from django.contrib.auth.views import LoginView, redirect_to_login
 from django.http import FileResponse, Http404
 from django.shortcuts import render
+from django.utils.decorators import method_decorator
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from rest_framework import exceptions, serializers
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.response import Response
@@ -31,6 +33,7 @@ def palinsesto(request):
     return render(request, "pannello/palinsesto.html")
 
 
+@method_decorator(xframe_options_sameorigin, name="dispatch")
 class Accesso(LoginView):
     template_name = "pannello/accesso.html"
     redirect_authenticated_user = True

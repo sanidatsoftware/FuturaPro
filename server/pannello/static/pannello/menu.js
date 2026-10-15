@@ -4,8 +4,8 @@
 const gestione = (io) => ["admin_assoluto", "admin_cliente"].includes(io.ruolo);
 const nonTecnico = (io) => io.ruolo !== "tecnico";
 
-// pagina: un'altra pagina, nella stessa finestra; esterna: si apre in una scheda nuova;
-// le altre sono schede del pannello.
+// pagina: un'altra pagina, nella stessa finestra; incorporata: una pagina mostrata dentro il
+// pannello, sotto il menu; le altre sono schede del pannello.
 export const GRUPPI = ["Hardware", "Contenuti", "Code", "Plugin", "Report & Log", "Impostazioni"];
 
 export const VOCI = [
@@ -37,7 +37,7 @@ export const VOCI = [
     aiuto: "I reparti con il «prendi il numero»: nomi, colori, ordine, annunci registrati e i collegamenti per bilance e pulsantiere." },
   { chiave: "telefono", gruppo: "Code", titolo: "Coda sul telefono", visibile: gestione,
     aiuto: "Il QR sul biglietto: il cliente segue la coda dal suo telefono e viene avvisato quando tocca a lui." },
-  { chiave: "layout", gruppo: "Impostazioni", titolo: "Layout", visibile: gestione, esterna: "/editor/",
+  { chiave: "layout", gruppo: "Impostazioni", titolo: "Layout Video", visibile: gestione, incorporata: "/editor/",
     aiuto: "L'editor grafico: come si divide lo schermo tra slide, orologio, meteo, notizie, listini, numeri dei reparti e pulsanti del totem." },
   { chiave: "layout_ticket", gruppo: "Impostazioni", titolo: "Layout Ticket", visibile: (io) => io.ruolo !== "user_cliente",
     aiuto: "Com'è fatto il biglietto stampato dal totem: logo, intestazione, reparto, numero e testo di fine biglietto, con carattere e grandezza di ogni elemento. Si sceglie per ogni stampante." },
@@ -51,7 +51,7 @@ export const VOCI = [
     aiuto: "Gli orari in cui gli schermi sono accesi, per giorno della settimana, e i giorni di chiusura (es. festivi)." },
   { chiave: "download", gruppo: "Impostazioni", titolo: "Fasce di download", visibile: gestione,
     aiuto: "Quando e a quale velocità gli schermi scaricano i file nuovi, per non rallentare la rete del negozio (es. casse)." },
-  { chiave: "banco", gruppo: "Impostazioni", titolo: "Banco", visibile: nonTecnico, esterna: "/banco/",
+  { chiave: "banco", gruppo: "Impostazioni", titolo: "Banchi Code", visibile: nonTecnico, incorporata: "/banco/",
     aiuto: "La pagina per chiamare i numeri dal banco (Avanti, Indietro, Ripeti), la stessa che usano le bilance." },
   { chiave: "aspetto", gruppo: "Impostazioni", titolo: "Aspetto interfaccia", visibile: () => true, serveCliente: false,
     aiuto: "Tema chiaro, scuro o automatico delle pagine. Il SystemAdministrator qui sceglie anche nome e logo della piattaforma." },
@@ -67,12 +67,7 @@ export function disegnaMenu(nav, { io, attiva, cliente, mostra }) {
   nav.replaceChildren();
   const voce = (v) => {
     let el;
-    if (v.esterna) {
-      el = document.createElement("a");
-      el.href = conCliente(v.esterna, cliente);
-      el.target = "_blank";
-      el.textContent = `${v.titolo} ↗`;
-    } else if (v.pagina) {
+    if (v.pagina) {
       el = document.createElement("a");
       el.href = conCliente(v.pagina, cliente);
       el.textContent = v.titolo;

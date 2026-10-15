@@ -7,6 +7,7 @@ import { preparaSchedeImpostazioni, schedaEmail } from "./schede-impostazioni.js
 import { preparaSchedePlugin, schedaInfoIngredienti, schedaInfoPrezzo } from "./schede-plugin.js";
 import { preparaSchedeTicket, schedaLayoutTicket } from "./schede-ticket.js";
 import { osservaAiuti } from "./aiuti-campi.js";
+import { apriRiquadro, paginaIncorporata } from "./riquadro.js";
 import { preparaSchedeReport, schedaRegistro, schedaStoricoAllarmi } from "./schede-report.js";
 import { preparaSchedeCode, schedaAttese, schedaTelefono } from "./schede-code.js";
 import { preparaSchedeContenuti, schedaListini, schedaMessaInOnda } from "./schede-contenuti.js";
@@ -156,6 +157,9 @@ const SCHEDE = {
   sedi: schedaSedi,
   utenti: schedaUtenti,
   aspetto: schedaAspetto,
+  // Pagine a sé (editor dei layout, banco) mostrate dentro il pannello, sotto il menu.
+  layout: () => paginaIncorporata(contenuto, conCliente("/editor/"), "Layout Video"),
+  banco: () => paginaIncorporata(contenuto, conCliente("/banco/"), "Banchi Code"),
 };
 
 function disegnaSchede() {
@@ -170,6 +174,7 @@ async function mostra(chiave) {
   history.replaceState(null, "", `${location.pathname}${location.search}#${chiave}`);
   disegnaSchede();
   contenuto.replaceChildren();
+  contenuto.classList.remove("pieno");
   if (voce.serveCliente !== false && stato.io.di_piattaforma && !stato.cliente) {
     crea("p", { classe: "vuoto", testo: "Scegli il cliente in alto." }, contenuto);
     return;
@@ -486,7 +491,7 @@ function schermoInMiniatura(m, cella) {
   const verticale = m.orientamento === "verticale";
   const cornice = crea("button", {
     type: "button", classe: `mini-schermo ${verticale ? "verticale" : "orizzontale"}`,
-    "data-aiuto": "Clic: il monitor fotografa il suo schermo in questo istante e la foto compare qui (pochi secondi). Doppio clic: l'anteprima a tutto schermo in una scheda nuova.",
+    "data-aiuto": "Clic: il monitor fotografa il suo schermo in questo istante e la foto compare qui (pochi secondi). Doppio clic: l'anteprima simulata, in un riquadro sopra la pagina.",
   }, cella);
   const vetro = crea("div", { classe: "vetro-schermo" }, cornice);
   crea("span", { classe: "segnaposto", testo: "…" }, vetro);
@@ -536,7 +541,7 @@ function schermoInMiniatura(m, cella) {
       cornice.classList.remove("scatto");
     }
   });
-  cornice.addEventListener("dblclick", () => window.open(indirizzo, "_blank"));
+  cornice.addEventListener("dblclick", () => apriRiquadro(`Anteprima · ${m.nome}`, indirizzo, { larghezza: "min(1500px, 96vw)", altezza: "min(900px, 92vh)" }));
   return {
     primo(voce) {
       if (fotografia) return;
@@ -905,7 +910,7 @@ async function sezioneMarchio() {
       }, "Logo tolto."),
     }, azioni);
   }
-  crea("a", { href: "/accesso/?anteprima=1", target: "_blank", testo: "Vedi la pagina di accesso ↗" }, azioni);
+  crea("button", { type: "button", testo: "Vedi la pagina di accesso", "data-aiuto": "Mostra in un riquadro come appare la pagina di accesso con nome, frase, colore e logo salvati.", onclick: () => apriRiquadro("Pagina di accesso", "/accesso/?anteprima=1") }, azioni);
 }
 
 // --- Utenti --------------------------------------------------------------------------------------

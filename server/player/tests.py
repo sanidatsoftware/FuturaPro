@@ -15,6 +15,10 @@ class PagineTest(TestCase):
         r = self.client.get("/editor/00000000-0000-0000-0000-000000000001/")
         self.assertContains(r, 'data-layout="00000000-0000-0000-0000-000000000001"')
         self.assertContains(self.client.get("/banco/"), "eliminacode/banco.js")
+        # Si aprono dentro il pannello: solo dallo stesso sito.
+        for url in ("/editor/", "/banco/", "/accesso/?anteprima=1"):
+            self.assertEqual(self.client.get(url)["X-Frame-Options"], "SAMEORIGIN", url)
+        self.assertEqual(self.client.get("/pannello/")["X-Frame-Options"], "DENY")
 
     def test_pannello_chiede_l_accesso(self):
         r = self.client.get("/pannello/")

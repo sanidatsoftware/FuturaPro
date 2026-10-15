@@ -335,8 +335,15 @@ funzione nuova deve aggiungere le sue spiegazioni lì.
 - **Plugin** (facoltativi): Info Prezzo, Info Ingredienti.
 - **Report & Log**: Stato e allarmi, Messa in onda, Tempi d'attesa, Registro operazioni,
   Storico allarmi.
-- **Impostazioni**: Layout, Layout Ticket, Sedi e gruppi, Utenti, Email, Accensione e spegnimento, Fasce di
-  download, Banco, Aspetto interfaccia.
+- **Impostazioni**: Layout Video, Layout Ticket, Sedi e gruppi, Utenti, Email, Accensione e
+  spegnimento, Fasce di download, Banchi Code, Aspetto interfaccia.
+
+Tutte le voci si aprono nella stessa pagina: «Layout Video» (l'editor, `/editor/`) e «Banchi
+Code» (`/banco/`) sono mostrate dentro il pannello, sotto il menu. Le pagine di prova e le
+anteprime (anteprima di uno schermo, pagina del biglietto sul telefono, pagina di accesso) si
+aprono in un riquadro chiudibile (✕, Esc o clic fuori), mai in una scheda nuova del browser
+(`pannello/static/pannello/riquadro.js`). Queste pagine permettono di essere incorporate solo dallo
+stesso sito (`X-Frame-Options: SAMEORIGIN`); tutte le altre restano `DENY`.
 
 ### Report & Log
 

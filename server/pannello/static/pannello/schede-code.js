@@ -2,6 +2,7 @@
 // Gli strumenti (api, crea, sezione…) arrivano da pannello.js. I testi dei dati passano da textContent.
 
 import { sezioneInvii } from "./invii.js";
+import { apriRiquadro } from "./riquadro.js";
 
 let H = null;
 
@@ -144,7 +145,11 @@ export async function schedaTelefono() {
     classe: "primario", testo: "Salva",
     onclick: () => prova(() => api("PUT", "/api/coda-telefono/", { attivo: attivo.checked, testo: testo.value, avviso_a: parseInt(avviso.value, 10) }), "Salvato: i totem stampano il QR dal prossimo biglietto."),
   }, azioni);
-  crea("a", { classe: "pulsante", testo: "Guarda la pagina di prova", href: "/b/prova", target: "_blank" }, azioni);
+  crea("button", {
+    type: "button", testo: "Guarda la pagina di prova",
+    "data-aiuto": "Mostra in un riquadro la pagina che vede il cliente sul telefono, con un biglietto di esempio.",
+    onclick: () => apriRiquadro("Pagina del biglietto sul telefono (prova)", "/b/prova", { larghezza: "min(440px, 94vw)", altezza: "min(820px, 90vh)" }),
+  }, azioni);
   for (const c of [attivo, testo, avviso]) c.disabled = !H.ruoloGestione();
 
   const come = sezione("Come funziona senza il Wi-Fi del negozio");
