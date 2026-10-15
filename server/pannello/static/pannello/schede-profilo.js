@@ -1,6 +1,8 @@
 // «Profilo» (ognuno il suo: nome utente, nome, email, password) e «Utenti di piattaforma»
 // (solo il SystemAdministrator: altri SystemAdministrator e tecnici di teleassistenza).
 
+import { GRUPPI, VOCI } from "./menu.js";
+
 let H = null;
 
 export function preparaSchedeProfilo(strumenti) {
@@ -18,10 +20,14 @@ export async function schedaProfilo() {
   const riga = crea("div", { classe: "riga" }, dati);
   const nome = campo("Nome", crea("input", { value: io.first_name || "", autocomplete: "given-name", "data-aiuto": "Il tuo nome, come compare nel registro delle operazioni." }), riga);
   const cognome = campo("Cognome", crea("input", { value: io.last_name || "", autocomplete: "family-name", "data-aiuto": "Il tuo cognome." }), riga);
+  const ruolo = { admin_assoluto: "Distribuzione contenuti", admin_cliente: "Distribuzione contenuti", tecnico: "Stato e allarmi", user_cliente: "Creazione palinsesto" }[io.ruolo];
+  const voci = VOCI.filter((v) => v.visibile(io)).sort((a, b) => GRUPPI.indexOf(a.gruppo) - GRUPPI.indexOf(b.gruppo));
+  const iniziale = campo("Pagina iniziale", H.scelta([["", `Quella consigliata per il ruolo (${ruolo})`], ...voci.map((v) => [v.chiave, v.gruppo ? `${v.gruppo} · ${v.titolo}` : v.titolo])], io.pagina_iniziale), riga);
+  iniziale.dataset.aiuto = "La pagina che si apre dopo l'accesso.";
   const email = campo("Email", crea("input", { type: "email", value: io.email || "", size: 30, autocomplete: "email", "data-aiuto": "Il tuo indirizzo email (facoltativo)." }), riga);
   crea("button", {
-    classe: "primario", testo: "Salva", "data-aiuto": "Salva nome, cognome ed email.",
-    onclick: () => prova(() => api("PATCH", "/api/io/", { first_name: nome.value, last_name: cognome.value, email: email.value }), "Profilo salvato."),
+    classe: "primario", testo: "Salva", "data-aiuto": "Salva nome, cognome, pagina iniziale ed email.",
+    onclick: () => prova(() => api("PATCH", "/api/io/", { first_name: nome.value, last_name: cognome.value, email: email.value, pagina_iniziale: iniziale.value }), "Profilo salvato."),
   }, dati);
 
   const accesso = sezione("🔑 Nome utente e password");

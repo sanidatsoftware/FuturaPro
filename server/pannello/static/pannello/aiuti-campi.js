@@ -134,8 +134,8 @@ const SCHERMI_TUTTI = {
   "Sede": "Il negozio in cui si trova lo schermo.",
   "Tipo": "Monitor orizzontale o totem verticale: decide quali layout e contenuti gli vanno bene.",
   "Tutti": "Gruppo di schermi: riceve le pubblicazioni fatte sul gruppo.",
-  "Per tutti i totem": "La riserva da usare su tutti i totem verticali, quando non c'è nulla in onda.",
-  "Per tutti i monitor": "La riserva da usare su tutti i monitor orizzontali, quando non c'è nulla in onda.",
+  "Per tutti i totem": "Il default di tutti i totem verticali (quando non c'è nulla in onda), da applicare con «Applica a tutti». Per un singolo totem usa la colonna «Default» dell'elenco.",
+  "Per tutti i monitor": "Il default di tutti i monitor orizzontali (quando non c'è nulla in onda), da applicare con «Applica a tutti». Per un singolo monitor usa la colonna «Default» dell'elenco.",
   "pulsante:Abbina": "Collega lo schermo che mostra il codice: da quel momento riceve layout e contenuti.",
   "pulsante:Applica a tutti": "Imposta le riserve scelte qui sopra su tutti i totem e su tutti i monitor.",
   "pulsante:Rimuovi": "Scollega lo schermo: tornerà a mostrare il codice di abbinamento.",
@@ -145,7 +145,7 @@ const SCHERMI_TUTTI = {
   "colonna:Rotazione": "Ruota l'immagine se lo schermo è montato girato (es. 90° per un monitor messo in verticale).",
   "colonna:Layout": "Come si divide lo schermo (slide, orologio, code…). Ogni schermo può avere il suo; «Predefinito» usa quello standard per il suo orientamento.",
   "colonna:Totem: code e stampante": "La stampante dei biglietti di questo totem (Anagrafica Stampanti Ticket). Vuoto: come indicato nel layout.",
-  "colonna:Se non c'è nulla in onda": "L'immagine o il video da mostrare quando non c'è nessuna promozione in onda, invece dello schermo nero.",
+  "colonna:Default (se non c'è nulla in onda)": "Il default di questo solo schermo: l'immagine o il video da mostrare quando non c'è nessuna promozione in onda, invece dello schermo nero. «Applica a tutti» qui sopra lo sostituisce su tutti gli schermi.",
   ...SCHERMI,
 };
 

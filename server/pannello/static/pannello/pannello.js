@@ -300,29 +300,48 @@ async function schedaMonitor() {
   }
 
   if (gestione && monitor.length) {
-    const riserva = sezione("Immagine o video di riserva");
+    const riserva = sezione("Immagini o video di default");
     crea("p", {
       classe: "nota",
-      testo: "Quello che mostrano le slide quando non c'è nessuna promozione in onda (es. tra un volantino e l'altro): di solito il logo del negozio o un breve video istituzionale. Si sceglie dal computer ed è conservato a parte: non compare nella libreria delle promozioni e non viene cancellato quando le promozioni scadono. Quando nessuno schermo lo usa più, sparisce dal server e dai player.",
+      testo: "Quello che mostrano le slide quando non c'è nessuna promozione in onda (es. tra un volantino e l'altro): di solito il logo del negozio o un breve video istituzionale. "
+        + "Qui lo scegli in un colpo solo per tutti i totem e per tutti i monitor; nella colonna «Default (se non c'è nulla in onda)» dell'elenco qui sotto lo cambi per un singolo schermo (ad esempio uno diverso per la salumeria). "
+        + "Il file si sceglie dal computer ed è conservato a parte: non compare nella libreria delle promozioni e non viene cancellato quando le promozioni scadono. Quando nessuno schermo lo usa più, sparisce dal server e dai player.",
     }, riserva);
     const riga = crea("div", { classe: "riga" }, riserva);
-    const perTotem = campo("Per tutti i totem", sceltaRiserva("verticale", ""), riga);
-    const perMonitor = campo("Per tutti i monitor", sceltaRiserva("orizzontale", ""), riga);
+    // Il menu parte da quello che hanno già gli schermi: se è lo stesso per tutti, quello;
+    // se sono diversi, «lasciali così», e «Applica a tutti» non li tocca.
+    const INVARIATO = "__invariato";
+    const comune = (orientamento) => {
+      const valori = new Set(monitor.filter((m) => (m.orientamento === "verticale") === (orientamento === "verticale")).map((m) => m.immagine_riserva || ""));
+      return valori.size === 1 ? [...valori][0] : INVARIATO;
+    };
+    const perGruppo = (orientamento) => {
+      const iniziale = comune(orientamento);
+      const menu = sceltaRiserva(orientamento, iniziale === INVARIATO ? "" : iniziale);
+      if (iniziale === INVARIATO) {
+        menu.prepend(crea("option", { value: INVARIATO, testo: "— diversi da schermo a schermo: lasciali così —" }));
+        menu.value = INVARIATO;
+      }
+      return menu;
+    };
+    const perTotem = campo("Per tutti i totem", perGruppo("verticale"), riga);
+    const perMonitor = campo("Per tutti i monitor", perGruppo("orizzontale"), riga);
     crea("button", {
       classe: "primario", testo: "Applica a tutti",
-      "data-aiuto": "Imposta la riserva scelta su tutti i totem e su tutti i monitor del cliente.",
+      "data-aiuto": "Imposta il default scelto su tutti i totem e su tutti i monitor del cliente, sostituendo quello scelto per ognuno nell'elenco. Con «lasciali così» quel gruppo non cambia.",
       onclick: () => prova(async () => {
         for (const m of monitor) {
           const valore = m.orientamento === "verticale" ? perTotem.value : perMonitor.value;
+          if (valore === INVARIATO) continue;
           await api("PATCH", `/api/monitor/${m.id}/`, { immagine_riserva: valore || null });
         }
-      }, "Riserva impostata: gli schermi la ricevono entro un minuto."),
+      }, "Default impostato: gli schermi lo ricevono entro un minuto."),
     }, riga);
   }
 
   const tutti = sezione("Schermi");
   if (!monitor.length) crea("p", { classe: "vuoto", testo: "Nessuno schermo abbinato." }, tutti);
-  const corpo = tabella(["Anteprima", "Nome", "Sede", "Stato", "In onda", "Gruppi", "Orientamento", "Rotazione", "Layout", "Totem: code e stampante", "Se non c'è nulla in onda", ""], tutti);
+  const corpo = tabella(["Anteprima", "Nome", "Sede", "Stato", "In onda", "Gruppi", "Orientamento", "Rotazione", "Layout", "Totem: code e stampante", "Default (se non c'è nulla in onda)", ""], tutti);
   for (const m of monitor) {
     const riga = crea("tr", {}, corpo);
     const schermo = schermoInMiniatura(m, crea("td", { classe: "cella-schermo" }, riga));
@@ -344,7 +363,7 @@ async function schedaMonitor() {
     api("GET", `/api/anteprima/${m.id}/`).then(({ sequenza, riserva, aggiornato }) => {
       const tipoRiserva = riserve.find((c) => c.id === riserva)?.tipo || "immagine";
       schermo.primo(sequenza[0] || (riserva ? { tipo: tipoRiserva, contenuto: riserva } : null));
-      inOnda.textContent = sequenza.length ? `${sequenza.length} contenut${sequenza.length === 1 ? "o" : "i"}` : riserva ? (tipoRiserva === "video" ? "Video di riserva" : "Immagine di riserva") : "Niente";
+      inOnda.textContent = sequenza.length ? `${sequenza.length} contenut${sequenza.length === 1 ? "o" : "i"}` : riserva ? (tipoRiserva === "video" ? "Video di default" : "Immagine di default") : "Niente";
       if (!sequenza.length && !riserva) {
         inOnda.className = "attenzione";
         inOnda.title = "Nessuna pubblicazione valida adesso per questo schermo o per i suoi gruppi.";
@@ -1145,7 +1164,9 @@ async function avvia() {
   osservaAiuti(contenuto, () => stato.scheda);
   const richiesta = location.hash.slice(1);
   const visibile = VOCI.some((v) => v.chiave === richiesta && SCHEDE[richiesta] && v.visibile(stato.io));
-  await mostra(visibile ? richiesta : stato.io.ruolo === "admin_assoluto" && !stato.cliente ? "clienti" : "monitor");
+  // Senza una scheda nell'indirizzo: la pagina iniziale dell'utente (Profilo, o quella del ruolo).
+  const iniziale = VOCI.some((v) => v.chiave === stato.io.apertura && SCHEDE[v.chiave] && v.visibile(stato.io)) ? stato.io.apertura : null;
+  await mostra(visibile ? richiesta : iniziale || (stato.io.ruolo === "admin_assoluto" && !stato.cliente ? "clienti" : "monitor"));
 }
 
 avvia().catch((errore) => avvisa(errore.message));

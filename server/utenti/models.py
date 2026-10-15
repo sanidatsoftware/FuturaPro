@@ -35,6 +35,18 @@ class Utente(AbstractUser):
     tema = models.CharField(
         max_length=6, choices=[("auto", "Automatico"), ("chiaro", "Chiaro"), ("scuro", "Scuro")], default="auto"
     )
+    # La pagina che si apre dopo l'accesso (una voce del menu); vuota: quella del ruolo.
+    pagina_iniziale = models.CharField(max_length=30, blank=True)
+
+    @property
+    def apertura(self) -> str:
+        """La voce del menu da aprire dopo l'accesso: la scelta nel Profilo, o quella del ruolo.
+        SystemAdministrator e Administrator: «Distribuzione contenuti», il colpo d'occhio su
+        schermi, download e cosa va in onda; Tecnico: «Stato e allarmi»; User: la Creazione
+        palinsesto, dove lavora."""
+        if self.pagina_iniziale:
+            return self.pagina_iniziale
+        return {Ruolo.TECNICO: "stato", Ruolo.USER_CLIENTE: "palinsesto"}.get(self.ruolo, "distribuzione")
 
     class Meta:
         constraints = [

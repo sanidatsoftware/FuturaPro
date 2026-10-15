@@ -1,3 +1,5 @@
+import re
+
 from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth import password_validation
 from django.core.exceptions import ValidationError as ErroreDjango
@@ -86,6 +88,8 @@ class IoView(APIView):
                 "first_name": utente.first_name,
                 "last_name": utente.last_name,
                 "email": utente.email,
+                "pagina_iniziale": utente.pagina_iniziale,
+                "apertura": utente.apertura,
             }
         )
 
@@ -100,6 +104,12 @@ class IoView(APIView):
                 raise ValidationError({"tema": "Scegli auto, chiaro o scuro."})
             utente.tema = dati["tema"]
             campi.append("tema")
+        if "pagina_iniziale" in dati:
+            pagina = str(dati["pagina_iniziale"] or "")
+            if pagina and not re.fullmatch(r"[a-z_]{1,30}", pagina):
+                raise ValidationError({"pagina_iniziale": "Pagina non valida."})
+            utente.pagina_iniziale = pagina
+            campi.append("pagina_iniziale")
         for campo, massimo in (("first_name", 150), ("last_name", 150)):
             if campo in dati:
                 setattr(utente, campo, str(dati[campo] or "").strip()[:massimo])

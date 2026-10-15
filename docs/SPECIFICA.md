@@ -58,6 +58,11 @@ email e password nella scheda «Profilo» (menu Impostazioni, o clic sul proprio
 `PATCH /api/io/`). Nome utente e password chiedono la password attuale; la password nuova ha almeno
 10 caratteri e passa i controlli di Django; si resta collegati. I cambi finiscono nel registro.
 
+**Pagina iniziale.** Dopo l'accesso si apre la pagina scelta nel Profilo («Pagina iniziale»,
+`Utente.pagina_iniziale`), oppure quella consigliata per il ruolo: SystemAdministrator e
+Administrator «Distribuzione contenuti» (il SystemAdministrator nella vista di tutte le aziende),
+Tecnico «Stato e allarmi», User «Creazione palinsesto». Un indirizzo con `next` vale su tutto.
+
 **Abilitazioni** (per cliente, le imposta solo il SystemAdministrator): numero massimo di
 monitor e di utenti, spazio disponibile, se l'Administrator può gestire gli utenti, se può
 abbinare/modificare/rimuovere i monitor. Si estenderanno con le funzioni (widget, video
@@ -181,7 +186,12 @@ al passaggio del mouse (`data-aiuto`, `pannello/static/pannello/aiuto.js`).
   delle playlist fatte a mano (anche quelle fisse delle zone slide) e dei layout.
 - **Cartelle.** Si trascina o si sceglie un'intera cartella: i file vengono caricati tre alla
   volta e viene proposta una promozione con il nome della cartella (si sceglie la campagna).
-- **Riserva dello schermo** (campo `immagine_riserva` del monitor, scheda Monitor): quando non
+- **Immagine o video di default dello schermo** (nel pannello «default»; campo `immagine_riserva`
+  del monitor, scheda Anagrafica Dispositivi Video). Si sceglie in due punti: il riquadro
+  «Immagini o video di default» lo imposta in un colpo solo su tutti i totem e/o tutti i monitor
+  («Applica a tutti»; se gli schermi ne hanno di diversi il menu propone «lasciali così» e quel
+  gruppo non cambia), la colonna «Default (se non c'è nulla in onda)» dell'elenco lo cambia per un
+  singolo schermo. Quando non
   c'è nessuna promozione in onda le slide mostrano questa immagine o questo video (es. il logo o
   uno spot istituzionale; il video ricomincia da capo) invece del nero. Si carica dal computer
   (`POST /api/contenuti/` con `uso=riserva`) ed è conservata a parte: non compare nella

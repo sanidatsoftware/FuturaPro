@@ -47,6 +47,11 @@ class Accesso(LoginView):
             self.redirect_authenticated_user = False
         return super().dispatch(request, *args, **kwargs)
 
+    def get_default_redirect_url(self):
+        """Senza «next»: la pagina iniziale dell'utente (scelta nel Profilo, o quella del ruolo)."""
+        apertura = self.request.user.apertura
+        return "/palinsesto/" if apertura == "palinsesto" else f"/pannello/#{apertura}"
+
     def get_context_data(self, **kwargs):
         dati = super().get_context_data(**kwargs)
         aspetto = Aspetto.attuale()

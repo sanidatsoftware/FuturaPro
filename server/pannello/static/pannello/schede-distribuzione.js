@@ -164,7 +164,7 @@ function tesseraSchermo(s, cliente, genitore) {
     const r = H.crea("div", { classe: "in-onda", "data-aiuto": "In onda adesso: contenuto, promozione e campagna (e da che ora)." }, corpo);
     const punto = H.crea("span", { classe: "punto" }, r);
     if (v.colore) punto.style.background = v.colore;
-    H.crea("span", { classe: "nome", testo: v.evento ? `⚡ ${v.evento}: ${v.nome}` : v.riserva ? `Riserva: ${v.nome}` : v.nome }, r);
+    H.crea("span", { classe: "nome", testo: v.evento ? `⚡ ${v.evento}: ${v.nome}` : v.riserva ? `Default: ${v.nome}` : v.nome }, r);
     if (v.promozione) H.crea("span", { classe: "tenue", testo: `${v.promozione}${v.campagna ? ` · ${v.campagna}` : ""}` }, r);
     if (v.da) H.crea("span", { classe: "tenue", testo: `dalle ${ora(v.da)}` }, r);
   }
