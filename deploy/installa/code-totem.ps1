@@ -1,4 +1,4 @@
-<#
+﻿<#
   FuturaPro - servizio code del totem.
 
   Tiene le code dei reparti del negozio: assegna i numeri dei biglietti, riceve
@@ -43,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.5"
+$Versione = "1.6"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -425,8 +425,9 @@ $copiaFonte = {
             $segreta = ConvertTo-SecureString $password -AsPlainText -Force
             $parametri.Credential = New-Object System.Management.Automation.PSCredential($utente, $segreta)
         }
-        New-PSDrive @parametri | Out-Null
+        try { New-PSDrive @parametri | Out-Null } catch { throw "Cartella condivisa $condivisione non raggiungibile o credenziali errate: $($_.Exception.Message)" }
         $sorgente = "$($nome):\$file"
+        if (-not (Test-Path -LiteralPath $sorgente)) { throw "Cartella raggiunta, ma il file non c'è: controlla percorso e nome del file ($file)." }
         $info = Get-Item -LiteralPath $sorgente -ErrorAction Stop
         $firma = "$($info.Length)|$($info.LastWriteTimeUtc.Ticks)"
         $wal = "$sorgente-wal"
@@ -449,7 +450,8 @@ $copiaFonte = {
             $esito.firma = $firma
         }
     } catch {
-        $esito.errore = $_.Exception.Message
+        # Nei messaggi di Windows compare l'unità temporanea (es. «FP1a2b3c4d:»): si mostra la cartella vera.
+        $esito.errore = $_.Exception.Message.Replace("$($nome):", $condivisione)
     } finally {
         Remove-PSDrive -Name $nome -Force -ErrorAction SilentlyContinue
     }
@@ -567,7 +569,7 @@ $provaFonte = {
         $peso = if ($info.Length -ge 1MB) { "$([Math]::Round($info.Length / 1MB, 1)) MB" } else { "$([Math]::Ceiling($info.Length / 1KB)) KB" }
         return @{ ok = $true; messaggio = "Accesso riuscito: file di $peso, modificato il $($info.LastWriteTime.ToString('dd/MM/yyyy HH:mm'))." }
     } catch {
-        return @{ ok = $false; messaggio = $_.Exception.Message }
+        return @{ ok = $false; messaggio = $_.Exception.Message.Replace("$($nome):", $condivisione) }
     } finally {
         Remove-PSDrive -Name $nome -Force -ErrorAction SilentlyContinue
     }

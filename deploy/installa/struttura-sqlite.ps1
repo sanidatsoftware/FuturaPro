@@ -1,4 +1,4 @@
-<#
+﻿<#
   FuturaPro - riassunto di un file SQLite (.db) di un gestionale.
 
   Scrive in un file di testo la struttura (tabelle, colonne, indici, numero di righe) e qualche

@@ -679,7 +679,7 @@ Li abilita il SystemAdministrator per l'azienda (`Abilitazioni.plugin_prezzo`,
 
 **Dove stanno i dati.** In un file SQLite su un PC del negozio, in una cartella condivisa
 (`\\indirizzo\condivisione\…\file.db`, con utente e password). Il server centrale non lo vede:
-lo copia il **servizio code del Totem Master** (`code-totem.ps1` 1.5), ogni N minuti e solo se è
+lo copia il **servizio code del Totem Master** (`code-totem.ps1` 1.6), ogni N minuti e solo se è
 cambiato (dimensione e data, anche del `-wal`), in un processo a parte per non fermare le code;
 dopo la copia un `PRAGMA quick_check`: se il file era in scrittura e la copia non è integra, la si
 scarta, resta la precedente e si riprova dopo 2 minuti. Perché non leggerlo direttamente dalla
