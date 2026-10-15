@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, time, timedelta
 
 from django.core.files.storage import default_storage
@@ -24,7 +25,7 @@ from . import schermate, stampanti, ticket
 from .models import (
     acceso_secondo_orario, orario_del_monitor,
     CredenzialeDispositivo, EventoSchermo, GruppoMonitor, ImpostazioniAllarmi, ImpostazioniDownload, Monitor, OrarioSchermi, Piattaforma,
-    LayoutTicket, PresenzaSchermo, RichiestaAbbinamento, StampanteTicket, impronta,
+    LayoutTicket, PresenzaSchermo, RichiestaAbbinamento, SegnalePostazione, StampanteTicket, impronta,
 )
 
 
@@ -784,6 +785,27 @@ class ProvaPluginPlayerView(VistaPlayer):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class ThrottlePostazione(AnonRateThrottle):
+    scope = "postazione"
+
+
+class PostazioneView(APIView):
+    """Il guardiano dello script di Windows chiede da quanti secondi la sua postazione tace.
+    Il codice è un segreto casuale della postazione; 404 se non ha mai mandato un segnale."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ThrottlePostazione]
+
+    def get(self, request, codice):
+        if not re.fullmatch(r"[0-9a-f]{32}", codice):
+            raise exceptions.NotFound()
+        segnale = SegnalePostazione.objects.filter(impronta=impronta(codice)).first()
+        if segnale is None:
+            raise exceptions.NotFound()
+        return Response({"secondi": int((timezone.now() - segnale.ultimo).total_seconds())})
+
+
 class ThrottleAbbinamento(AnonRateThrottle):
     scope = "abbinamento"
 
@@ -882,6 +904,10 @@ class HeartbeatView(VistaPlayer):
                 info["in_onda"] = in_onda
             monitor.info_dispositivo = info
             monitor.save(update_fields=["ultimo_contatto", "versione_player", "manifest_ricevuto", "info_dispositivo"])
+        # Il segnale della postazione, per il guardiano dello script di Windows (vedi SegnalePostazione).
+        postazione = str(request.data.get("postazione") or "")
+        if re.fullmatch(r"[0-9a-f]{32}", postazione):
+            SegnalePostazione.objects.update_or_create(impronta=impronta(postazione), defaults={"ultimo": adesso})
         # La versione attuale del player: se il player ne ha un'altra, si aggiorna da solo.
         from player.versione import versione
 

@@ -18,6 +18,13 @@ const avviso = document.getElementById("avviso");
 const impostazioni = document.body.dataset;
 // La versione del player, calcolata dal server dal contenuto dei file (player/versione.py).
 const VERSIONE = impostazioni.versione || "web-sconosciuta";
+// Il codice della postazione (il PC), che lo script di Windows mette nell'indirizzo: va col
+// segnale periodico, e il guardiano dello script chiede al server se il player è vivo.
+const POSTAZIONE = (() => {
+  const daIndirizzo = new URLSearchParams(location.search).get("postazione");
+  if (daIndirizzo && /^[0-9a-f]{32}$/.test(daIndirizzo)) memoria("futurapro.postazione", daIndirizzo);
+  return memoria("futurapro.postazione") || "";
+})();
 
 function memoria(chiave, valore) {
   try {
@@ -483,6 +490,9 @@ async function abbina() {
 }
 
 async function avviaPlayer() {
+  // La cache dei file deve restare anche se il disco si riempie: altrimenti il browser potrebbe
+  // svuotarla da solo, e a server spento lo schermo non avrebbe più le immagini da mostrare.
+  navigator.storage?.persist?.().catch(() => {});
   // Già abbinato e con un manifest salvato: si parte subito, anche senza server.
   // Se nel frattempo il monitor è stato rimosso, il primo aggiornamento lo scopre.
   const salvato = memoria("futurapro.manifest");
@@ -620,7 +630,7 @@ async function avviaPlayer() {
     fetch("/api/player/heartbeat/", {
       method: "POST",
       headers: { ...intestazioni, "Content-Type": "application/json" },
-      body: JSON.stringify({ versione: VERSIONE, manifest: mostrato?.versione || "", problema: motore.problema || null, riposo: motore.inRiposo, attesa_download: Boolean(inAttesa?.fascia), plugin,
+      body: JSON.stringify({ versione: VERSIONE, postazione: POSTAZIONE, manifest: mostrato?.versione || "", problema: motore.problema || null, riposo: motore.inRiposo, attesa_download: Boolean(inAttesa?.fascia), plugin,
         distribuzione: riassuntoAvanzamento(), in_onda: Object.entries(motore.inOnda).map(([zona, voce]) => ({ zona, ...voce })) }),
     })
       .then((risposta) => (risposta.ok && risposta.status !== 204 ? risposta.json() : null))

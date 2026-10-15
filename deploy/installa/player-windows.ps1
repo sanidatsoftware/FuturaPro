@@ -9,7 +9,9 @@
     1. se il server usa il certificato interno, lo installa tra quelli attendibili
        (dopo che hai confrontato l'impronta con quella mostrata dal server);
     2. avvia Chrome (o Edge) a schermo intero sul player, con un profilo dedicato,
-       all'accesso dell'utente indicato, e lo riapre se viene chiuso;
+       all'accesso dell'utente indicato, e lo riapre se viene chiuso; un guardiano chiede
+       al server se il player si fa sentire e, se la pagina si è bloccata o è andata in
+       crash («Uffa!»), chiude e riapre il browser (a server spento non fa nulla);
     3. sul totem abilita la stampa senza finestre (--kiosk-printing);
     4. impedisce lo spegnimento dello schermo e la sospensione.
 
@@ -242,8 +244,19 @@ if ($Tipo -eq "monitor") {
 
 # --- 3. Avvio del browser a schermo intero ------------------------------------------------------
 New-Item -ItemType Directory -Force -Path $Cartella, $Profilo | Out-Null
+# Il codice casuale di questa postazione (resta lo stesso se si reinstalla): il player lo manda
+# con il segnale periodico e il guardiano lo usa per chiedere al server se il player è vivo.
+$postazione = $null
+if (Test-Path $Impostazioni) {
+    try { $postazione = (Get-Content $Impostazioni -Raw | ConvertFrom-Json).postazione } catch { $postazione = $null }
+}
+if ($postazione -notmatch '^[0-9a-f]{32}$') {
+    $byte = New-Object byte[] 16
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($byte)
+    $postazione = -join ($byte | ForEach-Object { $_.ToString("x2") })
+}
 $argomenti = @(
-    "--kiosk", "https://$Server/player/",
+    "--kiosk", "https://$Server/player/?postazione=$postazione",
     "--user-data-dir=`"$Profilo`"",
     "--no-first-run", "--no-default-browser-check", "--disable-session-crashed-bubble",
     "--noerrdialogs", "--disable-translate", "--disable-features=Translate",
@@ -254,27 +267,62 @@ if ($browser -like "*msedge.exe") { $argomenti += "--edge-kiosk-type=fullscreen"
 # Sul totem i biglietti escono senza finestra di stampa, sulla stampante predefinita di Windows.
 if ($Tipo -eq "totem") { $argomenti += "--kiosk-printing" }
 
-@{ server = $Server; tipo = $Tipo; browser = $browser; argomenti = $argomenti } |
+@{ server = $Server; tipo = $Tipo; browser = $browser; argomenti = $argomenti; postazione = $postazione } |
     ConvertTo-Json | Set-Content -Path $Impostazioni -Encoding UTF8
 
-# Il "guardiano": avvia il browser e lo riapre se si chiude o si blocca.
+# Il "guardiano": avvia il browser, lo riapre se si chiude, e lo riavvia se la pagina del player
+# è bloccata o andata in crash. Per saperlo chiede al server da quanti secondi il player di questa
+# postazione non manda il segnale periodico: se il server risponde e il player tace da più di
+# 5 minuti, chiude il browser (il giro dopo lo riapre). Se il server non risponde non fa nulla:
+# il player continua da solo con i contenuti già scaricati.
 @'
 $ErrorActionPreference = "Continue"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $cartella = Split-Path -Parent $MyInvocation.MyCommand.Path
 $impostazioni = Get-Content (Join-Path $cartella "impostazioni.json") -Raw | ConvertFrom-Json
 $profilo = Join-Path $cartella "profilo"
+$registro = Join-Path $cartella "guardiano.log"
+$silenzioMassimo = 300      # secondi senza segnale prima di riavviare il browser
+$ogniControllo = 120        # secondi tra un controllo e l'altro
+$pausaDopoAvvio = 600       # dopo un avvio si lascia al player il tempo di ripartire
+function Annota([string]$testo) {
+    try {
+        if ((Test-Path $registro) -and (Get-Item $registro).Length -gt 1MB) { Remove-Item $registro -Force }
+        Add-Content -Path $registro -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $testo"
+    } catch {}
+}
+function Processi-Browser {
+    Get-CimInstance Win32_Process -Filter "Name='chrome.exe' OR Name='msedge.exe'" |
+        Where-Object { $_.CommandLine -like "*$profilo*" }
+}
 Start-Sleep -Seconds 10   # rete e desktop pronti
+$avviatoIl = Get-Date
+$ultimoControllo = Get-Date
 while ($true) {
-    $inCorso = Get-CimInstance Win32_Process -Filter "Name='chrome.exe' OR Name='msedge.exe'" |
-        Where-Object { $_.CommandLine -like "*$profilo*" -and $_.CommandLine -notlike "*--type=*" } |
-        Select-Object -First 1
-    if ($inCorso) {
-        Wait-Process -Id $inCorso.ProcessId -ErrorAction SilentlyContinue
-    } else {
+    $principale = Processi-Browser | Where-Object { $_.CommandLine -notlike "*--type=*" } | Select-Object -First 1
+    if (-not $principale) {
         Start-Process -FilePath $impostazioni.browser -ArgumentList $impostazioni.argomenti | Out-Null
+        $avviatoIl = Get-Date
+        Annota "browser avviato"
         Start-Sleep -Seconds 15
+        continue
     }
-    Start-Sleep -Seconds 5
+    if ($impostazioni.postazione -and ((Get-Date) - $ultimoControllo).TotalSeconds -ge $ogniControllo -and ((Get-Date) - $avviatoIl).TotalSeconds -ge $pausaDopoAvvio) {
+        $ultimoControllo = Get-Date
+        try {
+            $stato = Invoke-RestMethod -Uri "https://$($impostazioni.server)/api/player/postazione/$($impostazioni.postazione)/" -TimeoutSec 15 -UseBasicParsing
+            if ([int]$stato.secondi -gt $silenzioMassimo) {
+                Annota "il player tace da $($stato.secondi) secondi: riavvio del browser"
+                Processi-Browser | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+                Start-Sleep -Seconds 5
+                continue
+            }
+        } catch {
+            # 404: il player non si è ancora abbinato; altri errori: server o rete non raggiungibili.
+            # In entrambi i casi non si tocca nulla.
+        }
+    }
+    Start-Sleep -Seconds 10
 }
 '@ | Set-Content -Path (Join-Path $Cartella "avvia.ps1") -Encoding UTF8
 
@@ -306,13 +354,14 @@ if ($Utente -eq $env:USERNAME) {
 Scrivi "`nUltimi passi:" "Yellow"
 Write-Host "  1. Nel pannello (https://$Server/pannello/) vai in Hardware -> Anagrafica Dispositivi Video -> Abbina uno schermo e inserisci il codice mostrato."
 if ($Tipo -eq "totem") {
-    Write-Host "     Poi in Sedi e gruppi scrivi $IndirizzoTotem come «Totem delle code» della sede del negozio."
+    Write-Host "     Poi in Impostazioni -> Sedi e gruppi scrivi $IndirizzoTotem come IP del Totem Master della sede,"
+    Write-Host "     e nella riga del totem (Anagrafica Dispositivi Video) spunta 'Totem Master (server code)' e scegli la stampante."
 }
 Write-Host "  2. Accesso automatico di Windows: premi Win+R, scrivi netplwiz, togli la spunta"
 Write-Host "     'Per utilizzare questo computer è necessario che l'utente immetta il nome utente e la password'."
 if ($Tipo -eq "totem") {
     Write-Host "  3. Stampante dei biglietti: installa il driver della stampante (per Epson TM: 'Advanced Printer Driver')"
-    Write-Host "     e impostala come predefinita; nel layout del totem scegli 'Stampante di sistema'."
+    Write-Host "     e impostala come predefinita; in Hardware -> Anagrafica Stampanti Ticket aggiungila e abbinala al totem."
     Write-Host "     Per una Epson di rete con ePOS in HTTPS rilancia lo script con -Configura per accettarne il certificato."
 }
 Write-Host "  Per uscire dal player: Ctrl+Alt+Canc -> Esci (o Gestione attività). Per toglierlo: -Rimuovi."

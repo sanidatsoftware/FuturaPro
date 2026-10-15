@@ -102,7 +102,11 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 100,
-    "DEFAULT_THROTTLE_RATES": {"abbinamento": _env("THROTTLE_ABBINAMENTO", "120/hour"), "biglietto": "40/min"},
+    "DEFAULT_THROTTLE_RATES": {
+        "abbinamento": _env("THROTTLE_ABBINAMENTO", "120/hour"), "biglietto": "40/min",
+        # Il guardiano di ogni postazione chiede ogni 2 minuti; i PC di un negozio escono con lo stesso IP.
+        "postazione": _env("THROTTLE_POSTAZIONE", "1200/hour"),
+    },
 }
 
 SESSION_COOKIE_HTTPONLY = True

@@ -327,3 +327,17 @@ class ImpostazioniDownload(ModelloCliente):
     class Meta:
         verbose_name_plural = "impostazioni download"
         constraints = [models.UniqueConstraint(fields=["cliente"], name="download_uno_per_cliente")]
+
+
+class SegnalePostazione(models.Model):
+    """L'ultimo segnale di una postazione (il PC con il player), per il guardiano di Windows.
+
+    Lo script di installazione dà a ogni postazione un codice casuale e lo passa al player
+    nell'indirizzo; il player lo manda con il segnale periodico. Il guardiano chiede ogni pochi
+    minuti quando è arrivato l'ultimo segnale: se il server risponde ma il player tace da troppo
+    (pagina bloccata o andata in crash), chiude e riapre il browser. Qui c'è solo l'impronta del
+    codice e l'ora: nessun dato dell'azienda, per questo la tabella non è sotto RLS.
+    """
+
+    impronta = models.CharField(max_length=64, primary_key=True)
+    ultimo = models.DateTimeField()

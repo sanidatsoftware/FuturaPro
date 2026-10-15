@@ -187,6 +187,15 @@ Lo script:
 - installa il certificato del server;
 - fa partire il browser a schermo intero sul player a ogni accesso, e lo riapre se si chiude;
 - disattiva sospensione e spegnimento dello schermo.
+- mette in funzione il **guardiano**: se la pagina del player si blocca o va in crash (la
+  schermata «Uffa!»), entro una decina di minuti chiude e riapre il browser. Lo capisce chiedendo
+  al server da quanto il player di quella postazione non manda il segnale periodico; **a server
+  spento non fa nulla** e il player continua da solo. Registro: `C:\FuturaPro\guardiano.log`.
+
+**Senza server centrale** monitor e totem continuano: mostrano il palinsesto e i file già
+scaricati, anche dopo un riavvio del PC, e seguono da soli le date delle promozioni (quando una
+finisce passano alla successiva già scaricata, o all'immagine di default). Le code continuano sul
+totem. Al ritorno del server ricevono le novità e inviano il registro di messa in onda.
 
 Sullo schermo compare un **codice di 6 cifre**. Nel pannello: **Hardware → Anagrafica Dispositivi
 Video → Abbina uno schermo** → codice, nome, sede, tipo *Monitor orizzontale*, gruppo «Tutti» →

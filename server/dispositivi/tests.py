@@ -400,3 +400,26 @@ class AggiornamentoPlayerTest(Base):
         self.assertEqual(next(s for s in stato["schermi"] if s["nome"] == "Ingresso")["versione"], "web-0.2")
         avvisi = self.client.get("/api/panoramica/").json()["avvisi"]
         self.assertTrue(any("versione precedente" in a["testo"] for a in avvisi))
+
+
+class GuardianoPostazioneTest(Base):
+    """Il guardiano dello script di Windows chiede da quanto tace il player della sua postazione."""
+
+    def test_segnale_della_postazione(self):
+        import secrets
+
+        from .models import CredenzialeDispositivo, SegnalePostazione, impronta
+
+        codice = secrets.token_hex(16)
+        self.assertEqual(self.client.get(f"/api/player/postazione/{codice}/").status_code, 404)  # mai sentito
+        self.assertEqual(self.client.get("/api/player/postazione/../x/").status_code, 404)
+        token = secrets.token_urlsafe(32)
+        with contesto_cliente(self.a.id):
+            CredenzialeDispositivo.objects.create(impronta_token=impronta(token), monitor=self.mon_a_milano, cliente_id=self.a.id)
+        self.client.post("/api/player/heartbeat/", {"versione": "web", "postazione": codice}, format="json", HTTP_AUTHORIZATION=f"Device {token}")
+        self.assertLess(self.client.get(f"/api/player/postazione/{codice}/").json()["secondi"], 5)
+        # Si conserva solo l'impronta del codice, non il codice.
+        self.assertFalse(SegnalePostazione.objects.filter(impronta=codice).exists())
+        # Un codice non valido nel segnale si ignora.
+        self.client.post("/api/player/heartbeat/", {"versione": "web", "postazione": "x' OR 1=1"}, format="json", HTTP_AUTHORIZATION=f"Device {token}")
+        self.assertEqual(SegnalePostazione.objects.count(), 1)

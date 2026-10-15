@@ -743,6 +743,23 @@ righe di esempio in un testo di pochi KB e cerca dei codici in tutte le colonne.
 
 ## 8. Player
 
+**Guardiano della postazione (Windows).** Lo script di installazione dà a ogni PC un codice
+casuale (`impostazioni.json`, resta uguale se si reinstalla) e lo passa al player nell'indirizzo
+(`/player/?postazione=…`, poi salvato nel browser); il player lo manda con il segnale periodico e
+il server ne conserva solo l'impronta e l'ora (`SegnalePostazione`, fuori dalla RLS perché non ha
+dati dell'azienda). Il guardiano (`C:\FuturaPro\avvia.ps1`) riapre il browser se si chiude e ogni
+2 minuti chiede `GET /api/player/postazione/<codice>/` (senza credenziali, con un limite di
+richieste): se il server risponde che il player tace da più di 5 minuti — pagina bloccata o in
+crash — chiude il browser, che riparte da solo; dopo un avvio aspetta 10 minuti prima di
+controllare di nuovo. Se il server non risponde, o la postazione non si è ancora abbinata (404),
+non fa nulla.
+
+**Senza server.** Il player conserva manifest (`localStorage`), file (Cache API, chiesta come
+persistente con `navigator.storage.persist()`) e pagina (service worker): a server spento, anche
+dopo un riavvio del PC, riparte con il palinsesto salvato e lo segue da solo con le sue regole di
+date e orari fino alla fine delle promozioni già scaricate, poi mostra il default. Meteo, notizie
+e listini usano l'ultimo dato ricevuto; le code restano sul Totem Master.
+
 **Versione e aggiornamento automatico.** La versione del player web si calcola da sola dal
 contenuto dei suoi file (`player/versione.py`: `web-<BASE>-<impronta>`, es. `web-1.5-3b4875b`):
 ogni modifica a pagina, motore, stili o service worker dà una versione nuova, senza numeri da
