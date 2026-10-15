@@ -225,6 +225,12 @@ La stampante non risponde? Il totem lo dice e mostra comunque il numero al clien
 > di codici a barre USB va impostato come tastiera, con Invio dopo il codice (è l'impostazione di
 > fabbrica di quasi tutti). Configurazione: pannello → **Plugin**; la colonna «Ultima copia»
 > dice se il totem riesce a leggere il file.
+>
+> **File di un gestionale nuovo, troppo grande da spedire?** Lo script `struttura-sqlite.ps1`
+> (sul server: `http://SERVER/installa/struttura-sqlite.ps1`) scrive in un file di testo di pochi
+> KB tabelle, colonne, numero di righe e qualche riga di esempio, e con `-Codici` cerca dei codici
+> (es. di etichette della bilancia) in tutte le colonne. Apre il file in sola lettura e non serve
+> installare nulla.
 
 > **Dove si configura.** Pannello → **Impostazioni · Layout Ticket**: componi il biglietto (logo,
 > intestazione, reparto, numero, testo di fine biglietto, caratteri e grandezze). Poi
