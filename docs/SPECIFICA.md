@@ -747,7 +747,8 @@ righe di esempio in un testo di pochi KB e cerca dei codici in tutte le colonne.
 interno del server e di quello del Totem Master. Il pannello (in HTTPS, quindi già sicuro) mostra
 in Anagrafica Dispositivi Video i comandi pronti per negozio (`GET /api/installazione/`,
 `dispositivi/installazione.py`) con dentro le impronte: `-Impronta` (calcolata dal certificato di
-Caddy, che il container dell'app legge in sola lettura: `FUTURAPRO_CA_CERT`) e, per i monitor,
+Caddy, che l'app chiede a Caddy allo stesso indirizzo da cui lo scaricano i player,
+`FUTURAPRO_CA_URL`, perché la cartella di Caddy non le è leggibile) e, per i monitor,
 `-ImprontaTotem`, che il player del Totem Master calcola dal `certificato.cer` del suo servizio
 code e manda con il segnale periodico (`info_dispositivo.impronta_totem`). Lo script confronta da
 solo e si ferma se non coincidono; un certificato già presente tra quelli attendibili del PC

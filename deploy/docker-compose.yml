@@ -41,15 +41,15 @@ services:
       FUTURAPRO_EMAIL_MITTENTE: ${FP_EMAIL_MITTENTE:-}
       # Facoltativo: l'indirizzo pubblico per la coda sul telefono (es. https://coda.miodominio.it).
       FUTURAPRO_URL_PUBBLICO: ${FP_URL_PUBBLICO:-}
-      # Il certificato interno di Caddy (se c'è): il pannello ne mostra l'impronta nel comando
-      # di installazione dei player, che così la controlla da solo.
-      FUTURAPRO_CA_CERT: /dati/caddy/caddy/pki/authorities/local/root.crt
+      # Il certificato interno di Caddy (se c'è), letto dove lo scaricano i player: il pannello ne
+      # mostra l'impronta nel comando di installazione, che così la controlla da solo. (La cartella
+      # di Caddy non è leggibile dall'utente dell'app: per questo non si legge il file.)
+      FUTURAPRO_CA_URL: http://caddy/futurapro-ca.crt
       # L'indirizzo con cui monitor e totem raggiungono il server (per lo stesso comando).
       FUTURAPRO_INDIRIZZO: ${FP_INDIRIZZO}
     volumes:
       - media:/dati/media
       - static:/dati/static
-      - caddy_data:/dati/caddy:ro
 
   # I lavori periodici, ogni minuto: allarmi degli schermi scollegati e rapporti per email.
   pianificatore:

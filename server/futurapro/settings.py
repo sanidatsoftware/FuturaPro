@@ -141,6 +141,7 @@ if not EMAIL_HOST:
 # Il certificato interno del server (Caddy) e l'indirizzo per i player: servono al comando di
 # installazione mostrato nel pannello (vedi dispositivi.installazione).
 FUTURAPRO_CA_CERT = _env("CA_CERT", "")
+FUTURAPRO_CA_URL = _env("CA_URL", "")
 FUTURAPRO_INDIRIZZO = _env("INDIRIZZO", "")
 FUTURAPRO_URL_PUBBLICO = _env("URL_PUBBLICO", "")
 if FUTURAPRO_URL_PUBBLICO:

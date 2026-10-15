@@ -11,6 +11,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import re
+import time
+import urllib.request
 from pathlib import Path
 
 from django.conf import settings
@@ -18,14 +20,8 @@ from django.conf import settings
 IMPRONTA = re.compile(r"^[0-9A-F]{64}$")
 
 
-def impronta_certificato(percorso: str) -> str:
-    """SHA-256 del certificato (DER) in esadecimale maiuscolo, come la calcola lo script; "" se manca."""
-    if not percorso:
-        return ""
-    try:
-        testo = Path(percorso).read_text()
-    except OSError:
-        return ""
+def impronta_pem(testo: str) -> str:
+    """SHA-256 del certificato (DER) in esadecimale maiuscolo, come la calcola lo script; "" se non c'è."""
     corpo = re.search(r"-----BEGIN CERTIFICATE-----(.+?)-----END CERTIFICATE-----", testo, re.S)
     if not corpo:
         return ""
@@ -36,6 +32,39 @@ def impronta_certificato(percorso: str) -> str:
     return hashlib.sha256(der).hexdigest().upper()
 
 
+def impronta_certificato(percorso: str) -> str:
+    if not percorso:
+        return ""
+    try:
+        return impronta_pem(Path(percorso).read_text())
+    except OSError:
+        return ""
+
+
+_letta = {"quando": 0.0, "impronta": ""}
+
+
+def impronta_server() -> str:
+    """L'impronta del certificato interno del server: dal file indicato, o chiedendola a Caddy
+    all'indirizzo da cui la scaricano i player (risposta tenuta 10 minuti). "" se non ce n'è uno."""
+    impronta = impronta_certificato(settings.FUTURAPRO_CA_CERT)
+    if impronta or not settings.FUTURAPRO_CA_URL:
+        return impronta
+    if time.monotonic() - _letta["quando"] < 600:
+        return _letta["impronta"]
+    impronta = ""
+    try:
+        richiesta = urllib.request.Request(settings.FUTURAPRO_CA_URL)
+        if settings.FUTURAPRO_INDIRIZZO:
+            richiesta.add_header("Host", settings.FUTURAPRO_INDIRIZZO)
+        with urllib.request.urlopen(richiesta, timeout=3) as risposta:
+            impronta = impronta_pem(risposta.read(100_000).decode("ascii", "ignore"))
+    except (OSError, ValueError):
+        impronta = ""
+    _letta.update(quando=time.monotonic(), impronta=impronta)
+    return impronta
+
+
 def indirizzo_server(request) -> str:
     return settings.FUTURAPRO_INDIRIZZO or request.get_host().split(":")[0]
 
@@ -43,7 +72,7 @@ def indirizzo_server(request) -> str:
 def comandi(request, sedi, monitor) -> dict:
     """Server, impronta e, per ogni sede, il comando del totem e quello dei monitor."""
     server = indirizzo_server(request)
-    impronta = impronta_certificato(settings.FUTURAPRO_CA_CERT)
+    impronta = impronta_server()
     base = (f"irm http://{server}/installa/player-windows.ps1 -OutFile $env:TEMP\\futurapro.ps1; "
             f"powershell -ExecutionPolicy Bypass -File $env:TEMP\\futurapro.ps1 -Server {server}")
     if impronta:

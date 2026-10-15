@@ -1082,6 +1082,7 @@ async function sezioneInstallazione() {
     classe: "nota",
     testo: "Sul PC di Windows apri PowerShell come amministratore e incolla il comando, una volta sola. Prima il totem, poi i monitor. "
       + "Le impronte dei certificati sono già nel comando: lo script le controlla da solo e si ferma solo se non coincidono (in quel caso ricopia il comando da qui). "
+      + "I comandi sono per negozio, non per schermo: lo stesso comando «Monitor» va bene per tutti i monitor del negozio (l'IP del PC non serve, lo script gira sul PC stesso). "
       + "Rilanciarlo su un PC già installato è sicuro: l'abbinamento resta.",
   }, dettagli);
   const riga = crea("div", { classe: "riga" }, dettagli);

@@ -469,3 +469,46 @@ class InstallazioneTest(Base):
             self.assertEqual(self.client.get("/api/installazione/").status_code, 403)
         finally:
             shutil.rmtree(cartella, ignore_errors=True)
+
+
+class ImprontaDaCaddyTest(Base):
+    """In produzione il file di Caddy non è leggibile dall'app: l'impronta si legge via HTTP."""
+
+    def test_impronta_letta_dall_indirizzo(self):
+        import http.server
+        import subprocess
+        import tempfile
+        import threading
+
+        from django.test import override_settings
+
+        from . import installazione
+
+        cartella = tempfile.mkdtemp()
+        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", f"{cartella}/k.pem",
+                        "-out", f"{cartella}/ca.crt", "-days", "2", "-subj", "/CN=prova"], check=True, capture_output=True)
+        attesa = installazione.impronta_certificato(f"{cartella}/ca.crt")
+        pem = open(f"{cartella}/ca.crt", "rb").read()
+        host_ricevuti = []
+
+        class Gestore(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                host_ricevuti.append(self.headers.get("Host"))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(pem)
+
+            def log_message(self, *a):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Gestore)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            installazione._letta.update(quando=0.0, impronta="")
+            with override_settings(FUTURAPRO_CA_CERT="", FUTURAPRO_CA_URL=f"http://127.0.0.1:{server.server_port}/futurapro-ca.crt",
+                                   FUTURAPRO_INDIRIZZO="192.168.1.67"):
+                self.assertEqual(installazione.impronta_server(), attesa)
+            self.assertEqual(host_ricevuti, ["192.168.1.67"])
+        finally:
+            server.shutdown()
+            installazione._letta.update(quando=0.0, impronta="")
