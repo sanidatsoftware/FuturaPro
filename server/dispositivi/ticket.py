@@ -1,6 +1,7 @@
 """Il layout del biglietto stampato (``LayoutTicket``): elementi, controlli, logo.
 
-Gli elementi sono in colonna, dall'alto in basso, come esce la carta. I testi fissi
+Con la disposizione «guidata» gli elementi sono in colonna, dall'alto in basso, come esce la
+carta; con quella «libera» ognuno ha il suo riquadro (x, y e larghezza w, in punti). I testi fissi
 (intestazione, fine biglietto, testi liberi) stanno nel layout; reparto, numero, persone in
 coda, data e QR li mette il totem al momento della stampa. Le grandezze sono in punti della
 stampante (203 dpi: 8 punti per millimetro).
@@ -106,6 +107,9 @@ def valida_elementi(valore) -> list:
             "testo": str(grezzo.get("testo") or "")[:300] if campo in CON_TESTO else "",
             "formato": grezzo.get("formato") if grezzo.get("formato") in FORMATI_DATA else "data_ora",
         })
+        # Il riquadro della disposizione libera (punti dall'angolo in alto a sinistra).
+        if all(k in grezzo for k in ("x", "y", "w")):
+            puliti[-1].update(x=numero("x", 0, 1000, 8), y=numero("y", 0, 6000, 0), w=numero("w", 16, 1000, 560))
     return puliti
 
 
@@ -143,5 +147,5 @@ def per_il_player(layout, punti: int | None = None) -> dict | None:
         return None
     return {
         "id": str(layout.id), "nome": layout.nome, "punti": punti or PUNTI.get(layout.carta, 576), "carta": layout.carta,
-        "elementi": layout.elementi, "logo": f"data:image/png;base64,{layout.logo}" if layout.logo else "",
+        "disposizione": layout.disposizione, "elementi": layout.elementi, "logo": f"data:image/png;base64,{layout.logo}" if layout.logo else "",
     }

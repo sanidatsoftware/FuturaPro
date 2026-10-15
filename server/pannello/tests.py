@@ -71,6 +71,37 @@ class AspettoTest(Base):
 
         self.assertEqual(LOGO_MAX, 3 * 1024 * 1024)
 
+    # L'icona (barra del pannello e scheda del browser) è distinta dal logo della pagina di accesso.
+    def test_icona_ico_o_png(self):
+        from PIL import Image
+
+        self.come(self.assoluto)
+        ico = io.BytesIO()
+        Image.new("RGBA", (32, 32), (0, 120, 255, 255)).save(ico, "ICO")
+        r = self.client.patch("/api/piattaforma/aspetto/", {"icona": SimpleUploadedFile("favicon.ico", ico.getvalue())}, format="multipart")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()["ha_icona"])
+        risposta = self.client.get("/aspetto/icona/")
+        self.assertEqual(risposta["Content-Type"], "image/x-icon")
+        pannello = self.client.get("/pannello/")
+        self.assertContains(pannello, 'rel="icon" href="/aspetto/icona/')
+        self.assertContains(pannello, 'class="icona" src="/aspetto/icona/')
+        self.assertContains(self.client.get("/accesso/?anteprima=1"), 'rel="icon"')
+        # Un PNG va bene; un testo spacciato per icona no.
+        self.assertEqual(self.client.patch("/api/piattaforma/aspetto/", {"icona": png()}, format="multipart").status_code, 200)
+        svg = b'<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>'
+        self.assertEqual(self.client.patch("/api/piattaforma/aspetto/", {"icona": SimpleUploadedFile("i.svg", svg)}, format="multipart").status_code, 200)
+        risposta = self.client.get("/aspetto/icona/")
+        self.assertEqual(risposta["Content-Type"], "image/svg+xml")
+        self.assertIn("sandbox", risposta["Content-Security-Policy"])
+        for cattivo in (b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+                        b'<svg xmlns="http://www.w3.org/2000/svg"><image href="https://altrove.it/x.png"/></svg>'):
+            self.assertEqual(self.client.patch("/api/piattaforma/aspetto/", {"icona": SimpleUploadedFile("c.svg", cattivo)}, format="multipart").status_code, 400)
+        falso = SimpleUploadedFile("x.ico", b"<svg onload='alert(1)'/>")
+        self.assertEqual(self.client.patch("/api/piattaforma/aspetto/", {"icona": falso}, format="multipart").status_code, 400)
+        self.assertEqual(self.client.patch("/api/piattaforma/aspetto/", {"icona": None}, format="json").json()["ha_icona"], False)
+        self.assertEqual(self.client.get("/aspetto/icona/").status_code, 404)
+
     def test_solo_l_administrator_assoluto_cambia_l_aspetto(self):
         self.come(self.admin_a)
         self.assertEqual(self.client.patch("/api/piattaforma/aspetto/", {"nome_app": "X"}, format="json").status_code, 403)
@@ -143,3 +174,12 @@ class EmailAziendaTest(Base):
             self.assertEqual(self.client.post(f"/api/invii-rapporti/{r.json()['id']}/invia/").status_code, 200)
             self.come(self.user_a)
             self.assertEqual(self.client.post("/api/invii-rapporti/", {"tipo": "attese", "nome": "x", "email": ["a@b.it"]}, format="json").status_code, 403)
+
+
+class LogoBarraTest(Base):
+    def test_riquadro_del_logo_nella_barra_facoltativo(self):
+        self.come(self.assoluto)
+        self.assertNotContains(self.client.get("/pannello/"), "con-riquadro")
+        self.client.patch("/api/piattaforma/aspetto/", {"accesso": {"logo": {"riquadro_barra": True}}}, format="json")
+        self.assertContains(self.client.get("/pannello/"), "marchio con-riquadro")
+

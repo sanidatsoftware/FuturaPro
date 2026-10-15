@@ -1,4 +1,4 @@
-// Il biglietto stampato secondo il Layout Ticket: elementi in colonna (logo, intestazione,
+// Il biglietto stampato secondo il Layout Ticket: elementi in colonna o liberi (logo, intestazione,
 // reparto, numero, testo di fine biglietto…), ognuno con carattere, grandezza e allineamento.
 // Si disegna come immagine alla risoluzione della stampante (203 dpi, 8 punti per mm): esce
 // identico sulla Epson di rete (immagine raster ePOS-Print) e sulla stampante di sistema.
@@ -103,10 +103,14 @@ function retina(ctx, x, y, w, h) {
 }
 
 // Il canvas del biglietto. dati: reparto, numero, davanti, quando, qr (indirizzo), testo_qr.
+// Disposizione «guidata»: elementi in colonna, uno sotto l'altro, ognuno con il suo allineamento.
+// «libera»: ogni elemento nel suo riquadro (x, y e larghezza w, in punti), dove lo si è messo;
+// il testo va a capo dentro il riquadro e vi si allinea. Il biglietto è lungo quanto serve.
 export async function disegnaTicket(layout, dati) {
   const W = layout.punti || 576;
   const margine = 8;
   const utile = W - 2 * margine;
+  const libera = layout.disposizione === "libera";
   const misura = document.createElement("canvas").getContext("2d");
   const logo = layout.logo ? await immagine(layout.logo) : null;
   let qr = null;
@@ -121,34 +125,46 @@ export async function disegnaTicket(layout, dati) {
     }
   }
 
-  // Primo passo: i blocchi con la loro altezza.
+  // Primo passo: i blocchi con il loro riquadro (x, w; l'altezza h; y dopo).
   const blocchi = [];
   for (const [indice, el] of layout.elementi.entries()) {
     if (!el.visibile) continue;
-    const prima = blocchi.length;
+    // Il riquadro libero, tenuto dentro la carta.
+    const lx = libera ? Math.max(0, Math.min(W - 16, el.x ?? margine)) : 0;
+    const lw = libera ? Math.max(16, Math.min(W - lx, el.w ?? utile)) : 0;
+    const allinea = (w) => (el.allineamento === "sinistra" ? margine : el.allineamento === "destra" ? W - margine - w : Math.round((W - w) / 2));
+    let b = null;
     if (el.campo === "logo") {
       if (!logo) continue;
-      const w = Math.min(logo.width, Math.round((utile * el.larghezza) / 100));
-      blocchi.push({ el, tipo: "logo", w, h: Math.round((logo.height * w) / logo.width) });
+      const w = libera ? lw : Math.min(logo.width, Math.round((utile * el.larghezza) / 100));
+      b = { tipo: "logo", x: libera ? lx : allinea(w), w, h: Math.round((logo.height * w) / logo.width) };
     } else if (el.campo === "qr") {
       if (!qr) continue;
-      const lato = Math.round((utile * el.larghezza) / 100);
+      const lato = libera ? lw : Math.round((utile * el.larghezza) / 100);
       const sotto = dati.testo_qr ? Math.round(lato * 0.12) : 0;
-      blocchi.push({ el, tipo: "qr", w: lato, h: lato + (sotto ? sotto * 1.6 : 0), sotto });
+      b = { tipo: "qr", x: libera ? lx : allinea(lato), w: lato, h: lato + (sotto ? sotto * 1.6 : 0), sotto };
     } else if (el.campo === "linea") {
-      blocchi.push({ el, tipo: "linea", h: Math.max(2, Math.round(el.dimensione / 10)) });
+      b = { tipo: "linea", x: libera ? lx : margine, w: libera ? lw : utile, h: Math.max(2, Math.round(el.dimensione / 10)) };
     } else {
       let testo = testoDi(el, layout, dati);
       if (!testo) continue;
       if (el.maiuscolo) testo = testo.toLocaleUpperCase("it-IT");
       misura.font = font(el);
-      const linee = righe(misura, testo, utile - (el.inverso ? 16 : 0));
+      const larga = libera ? lw : utile;
+      const linee = righe(misura, testo, larga - (el.inverso ? 16 : 0));
       const passo = Math.round(el.dimensione * 1.15);
-      blocchi.push({ el, tipo: "testo", linee, passo, h: linee.length * passo + (el.inverso ? 12 : 0) });
+      b = { tipo: "testo", x: libera ? lx : margine, w: larga, linee, passo, h: linee.length * passo + (el.inverso ? 12 : 0) };
     }
-    if (blocchi.length > prima) blocchi[prima].indice = indice;
+    blocchi.push({ el, indice, ...b });
   }
-  const H = Math.max(40, blocchi.reduce((t, b) => t + b.h + b.el.spazio, 0) + 16);
+  // Le quote: una sotto l'altra, oppure dove le ha messe chi ha composto il biglietto.
+  let quota = 8;
+  for (const b of blocchi) {
+    if (libera) b.y = Math.max(0, b.el.y ?? quota);
+    else b.y = quota;
+    quota = (libera ? Math.max(quota, b.y + b.h) : b.y + b.h + b.el.spazio);
+  }
+  const H = Math.max(40, libera ? Math.max(0, ...blocchi.map((b) => b.y + b.h)) + 16 : quota + 8);
 
   // Secondo passo: il disegno, nero su bianco.
   const tela = document.createElement("canvas");
@@ -159,42 +175,39 @@ export async function disegnaTicket(layout, dati) {
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = "#000";
   ctx.textBaseline = "top";
-  const x0 = (el, w) => (el.allineamento === "sinistra" ? margine : el.allineamento === "destra" ? W - margine - w : Math.round((W - w) / 2));
-  let y = 8;
-  // Dove sta ogni elemento (per selezionarlo con un clic nell'anteprima del pannello).
+  // Dove sta ogni elemento (per sceglierlo, spostarlo e ridimensionarlo nell'anteprima del pannello).
   tela.blocchi = [];
   for (const b of blocchi) {
-    const { el } = b;
-    tela.blocchi.push({ indice: b.indice, y, h: b.h });
+    const { el, x, y } = b;
+    tela.blocchi.push({ indice: b.indice, x, y, w: b.w, h: b.h, tipo: b.tipo });
     if (b.tipo === "logo") {
-      ctx.drawImage(logo, x0(el, b.w), y, b.w, b.h);
-      retina(ctx, x0(el, b.w), y, b.w, b.h);
+      ctx.drawImage(logo, x, y, b.w, b.h);
+      retina(ctx, x, y, Math.min(b.w, W - x), Math.min(b.h, H - y));
     } else if (b.tipo === "qr") {
       const moduli = qr.getModuleCount();
       const lato = b.w / moduli;
-      const x = x0(el, b.w);
       for (let r = 0; r < moduli; r++) {
         for (let c = 0; c < moduli; c++) if (qr.isDark(r, c)) ctx.fillRect(Math.floor(x + c * lato), Math.floor(y + r * lato), Math.ceil(lato), Math.ceil(lato));
       }
       if (b.sotto) {
         ctx.font = `${b.sotto}px sans-serif`;
         ctx.textAlign = "center";
-        ctx.fillText(dati.testo_qr, W / 2, y + b.w + b.sotto * 0.3, utile);
+        ctx.fillText(dati.testo_qr, libera ? x + b.w / 2 : W / 2, y + b.w + b.sotto * 0.3, libera ? Math.max(b.w, 120) : utile);
       }
     } else if (b.tipo === "linea") {
-      ctx.fillRect(margine, y, utile, b.h);
+      ctx.fillRect(x, y, b.w, b.h);
     } else {
       ctx.font = font(el);
       if (el.inverso) {
-        ctx.fillRect(margine, y, utile, b.h);
+        ctx.fillRect(x, y, b.w, b.h);
         ctx.fillStyle = "#fff";
       }
+      const rientro = el.inverso ? 8 : 0;
       ctx.textAlign = el.allineamento === "sinistra" ? "left" : el.allineamento === "destra" ? "right" : "center";
-      const x = el.allineamento === "sinistra" ? margine + (el.inverso ? 8 : 0) : el.allineamento === "destra" ? W - margine - (el.inverso ? 8 : 0) : W / 2;
-      b.linee.forEach((linea, i) => ctx.fillText(linea, x, y + (el.inverso ? 6 : 0) + i * b.passo + Math.round(el.dimensione * 0.07)));
+      const tx = el.allineamento === "sinistra" ? x + rientro : el.allineamento === "destra" ? x + b.w - rientro : x + b.w / 2;
+      b.linee.forEach((linea, i) => ctx.fillText(linea, tx, y + (el.inverso ? 6 : 0) + i * b.passo + Math.round(el.dimensione * 0.07)));
       ctx.fillStyle = "#000";
     }
-    y += b.h + el.spazio;
   }
   return tela;
 }

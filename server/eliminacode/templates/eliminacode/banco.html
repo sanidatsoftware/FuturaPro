@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Banco · FuturaPro</title>
+  {% if aspetto.icona %}<link rel="icon" href="/aspetto/icona/?v={{ aspetto.modificato|date:'U' }}">{% endif %}
   <link rel="stylesheet" href="{% static 'eliminacode/banco.css' %}">
 </head>
 <body>

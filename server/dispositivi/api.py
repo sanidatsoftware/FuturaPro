@@ -343,7 +343,7 @@ class LayoutTicketSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = LayoutTicket
-        fields = ["id", "nome", "carta", "elementi", "ha_logo", "stampanti", "modificato"]
+        fields = ["id", "nome", "carta", "disposizione", "elementi", "ha_logo", "stampanti", "modificato"]
         read_only_fields = ["modificato"]
 
     def get_ha_logo(self, layout):

@@ -44,6 +44,9 @@ class LayoutTicket(ModelloCliente):
     # Larghezza della carta: 80 mm (576 punti a 203 dpi) o 58 mm (384 punti).
     carta = models.PositiveSmallIntegerField(choices=[(80, "80 mm"), (58, "58 mm")], default=80)
     elementi = models.JSONField(default=list, blank=True)
+    # «guidata»: elementi in colonna, uno sotto l'altro; «libera»: ognuno nel suo riquadro
+    # (x, y, w in punti della stampante), dove lo si è trascinato.
+    disposizione = models.CharField(max_length=8, choices=[("guidata", "Guidata"), ("libera", "Libera")], default="guidata")
     # Il logo in PNG (base64), già in scala di grigi e alla larghezza della carta.
     logo = models.TextField(blank=True)
     modificato = models.DateTimeField(auto_now=True)

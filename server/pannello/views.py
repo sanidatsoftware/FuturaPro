@@ -1,3 +1,5 @@
+import re
+
 from django.contrib.auth.views import LoginView, redirect_to_login
 from django.http import FileResponse, Http404
 from django.shortcuts import render
@@ -65,6 +67,25 @@ class Accesso(LoginView):
         return dati
 
 
+ICONA_MAX = 1024 * 1024
+# Un SVG può contenere codice: si accetta solo un disegno «pulito» (niente script, eventi,
+# collegamenti esterni, oggetti incorporati, DTD; immagini incorporate PNG/JPG/GIF/WebP sì)
+# e lo si serve comunque in una sandbox.
+SVG_VIETATI = re.compile(rb"<script|<foreignobject|<iframe|<embed|<object|<!doctype|<!entity|\bon[a-z]+\s*=|javascript:|data:text/html|(?:xlink:)?href\s*=\s*[\"'](?!#|data:image/(?:png|jpe?g|gif|webp);)", re.I)
+
+
+def svg_pulito(dati: bytes) -> bool:
+    import xml.etree.ElementTree as ET
+
+    if SVG_VIETATI.search(dati):
+        return False
+    try:
+        radice = ET.fromstring(dati)
+    except ET.ParseError:
+        return False
+    return radice.tag.rsplit("}", 1)[-1].lower() == "svg"
+
+
 def logo(request):
     """Il logo della pagina di accesso: pubblico, come ogni logo."""
     aspetto = Aspetto.attuale()
@@ -76,14 +97,32 @@ def logo(request):
     return risposta
 
 
+def icona(request):
+    """L'icona della piattaforma (barra del pannello, scheda del browser): pubblica."""
+    aspetto = Aspetto.attuale()
+    if not aspetto.icona:
+        raise Http404()
+    nome = aspetto.icona.name.lower()
+    tipo = "image/x-icon" if nome.endswith(".ico") else "image/svg+xml" if nome.endswith(".svg") else None
+    risposta = FileResponse(aspetto.icona.open("rb"), content_type=tipo) if tipo else FileResponse(aspetto.icona.open("rb"))
+    if nome.endswith(".svg"):
+        # Aperto da solo nel browser, l'SVG non esegue nulla.
+        risposta["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    risposta["Cache-Control"] = "public, max-age=86400"
+    risposta["X-Content-Type-Options"] = "nosniff"
+    return risposta
+
+
 class AspettoSerializer(serializers.ModelSerializer):
     colore = serializers.RegexField(r"^#[0-9a-fA-F]{6}$", required=False)
     logo = serializers.FileField(required=False, allow_null=True, write_only=True)
+    icona = serializers.FileField(required=False, allow_null=True, write_only=True)
     ha_logo = serializers.SerializerMethodField()
+    ha_icona = serializers.SerializerMethodField()
 
     class Meta:
         model = Aspetto
-        fields = ["nome_app", "sottotitolo", "colore", "logo", "ha_logo", "accesso", "modificato"]
+        fields = ["nome_app", "sottotitolo", "colore", "logo", "ha_logo", "icona", "ha_icona", "accesso", "modificato"]
         read_only_fields = ["modificato"]
 
     def validate_accesso(self, valore):
@@ -103,6 +142,34 @@ class AspettoSerializer(serializers.ModelSerializer):
 
     def get_ha_logo(self, aspetto):
         return bool(aspetto.logo)
+
+    def get_ha_icona(self, aspetto):
+        return bool(aspetto.icona)
+
+    def validate_icona(self, file):
+        """Un file .ico vero (intestazione 00 00 01 00), un SVG senza codice, o un'immagine PNG,
+        JPEG, GIF o WebP."""
+        if file is None:
+            return None
+        if file.size > ICONA_MAX:
+            raise serializers.ValidationError("L'icona supera 1 MB.")
+        file.seek(0)
+        testa = file.read(4)
+        file.seek(0)
+        if testa == b"\x00\x00\x01\x00":
+            file.estensione = ".ico"
+            return file
+        formato = riconosci(file)
+        if formato is None:
+            dati = file.read()
+            file.seek(0)
+            if svg_pulito(dati):
+                file.estensione = ".svg"
+                return file
+        if formato is None or formato[0] != "immagine":
+            raise serializers.ValidationError("L'icona dev'essere un file ICO, SVG (senza script né collegamenti esterni), PNG o JPG.")
+        file.estensione = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}.get(formato[1], ".png")
+        return file
 
     def validate_logo(self, file):
         if file is None:
@@ -125,6 +192,12 @@ class AspettoSerializer(serializers.ModelSerializer):
                 aspetto.logo.delete(save=False)
             if nuovo is not None:
                 aspetto.logo.save(f"logo{nuovo.name[nuovo.name.rfind('.'):].lower() if '.' in nuovo.name else ''}", nuovo, save=False)
+        if "icona" in dati:
+            nuova = dati.pop("icona")
+            if aspetto.icona:
+                aspetto.icona.delete(save=False)
+            if nuova is not None:
+                aspetto.icona.save(f"icona{nuova.estensione}", nuova, save=False)
         return super().update(aspetto, dati)
 
 

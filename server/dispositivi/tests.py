@@ -354,3 +354,28 @@ class DistribuzioneTest(Base):
         globale = self.client.get("/api/piattaforma/distribuzione/").json()
         self.assertEqual(globale["schermi"], 3)
         self.assertEqual({a["nome"]: a["stati"]["aggiornato"] for a in globale["aziende"]}, {"Azienda A": 1, "Azienda B": 0})
+
+
+class DisposizioneTicketTest(Base):
+    """Layout Ticket: disposizione guidata (in colonna) o libera (riquadri x, y, w)."""
+
+    def test_disposizione_libera(self):
+        from . import ticket
+
+        self.come(self.admin_a)
+        layout = self.client.post("/api/layout-ticket/", {"nome": "Libero", "carta": 80}, format="json").json()
+        self.assertEqual(layout["disposizione"], "guidata")
+        elementi = layout["elementi"]
+        elementi[0].update(x=40, y=-5, w=99999)
+        r = self.client.patch(f"/api/layout-ticket/{layout['id']}/", {"disposizione": "libera", "elementi": elementi}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["disposizione"], "libera")
+        self.assertEqual((r.json()["elementi"][0]["x"], r.json()["elementi"][0]["y"], r.json()["elementi"][0]["w"]), (40, 0, 1000))
+        self.assertNotIn("x", r.json()["elementi"][1])  # senza riquadro: nessuna posizione inventata
+        self.assertEqual(self.client.patch(f"/api/layout-ticket/{layout['id']}/", {"disposizione": "sparsa"}, format="json").status_code, 400)
+        from core.contesto import contesto_cliente
+
+        from .models import LayoutTicket
+
+        with contesto_cliente(self.a.id):
+            self.assertEqual(ticket.per_il_player(LayoutTicket.objects.get(id=layout["id"]))["disposizione"], "libera")

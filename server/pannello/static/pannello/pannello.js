@@ -885,13 +885,26 @@ async function schedaAspetto() {
 async function sezioneMarchio() {
   const aspetto = await api("GET", "/api/piattaforma/aspetto/");
   const box = sezione("Nome e logo della piattaforma");
-  crea("p", { classe: "nota", testo: "Compaiono nella pagina di accesso, nella barra del pannello e nei titoli delle pagine. Valgono per tutti i clienti." }, box);
+  crea("p", { classe: "nota", testo: "Il nome compare nella pagina di accesso, nella barra del pannello e nei titoli delle pagine; il logo nella pagina di accesso; l'icona nella barra del pannello e nella scheda del browser (senza icona, nella barra va il logo). Valgono per tutti i clienti." }, box);
   const riga = crea("div", { classe: "riga" }, box);
   const nome = campo("Nome dell'applicazione", crea("input", { value: aspetto.nome_app, maxLength: 60 }), riga);
   const colore = campo("Colore", crea("input", { type: "color", value: aspetto.colore }), riga);
   const rigaLogo = crea("div", { classe: "riga" }, box);
   if (aspetto.ha_logo) crea("img", { src: `/aspetto/logo/?v=${Date.parse(aspetto.modificato)}`, classe: "anteprima-logo", alt: "Logo attuale" }, rigaLogo);
-  const logo = campo("Logo (PNG, JPEG o WebP, fino a 3 MB; meglio con fondo trasparente)", crea("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif" }), rigaLogo);
+  const logo = campo("Logo della pagina di accesso (PNG, JPEG o WebP, fino a 3 MB; meglio con fondo trasparente)", crea("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif" }), rigaLogo);
+  // L'icona: barra del pannello e scheda del browser, distinta dal logo della pagina di accesso.
+  const rigaIcona = crea("div", { classe: "riga" }, box);
+  if (aspetto.ha_icona) crea("img", { src: `/aspetto/icona/?v=${Date.parse(aspetto.modificato)}`, classe: "anteprima-icona", alt: "Icona attuale" }, rigaIcona);
+  const icona = campo("Icona della barra e del browser (ICO, SVG, PNG o JPG quadrato; fino a 1 MB)", crea("input", { type: "file", accept: ".ico,.svg,.png,.jpg,.jpeg,image/x-icon,image/vnd.microsoft.icon,image/svg+xml,image/png,image/jpeg,image/webp,image/gif" }), rigaIcona);
+  if (aspetto.ha_icona) {
+    crea("button", {
+      type: "button", classe: "pericolo", testo: "Togli l'icona",
+      onclick: () => prova(async () => {
+        await api("PATCH", "/api/piattaforma/aspetto/", { icona: null });
+        setTimeout(() => location.reload(), 600);
+      }, "Icona tolta: nella barra torna il logo."),
+    }, rigaIcona);
+  }
 
   // La pagina di accesso: posizione e grandezza del logo, righe di testo, con l'anteprima dal vivo.
   const pagina = sezione("Pagina di accesso");
@@ -925,6 +938,7 @@ async function sezioneMarchio() {
   };
   spunta("Mostra il nome accanto al logo", c.logo.mostra_nome, (v) => (c.logo.mostra_nome = v));
   spunta("Mostra i disegni degli schermi in basso", c.mostra_schermi, (v) => (c.mostra_schermi = v));
+  spunta("Riquadro chiaro dietro al logo nella barra del pannello", c.logo.riquadro_barra, (v) => (c.logo.riquadro_barra = v));
   const allineamento = campo("Allineamento", scelta([["sinistra", "A sinistra"], ["centro", "Al centro"]], c.allineamento), rigaLogoPos);
   posizione.addEventListener("change", () => { c.logo.posizione = posizione.value; aggiorna(); });
   altezza.addEventListener("input", () => { c.logo.altezza = parseInt(altezza.value, 10) || 64; aggiorna(); });
@@ -966,6 +980,7 @@ async function sezioneMarchio() {
       dati.append("colore", colore.value);
       dati.append("accesso", JSON.stringify(c));
       if (logo.files[0]) dati.append("logo", logo.files[0]);
+      if (icona.files[0]) dati.append("icona", icona.files[0]);
       await api("PATCH", "/api/piattaforma/aspetto/", dati);
       setTimeout(() => location.reload(), 600);
     }, "Salvato: la pagina si ricarica con il nuovo aspetto."),

@@ -18,7 +18,10 @@ input.link { width: 100%; font-size: 12px; margin: 2px 0; }
 
 .barra { display: flex; align-items: center; gap: 14px; padding: 10px 16px; background: var(--primario); color: #fff; flex-wrap: wrap; }
 .barra .marchio { font-size: 18px; display: flex; align-items: center; gap: 10px; }
-.barra .marchio img { height: 30px; max-width: 140px; object-fit: contain; background: #fff; border-radius: 6px; padding: 2px 6px; }
+/* Il logo direttamente sulla barra, senza riquadro bianco: solo un'ombra leggera per staccarlo. */
+.barra .marchio img { height: 34px; max-width: 160px; object-fit: contain; display: block; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .35)); }
+.barra .marchio img.icona { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; }
+.barra .marchio.con-riquadro img { background: #fff; border-radius: 6px; padding: 2px 6px; filter: none; }
 .barra .spazio { flex: 1; }
 .barra .utente { font-size: 13px; opacity: .9; }
 .barra form { margin: 0; }
@@ -63,6 +66,7 @@ td.attenzione { color: var(--errore); font-weight: 600; cursor: help; }
 
 .pallino { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; }
 .anteprima-logo { max-height: 70px; max-width: 220px; object-fit: contain; margin: 0 16px 10px 0; padding: 6px; border: 1px solid var(--linea); border-radius: 8px; background: #fff; }
+.anteprima-icona { width: 48px; height: 48px; object-fit: contain; margin: 0 16px 10px 0; padding: 4px; border: 1px solid var(--linea); border-radius: 10px; background: var(--fondo); }
 
 /* Aspetto interfaccia: le tre scelte del tema */
 .temi { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-top: 8px; }
@@ -247,8 +251,20 @@ td.attenzione, div.attenzione { color: var(--errore); }
 .voce-ticket button { padding: 2px 6px; }
 .carta-ticket { position: relative; display: inline-block; padding: 14px 10px 22px; background: #fff; border-radius: 4px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, .18); background-image: linear-gradient(-45deg, transparent 8px, #fff 0), linear-gradient(45deg, transparent 8px, #fff 0); }
-.tela-ticket { display: block; width: 300px; height: auto; cursor: pointer; }
-.segno-ticket { position: absolute; left: 4px; right: 4px; margin-top: 14px; border: 2px dashed #1f6feb; border-radius: 4px; pointer-events: none; }
+.tela-ticket { display: block; width: 340px; height: auto; cursor: pointer; }
+.segno-ticket { position: absolute; box-sizing: border-box; outline: 2px dashed #1f6feb; outline-offset: 1px; border-radius: 2px; pointer-events: none; }
+.segno-ticket.libero { pointer-events: auto; cursor: move; background: rgba(31, 111, 235, .06); }
+.maniglia-ticket { position: absolute; width: 12px; height: 12px; background: #1f6feb; border: 2px solid #fff; border-radius: 3px; pointer-events: auto; box-shadow: 0 1px 3px rgba(0,0,0,.35); touch-action: none; }
+.maniglia-ticket.e { right: -8px; top: calc(50% - 6px); cursor: ew-resize; }
+.maniglia-ticket.s { bottom: -8px; left: calc(50% - 6px); cursor: ns-resize; }
+.maniglia-ticket.se { right: -8px; bottom: -8px; cursor: nwse-resize; }
+.misura-ticket { position: absolute; left: 0; top: -22px; white-space: nowrap; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #1f6feb; color: #fff; pointer-events: none; }
+.carta-ticket:focus { outline: none; }
+.carta-ticket.al-centro::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px dashed #e0457b; pointer-events: none; }
+.interruttore-ticket { display: flex; gap: 4px; align-self: flex-end; margin-bottom: 10px; }
+.interruttore-ticket .pillola { border-radius: 999px; padding: 5px 14px; font-size: 13px; }
+.interruttore-ticket .pillola.attiva { background: var(--primario); border-color: var(--primario); color: #fff; }
+.riquadro-ticket .campo { margin-right: 6px; }
 .copia-plugin { white-space: nowrap; }
 .copia-plugin label { display: block; margin: 2px 0; }
 
@@ -268,7 +284,7 @@ td.attenzione, div.attenzione { color: var(--errore); }
 .anteprima-accesso { position: absolute; left: 0; top: 0; width: 1280px; height: 800px; border: 0; transform-origin: 0 0; }
 .tela-ticket { touch-action: none; }
 .tela-ticket.trascina { cursor: grabbing; opacity: .85; }
-.linea-ticket { position: absolute; left: 4px; right: 4px; height: 3px; margin-top: 13px; background: #1f6feb; border-radius: 2px; pointer-events: none; }
+.linea-ticket { position: absolute; left: 4px; right: 4px; height: 3px; background: #1f6feb; border-radius: 2px; pointer-events: none; }
 .pallino.guasto { background: var(--errore); }
 .pallino.attesa { background: #f0a500; animation: lampeggia 1s infinite; }
 @keyframes lampeggia { 50% { opacity: .35; } }

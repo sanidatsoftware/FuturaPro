@@ -275,7 +275,12 @@ scheda «Aspetto interfaccia» (`PATCH /api/io/`); vale per pannello, editor e p
 
 **Aspetto della piattaforma.** Nome dell'applicazione, frase, colore e logo (PNG, JPEG, GIF o
 WebP fino a 3 MB; niente SVG) della pagina di accesso `/accesso/` e del pannello. Li cambia solo
-il SystemAdministrator, nella scheda «Aspetto interfaccia» (`/api/piattaforma/aspetto/`). La
+il SystemAdministrator, nella scheda «Aspetto interfaccia» (`/api/piattaforma/aspetto/`).
+L'**icona** (ICO, SVG, PNG o JPG fino a 1 MB, meglio quadrata; `/aspetto/icona/`) è distinta dal
+logo: compare nella barra del pannello e del palinsesto e come icona della scheda del browser;
+senza icona la barra mostra il logo, direttamente sul colore (un riquadro chiaro dietro si accende
+con «Riquadro chiaro dietro al logo», per i loghi scuri). Un SVG si accetta solo senza codice
+(niente script, eventi, collegamenti esterni, DTD) e si serve comunque in sandbox. La
 pagina di accesso è componibile (`Aspetto.accesso`): posizione del logo (in alto, nel messaggio,
 al centro) e altezza (24–360 px), con o senza il nome accanto, allineamento a sinistra o al
 centro, fino a 8 righe di testo ognuna con grandezza, peso e colore propri; l'anteprima nel
@@ -560,10 +565,22 @@ le persone che lo precedono e il player stampa:
 **Layout Ticket** (menu **Impostazioni**, `/api/layout-ticket/`, modello `LayoutTicket`): com'è
 fatto il biglietto. Elementi in colonna, nell'ordine in cui escono dalla carta: logo,
 intestazione, reparto (il tasto toccato sul totem), numero, persone in coda, testo di fine
-biglietto, data e ora, QR della coda sul telefono, testi liberi e linee. L'ordine si cambia
-trascinando gli elementi nell'elenco oppure direttamente sull'anteprima del biglietto (la linea
-blu mostra dove cadono; lasciandoli a sinistra, al centro o a destra se ne cambia anche
-l'allineamento); un clic sull'anteprima seleziona l'elemento. Per ogni elemento:
+biglietto, data e ora, QR della coda sul telefono, testi liberi e linee. Due disposizioni
+(`LayoutTicket.disposizione`):
+
+- **Guidata** (in colonna): l'ordine si cambia trascinando gli elementi nell'elenco oppure
+  direttamente sull'anteprima del biglietto (la linea blu mostra dove cadono; lasciandoli a
+  sinistra, al centro o a destra se ne cambia anche l'allineamento).
+- **Libera**: ogni elemento ha il suo riquadro (`x`, `y`, `w` in punti) e si trascina dove si
+  vuole, anche affiancato ad altri; si aggancia alla griglia di 1 mm e al centro della carta (Alt:
+  senza aggancio), le frecce lo spostano di un punto (Maiusc: 1 mm), e X, Y e larghezza si possono
+  anche scrivere. Il testo va a capo e si allinea dentro il suo riquadro; il biglietto è lungo
+  quanto serve. Passando a «Libera» ogni elemento parte da dove stava in colonna.
+
+In entrambe un clic sull'anteprima sceglie l'elemento, e le **maniglie blu** lo ridimensionano
+con il mouse: a destra la larghezza (logo e QR, e ogni riquadro nella libera), in basso la
+grandezza del carattere (o lo spessore della linea), nell'angolo entrambe; logo e QR restano
+proporzionati. Totem e anteprima usano lo stesso disegno (`player/ticket.js`). Per ogni elemento:
 visibile, carattere, grandezza (in punti della stampante, 8 = 1 mm), grassetto, corsivo,
 maiuscolo, bianco su nero, allineamento, spazio sotto; per logo e QR la larghezza. Carta 80 mm
 di riferimento (80 o 58 mm); la larghezza vera è quella della stampante che lo usa: il catalogo

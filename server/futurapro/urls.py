@@ -124,6 +124,7 @@ urlpatterns = [
     path("api/sessione/", include("rest_framework.urls")),
     path("accesso/", pannello_viste.Accesso.as_view(), name="accesso"),
     path("aspetto/logo/", pannello_viste.logo, name="logo"),
+    path("aspetto/icona/", pannello_viste.icona, name="icona"),
     path("", RedirectView.as_view(url="/pannello/", permanent=False)),
     path("pannello/", pannello, name="pannello"),
     path("palinsesto/", pannello_viste.palinsesto, name="palinsesto"),

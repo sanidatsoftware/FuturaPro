@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Layout · FuturaPro</title>
+  {% if aspetto.icona %}<link rel="icon" href="/aspetto/icona/?v={{ aspetto.modificato|date:'U' }}">{% endif %}
   <link rel="stylesheet" href="{% static 'layout/editor.css' %}">
 </head>
 <body data-layout="{{ layout_id|default:'' }}">

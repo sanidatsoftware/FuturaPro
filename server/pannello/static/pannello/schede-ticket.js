@@ -1,7 +1,8 @@
-// «Impostazioni → Layout Ticket»: com'è fatto il biglietto stampato. Elementi in colonna
-// (logo, intestazione, reparto, numero, testo di fine biglietto…): si trascinano per cambiare
-// l'ordine, si clicca un elemento (nell'elenco o nell'anteprima) per sceglierne carattere,
-// grandezza e allineamento. L'anteprima è disegnata come la stamperà il totem.
+// «Impostazioni → Layout Ticket»: com'è fatto il biglietto stampato (logo, intestazione,
+// reparto, numero, testo di fine biglietto…). Due disposizioni: «guidata», elementi in colonna
+// che si trascinano per cambiare l'ordine e l'allineamento; «libera», ogni elemento si sposta
+// dove si vuole. In entrambe l'elemento scelto ha le maniglie per ridimensionarlo col mouse.
+// L'anteprima è disegnata come la stamperà il totem.
 
 import { disegnaTicket } from "../player/ticket.js";
 
@@ -71,6 +72,7 @@ export async function schedaLayoutTicket() {
   }
   scelto = layout.id;
   const elementi = structuredClone(layout.elementi);
+  let disposizione = layout.disposizione || "guidata";
   let selezionato = 0;
   const logo = await urlLogo(layout);
 
@@ -87,70 +89,254 @@ export async function schedaLayoutTicket() {
   anteprimaSu.addEventListener("change", () => ridisegna());
   if (layout.stampanti.length) crea("span", { classe: "tenue", testo: `Usato da: ${layout.stampanti.join(", ")}` }, testa);
 
+  // Guidata o libera: come si mettono gli elementi sul biglietto.
+  const modo = crea("div", { classe: "interruttore-ticket" }, testa);
+  const pulsantiModo = {};
+  for (const [chiave, testo, aiuto] of [
+    ["guidata", "⇅ Guidata", "Gli elementi stanno in colonna, uno sotto l'altro: si trascinano per cambiare l'ordine e (a sinistra, al centro, a destra) l'allineamento."],
+    ["libera", "✥ Libera", "Ogni elemento si sposta dove vuoi trascinandolo, anche affiancato ad altri. Si aggancia alla griglia di 1 mm e al centro: tieni premuto Alt per muoverlo senza aggancio; le frecce lo spostano di un punto (Maiusc: 1 mm)."],
+  ]) {
+    pulsantiModo[chiave] = crea("button", {
+      type: "button", classe: `pillola${disposizione === chiave ? " attiva" : ""}`, testo, "data-aiuto": aiuto, disabled: !modifica,
+      onclick: () => cambiaDisposizione(chiave),
+    }, modo);
+  }
+
   const area = crea("div", { classe: "editor-ticket" }, editor);
   const colElenco = crea("div", { classe: "colonna-elementi" }, area);
   const colProprieta = crea("div", { classe: "colonna-proprieta" }, area);
   const colAnteprima = crea("div", { classe: "colonna-anteprima" }, area);
-  const carta_ = crea("div", { classe: "carta-ticket" }, colAnteprima);
-  crea("p", { classe: "tenue", testo: "Anteprima con dati di esempio. Clic su un elemento per modificarlo; trascinalo in alto o in basso per cambiargli posto, a sinistra, al centro o a destra per allinearlo." }, colAnteprima);
+  const carta_ = crea("div", { classe: "carta-ticket", tabIndex: 0 }, colAnteprima);
+  const spiegazione = crea("p", { classe: "tenue" }, colAnteprima);
+  // Il riquadro dell'elemento scelto, con le maniglie: resta lo stesso mentre il biglietto si ridisegna.
+  const segno = crea("div", { classe: "segno-ticket", hidden: true }, carta_);
+  const misuraSegno = crea("span", { classe: "misura-ticket" }, segno);
+  const maniglie = {};
+  for (const [verso, aiuto] of [
+    ["e", "Trascina per allargare o stringere l'elemento."],
+    ["s", "Trascina per ingrandire o rimpicciolire (testi: la grandezza del carattere; linee: lo spessore)."],
+    ["se", "Trascina per ridimensionare l'elemento."],
+  ]) maniglie[verso] = crea("span", { classe: `maniglia-ticket ${verso}`, "data-aiuto": aiuto }, segno);
 
-  const ridisegna = async () => {
-    const tela = await disegnaTicket({ punti: puntiAnteprima(), elementi, logo }, ESEMPIO);
-    tela.classList.add("tela-ticket");
-    // L'elemento scelto, evidenziato.
-    const blocco = tela.blocchi.find((b) => b.indice === selezionato);
-    carta_.replaceChildren(tela);
-    if (blocco) {
-      const segno = crea("div", { classe: "segno-ticket" }, carta_);
-      const scala = tela.getBoundingClientRect().height / tela.height || 0.6;
-      Object.assign(segno.style, { top: `${blocco.y * scala}px`, height: `${blocco.h * scala}px` });
+  let tela = null;
+  const W = () => puntiAnteprima();
+  const utile = () => W() - 16;
+  const scala = () => (tela ? tela.getBoundingClientRect().width / tela.width : 0.6);
+  const mm = (punti) => `${(punti / 8).toLocaleString("it-IT", { maximumFractionDigits: 1 })} mm`;
+
+  // Il riquadro libero di ogni elemento: preso da dove sta adesso nella disposizione guidata.
+  const fissaRiquadri = () => {
+    let fondo = 8;
+    for (const b of tela?.blocchi || []) {
+      Object.assign(elementi[b.indice], { x: b.x, y: b.y, w: b.w });
+      fondo = Math.max(fondo, b.y + b.h + 8);
     }
-    // Sul biglietto: clic per scegliere un elemento; trascinandolo in alto o in basso cambia
-    // posto, trascinandolo a sinistra, al centro o a destra cambia allineamento.
-    const punto = (e) => {
-      const r = tela.getBoundingClientRect();
-      return { x: (e.clientX - r.left) / r.width, y: ((e.clientY - r.top) * tela.height) / r.height };
+    for (const el of elementi) {
+      if (el.x === undefined || el.y === undefined || el.w === undefined) {
+        Object.assign(el, { x: 8, y: fondo, w: utile() });
+        fondo += 40;
+      }
+    }
+  };
+  const cambiaDisposizione = (nuova) => {
+    if (nuova === disposizione) return;
+    if (nuova === "libera") fissaRiquadri();
+    disposizione = nuova;
+    for (const [k, b] of Object.entries(pulsantiModo)) b.classList.toggle("attiva", k === disposizione);
+    disegnaTutto();
+  };
+
+  const posizionaSegno = () => {
+    const blocco = tela?.blocchi.find((b) => b.indice === selezionato);
+    segno.hidden = !blocco;
+    if (!blocco) return;
+    const k = scala();
+    Object.assign(segno.style, {
+      left: `${tela.offsetLeft + blocco.x * k}px`, top: `${tela.offsetTop + blocco.y * k}px`,
+      width: `${Math.max(6, blocco.w * k)}px`, height: `${Math.max(6, blocco.h * k)}px`,
+    });
+    segno.classList.toggle("libero", disposizione === "libera" && modifica);
+    const el = elementi[selezionato];
+    // Le maniglie che servono: la larghezza ha senso per logo e QR, e per tutto nella libera.
+    const larghezza = disposizione === "libera" || ["logo", "qr"].includes(el.campo);
+    maniglie.e.hidden = !modifica || !larghezza;
+    maniglie.s.hidden = !modifica || ["logo", "qr"].includes(el.campo);
+    maniglie.se.hidden = !modifica;
+    misuraSegno.textContent = disposizione === "libera"
+      ? `${mm(blocco.x)} · ${mm(blocco.y)} — ${mm(blocco.w)} × ${mm(blocco.h)}`
+      : `${mm(blocco.w)} × ${mm(blocco.h)}`;
+  };
+
+  // Il biglietto si ridisegna anche mentre si trascina: un disegno alla volta, l'ultimo vince.
+  let inDisegno = false;
+  let ancora = false;
+  const ridisegna = async () => {
+    if (inDisegno) { ancora = true; return; }
+    inDisegno = true;
+    try {
+      do {
+        ancora = false;
+        const nuova = await disegnaTicket({ punti: puntiAnteprima(), disposizione, elementi, logo }, ESEMPIO);
+        nuova.classList.add("tela-ticket");
+        if (tela?.isConnected) tela.replaceWith(nuova);
+        else carta_.prepend(nuova);
+        tela = nuova;
+        collegaTela(nuova);
+        posizionaSegno();
+      } while (ancora);
+    } finally {
+      inDisegno = false;
+    }
+  };
+
+  const puntoSu = (e) => {
+    const r = tela.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) * tela.width) / r.width, y: ((e.clientY - r.top) * tela.height) / r.height, fx: (e.clientX - r.left) / r.width };
+  };
+  // L'elemento sotto il puntatore (quello disegnato per ultimo, se si sovrappongono).
+  const sotto = (p) => [...tela.blocchi].reverse().find((b) => p.y >= b.y && p.y <= b.y + b.h && (disposizione === "guidata" || (p.x >= b.x && p.x <= b.x + b.w)));
+  const aggancia = (valore, e, passo = 8) => (e.altKey ? Math.round(valore) : Math.round(valore / passo) * passo);
+
+  // Spostare un elemento nella disposizione libera.
+  const sposta = (e, indice) => {
+    const el = elementi[indice];
+    const inizio = { px: e.clientX, py: e.clientY, x: el.x ?? 8, y: el.y ?? 8 };
+    return (m) => {
+      const k = scala();
+      const blocco = tela.blocchi.find((b) => b.indice === indice);
+      const w = blocco?.w ?? el.w;
+      let x = aggancia(inizio.x + (m.clientX - inizio.px) / k, m);
+      // Al centro della carta si aggancia da solo.
+      if (!m.altKey && Math.abs(x + w / 2 - W() / 2) < 10) x = Math.round(W() / 2 - w / 2);
+      el.x = Math.max(0, Math.min(W() - Math.min(w, W()), x));
+      el.y = Math.max(0, aggancia(inizio.y + (m.clientY - inizio.py) / k, m));
+      carta_.classList.toggle("al-centro", Math.round(el.x + w / 2) === Math.round(W() / 2));
+      ridisegna();
     };
-    let presa = null;
-    tela.addEventListener("pointerdown", (e) => {
-      const { y } = punto(e);
-      const trovato = tela.blocchi.find((b) => y >= b.y && y <= b.y + b.h);
+  };
+
+  // Ridimensionare con le maniglie: «e» la larghezza, «s» la grandezza, «se» entrambe come serve.
+  const ridimensiona = (e, verso) => {
+    const el = elementi[selezionato];
+    const blocco = tela.blocchi.find((b) => b.indice === selezionato);
+    if (!blocco) return null;
+    const inizio = { px: e.clientX, py: e.clientY, w: blocco.w, h: blocco.h, dimensione: el.dimensione, larghezza: el.larghezza };
+    const libera = disposizione === "libera";
+    const immagine = ["logo", "qr"].includes(el.campo);
+    return (m) => {
+      const k = scala();
+      const dx = (m.clientX - inizio.px) / k;
+      const dy = (m.clientY - inizio.py) / k;
+      const w = Math.max(24, inizio.w + (verso === "s" ? 0 : dx));
+      if (immagine) {
+        // Logo e QR restano proporzionati: conta la larghezza (o l'altezza, con la maniglia d'angolo).
+        const nuova = verso === "se" ? Math.max(24, inizio.w * Math.max((inizio.w + dx) / inizio.w, (inizio.h + dy) / inizio.h)) : w;
+        if (libera) el.w = Math.min(W() - (el.x ?? 0), aggancia(nuova, m, 4));
+        else el.larghezza = Math.max(10, Math.min(100, Math.round((nuova / utile()) * 100)));
+      } else {
+        if (verso !== "s" && libera) el.w = Math.max(24, Math.min(W() - (el.x ?? 0), aggancia(w, m, 4)));
+        if (verso !== "e") {
+          const h = Math.max(4, inizio.h + dy);
+          el.dimensione = el.campo === "linea"
+            ? Math.max(10, Math.min(80, Math.round(h * 10)))
+            : Math.max(10, Math.min(400, Math.round((inizio.dimensione * h) / inizio.h)));
+        }
+      }
+      ridisegna();
+      disegnaProprieta();
+    };
+  };
+
+  // Un trascinamento con il puntatore: muovi(e) a ogni passo, fine() al rilascio.
+  const trascina = (bersaglio, e, muovi, fine) => {
+    bersaglio.setPointerCapture(e.pointerId);
+    let mosso = false;
+    const passo = (m) => {
+      if (!mosso && Math.abs(m.clientX - e.clientX) + Math.abs(m.clientY - e.clientY) < 4) return;
+      mosso = true;
+      carta_.classList.add("trascina");
+      muovi(m);
+    };
+    const stop = (m) => {
+      bersaglio.removeEventListener("pointermove", passo);
+      bersaglio.removeEventListener("pointerup", stop);
+      bersaglio.removeEventListener("pointercancel", stop);
+      carta_.classList.remove("trascina", "al-centro");
+      fine?.(mosso, m);
+    };
+    bersaglio.addEventListener("pointermove", passo);
+    bersaglio.addEventListener("pointerup", stop);
+    bersaglio.addEventListener("pointercancel", stop);
+  };
+
+  for (const [verso, maniglia] of Object.entries(maniglie)) {
+    maniglia.addEventListener("pointerdown", (e) => {
+      if (!modifica) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const muovi = ridimensiona(e, verso);
+      if (muovi) trascina(maniglia, e, muovi, () => disegnaTutto());
+    });
+  }
+  // Nella libera si prende l'elemento scelto anche dal suo riquadro.
+  segno.addEventListener("pointerdown", (e) => {
+    if (!modifica || disposizione !== "libera" || e.target !== segno) return;
+    e.preventDefault();
+    trascina(segno, e, sposta(e, selezionato), () => disegnaTutto());
+  });
+  // Le frecce spostano l'elemento scelto (nella libera).
+  carta_.addEventListener("keydown", (e) => {
+    const el = elementi[selezionato];
+    const passi = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (!passi || !el || !modifica || disposizione !== "libera") return;
+    e.preventDefault();
+    const n = e.shiftKey ? 8 : 1;
+    el.x = Math.max(0, (el.x ?? 0) + passi[0] * n);
+    el.y = Math.max(0, (el.y ?? 0) + passi[1] * n);
+    ridisegna();
+    disegnaProprieta();
+  });
+
+  // Sul biglietto: clic per scegliere un elemento. Guidata: trascinandolo in alto o in basso
+  // cambia posto, a sinistra, al centro o a destra cambia allineamento. Libera: va dove lo lasci.
+  const collegaTela = (t) => {
+    t.addEventListener("pointerdown", (e) => {
+      const trovato = sotto(puntoSu(e));
+      carta_.focus({ preventScroll: true });
       if (!trovato) return;
-      presa = { indice: trovato.indice, x0: e.clientX, y0: e.clientY, mosso: false };
-      tela.setPointerCapture(e.pointerId);
-    });
-    tela.addEventListener("pointermove", (e) => {
-      if (!presa || !modifica) return;
-      if (Math.abs(e.clientX - presa.x0) + Math.abs(e.clientY - presa.y0) < 6) return;
-      presa.mosso = true;
-      tela.classList.add("trascina");
-      const { y } = punto(e);
-      // La linea dove andrà l'elemento.
-      const dopo = tela.blocchi.filter((b) => b.y + b.h / 2 < y).pop();
-      const quota = dopo ? dopo.y + dopo.h : 0;
-      let linea = carta_.querySelector(".linea-ticket");
-      if (!linea) linea = crea("div", { classe: "linea-ticket" }, carta_);
-      linea.style.top = `${(quota * tela.getBoundingClientRect().height) / tela.height}px`;
-    });
-    tela.addEventListener("pointerup", (e) => {
-      if (!presa) return;
-      const { indice, mosso } = presa;
-      presa = null;
-      tela.classList.remove("trascina");
-      carta_.querySelector(".linea-ticket")?.remove();
-      if (!mosso || !modifica) { selezionato = indice; disegnaTutto(); return; }
-      const { x, y } = punto(e);
-      const el = elementi[indice];
-      // Allineamento secondo dove lo si lascia (per i testi, il logo e il QR).
-      if (el.campo !== "linea") el.allineamento = x < 0.34 ? "sinistra" : x > 0.66 ? "destra" : "centro";
-      // Nuovo posto: dopo l'ultimo elemento che sta sopra il punto di rilascio.
-      const sopra = tela.blocchi.filter((b) => b.indice !== indice && b.y + b.h / 2 < y).pop();
-      const [spostato] = elementi.splice(indice, 1);
-      // Tolto l'elemento, quelli che venivano dopo scalano di un posto.
-      const dove = sopra ? (sopra.indice > indice ? sopra.indice - 1 : sopra.indice) + 1 : 0;
-      elementi.splice(dove, 0, spostato);
-      selezionato = dove;
-      disegnaTutto();
+      const indice = trovato.indice;
+      if (disposizione === "libera") {
+        if (indice !== selezionato) { selezionato = indice; disegnaElenco(); disegnaProprieta(); posizionaSegno(); }
+        if (!modifica) return;
+        // Il trascinamento continua sul riquadro (la tela si ridisegna mentre si sposta).
+        trascina(segno, e, sposta(e, indice), () => disegnaTutto());
+        return;
+      }
+      trascina(t, e, (m) => {
+        if (!modifica) return;
+        const { y } = puntoSu(m);
+        // La linea dove andrà l'elemento.
+        const dopo = tela.blocchi.filter((b) => b.y + b.h / 2 < y).pop();
+        const quota = dopo ? dopo.y + dopo.h : 0;
+        let linea = carta_.querySelector(".linea-ticket");
+        if (!linea) linea = crea("div", { classe: "linea-ticket" }, carta_);
+        linea.style.top = `${tela.offsetTop + quota * scala() - 1}px`;
+      }, (mosso, m) => {
+        carta_.querySelector(".linea-ticket")?.remove();
+        if (!mosso || !modifica) { selezionato = indice; disegnaTutto(); return; }
+        const { fx, y } = puntoSu(m);
+        const el = elementi[indice];
+        // Allineamento secondo dove lo si lascia (per i testi, il logo e il QR).
+        if (el.campo !== "linea") el.allineamento = fx < 0.34 ? "sinistra" : fx > 0.66 ? "destra" : "centro";
+        // Nuovo posto: dopo l'ultimo elemento che sta sopra il punto di rilascio.
+        const sopra = tela.blocchi.filter((b) => b.indice !== indice && b.y + b.h / 2 < y).pop();
+        const [spostato] = elementi.splice(indice, 1);
+        // Tolto l'elemento, quelli che venivano dopo scalano di un posto.
+        const dove = sopra ? (sopra.indice > indice ? sopra.indice - 1 : sopra.indice) + 1 : 0;
+        elementi.splice(dove, 0, spostato);
+        selezionato = dove;
+        disegnaTutto();
+      });
     });
   };
 
@@ -158,7 +344,7 @@ export async function schedaLayoutTicket() {
 
   const disegnaElenco = () => {
     colElenco.replaceChildren();
-    crea("div", { classe: "etichetta", testo: "Elementi (trascina per spostarli)" }, colElenco);
+    crea("div", { classe: "etichetta", testo: disposizione === "libera" ? "Elementi (più in basso = disegnato sopra)" : "Elementi (trascina per spostarli)" }, colElenco);
     elementi.forEach((el, i) => {
       const voce = crea("div", { classe: `voce-ticket${i === selezionato ? " scelta" : ""}${el.visibile ? "" : " nascosta"}`, draggable: modifica }, colElenco);
       crea("span", { classe: "maniglia", testo: "⠿" }, voce);
@@ -192,7 +378,10 @@ export async function schedaLayoutTicket() {
       testo: "+ Aggiungi",
       onclick: () => {
         const modello = base.elementi.find((e) => e.campo === nuovo.value) || { ...base.elementi[1], campo: nuovo.value, testo: nuovo.value === "testo" ? "Testo" : "" };
-        elementi.push(structuredClone({ ...modello, visibile: true }));
+        const aggiunto = structuredClone({ ...modello, visibile: true });
+        // Nella libera il nuovo elemento va in fondo al biglietto, largo quanto la carta.
+        if (disposizione === "libera") Object.assign(aggiunto, { x: 8, y: tela ? tela.height - 8 : 8, w: utile() });
+        elementi.push(aggiunto);
         selezionato = elementi.length - 1;
         disegnaTutto();
       },
@@ -219,8 +408,17 @@ export async function schedaLayoutTicket() {
       const t = campo(el.campo === "testo" ? "Testo" : "Testo (la stampante può averne uno suo)", crea("textarea", { rows: 3, cols: 26, value: el.testo, maxLength: 300, disabled: !modifica }), colProprieta);
       t.addEventListener("input", () => cambia("testo", t.value));
     }
+    if (disposizione === "libera") {
+      crea("div", { classe: "tenue", testo: "Riquadro (punti: 8 = 1 mm)" }, colProprieta);
+      const riga = crea("div", { classe: "riga riquadro-ticket" }, colProprieta);
+      for (const [t, chiave, max] of [["X", "x", 1000], ["Y", "y", 6000], ["Largh.", "w", 1000]]) {
+        const input = campo(t, crea("input", { type: "number", min: chiave === "w" ? 16 : 0, max, value: el[chiave] ?? 0, classe: "corto", disabled: !modifica,
+          "data-aiuto": { x: "Distanza dal bordo sinistro della carta.", y: "Distanza dall'inizio del biglietto.", w: "Larghezza del riquadro: il testo va a capo e si allinea dentro di lui." }[chiave] }), riga);
+        input.addEventListener("input", () => { el[chiave] = Math.max(chiave === "w" ? 16 : 0, Math.min(max, parseInt(input.value, 10) || 0)); ridisegna(); });
+      }
+    }
     if (["logo", "qr"].includes(el.campo)) {
-      numero("Larghezza (% della carta)", "larghezza", 10, 100, 5);
+      if (disposizione !== "libera") numero("Larghezza (% della carta)", "larghezza", 10, 100, 5);
       if (el.campo === "logo" && modifica) {
         crea("p", { classe: "tenue", testo: layout.ha_logo ? "Logo caricato." : "Nessun logo: caricane uno (PNG o JPG; diventa in bianco e nero)." }, colProprieta);
         const file = crea("input", { type: "file", accept: "image/*" }, colProprieta);
@@ -253,24 +451,31 @@ export async function schedaLayoutTicket() {
       spunta("Tutto maiuscolo", "maiuscolo");
       spunta("Bianco su nero", "inverso");
     }
-    numero("Spazio sotto (punti)", "spazio", 0, 200, 2);
+    if (disposizione !== "libera") numero("Spazio sotto (punti)", "spazio", 0, 200, 2);
     if (modifica && (el.campo === "testo" || el.campo === "linea")) {
       crea("button", { testo: "Elimina elemento", classe: "pericolo", onclick: () => { elementi.splice(selezionato, 1); selezionato = 0; disegnaTutto(); } }, colProprieta);
     }
   };
 
-  const disegnaTutto = () => { disegnaElenco(); disegnaProprieta(); ridisegna(); };
+  const disegnaTutto = () => {
+    spiegazione.textContent = disposizione === "libera"
+      ? "Anteprima con dati di esempio. Trascina un elemento dove vuoi (Alt: senza aggancio; frecce: un punto alla volta); le maniglie blu lo ridimensionano."
+      : "Anteprima con dati di esempio. Clic su un elemento per modificarlo; trascinalo in alto o in basso per cambiargli posto, a sinistra, al centro o a destra per allinearlo; le maniglie blu lo ridimensionano.";
+    disegnaElenco();
+    disegnaProprieta();
+    ridisegna();
+  };
   disegnaTutto();
 
   if (modifica) {
     const azioni = crea("div", { classe: "riga" }, editor);
     crea("button", {
       classe: "primario", testo: "Salva layout",
-      onclick: () => prova(() => api("PATCH", `/api/layout-ticket/${layout.id}/`, { nome: nomeLayout.value.trim(), carta: parseInt(carta.value, 10), elementi }), "Salvato: i totem lo ricevono entro un minuto."),
+      onclick: () => prova(() => api("PATCH", `/api/layout-ticket/${layout.id}/`, { nome: nomeLayout.value.trim(), carta: parseInt(carta.value, 10), disposizione, elementi }), "Salvato: i totem lo ricevono entro un minuto."),
     }, azioni);
     crea("button", {
       testo: "Ripristina gli elementi di partenza",
-      onclick: () => { elementi.splice(0, elementi.length, ...structuredClone(base.elementi)); selezionato = 0; disegnaTutto(); },
+      onclick: () => { elementi.splice(0, elementi.length, ...structuredClone(base.elementi)); selezionato = 0; cambiaDisposizione("guidata"); disegnaTutto(); },
     }, azioni);
     crea("button", {
       testo: "Elimina layout", classe: "pericolo",

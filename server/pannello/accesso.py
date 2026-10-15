@@ -14,7 +14,7 @@ PESI = ["normale", "grassetto"]
 
 def predefinita(sottotitolo: str = "") -> dict:
     return {
-        "logo": {"posizione": "in_alto", "altezza": 64, "mostra_nome": True},
+        "logo": {"posizione": "in_alto", "altezza": 64, "mostra_nome": True, "riquadro_barra": False},
         "allineamento": "sinistra",
         "mostra_schermi": True,
         "righe": [
@@ -52,6 +52,9 @@ def pulita(dati, sottotitolo: str = "") -> dict:
             "posizione": logo.get("posizione") if logo.get("posizione") in POSIZIONI_LOGO else "in_alto",
             "altezza": _numero(logo.get("altezza"), 24, 360, 64),
             "mostra_nome": bool(logo.get("mostra_nome", True)),
+            # Nella barra del pannello il logo sta direttamente sul colore; un riquadro chiaro
+            # dietro serve solo ai loghi scuri, che altrimenti non si vedono.
+            "riquadro_barra": bool(logo.get("riquadro_barra", False)),
         },
         "allineamento": dati.get("allineamento") if dati.get("allineamento") in ALLINEAMENTI else "sinistra",
         "mostra_schermi": bool(dati.get("mostra_schermi", True)),

@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Accesso · {{ aspetto.nome_app }}</title>
+  {% if aspetto.icona %}<link rel="icon" href="/aspetto/icona/?v={{ aspetto.modificato|date:'U' }}">{% endif %}
   <style>
     :root { --colore: {{ aspetto.colore }}; }
     * { box-sizing: border-box; }

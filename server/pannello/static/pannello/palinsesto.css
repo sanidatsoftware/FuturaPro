@@ -89,7 +89,9 @@ a { color: var(--blu); }
   background: var(--testata); backdrop-filter: blur(14px); border-bottom: 1px solid var(--linea);
 }
 .testata .marchio { display: flex; align-items: center; gap: 10px; color: var(--testo); text-decoration: none; font-weight: 700; }
-.testata .marchio img { height: 30px; max-width: 130px; object-fit: contain; background: #fff; border-radius: 6px; padding: 2px 6px; }
+.testata .marchio img { height: 34px; max-width: 150px; object-fit: contain; display: block; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .35)); }
+.testata .marchio img.icona { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; }
+.testata .marchio.con-riquadro img { background: #fff; border-radius: 6px; padding: 2px 6px; filter: none; }
 .testata h1 { margin: 0; font-size: 18px; font-weight: 600; color: var(--tenue); padding-left: 16px; border-left: 1px solid var(--linea); }
 .testata .spazio { flex: 1; }
 .testata .cliente { display: flex; gap: 8px; align-items: center; color: var(--tenue); font-size: 14px; }
