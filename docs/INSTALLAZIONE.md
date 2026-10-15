@@ -211,6 +211,10 @@ Monitor montato in verticale? Nel pannello, in **Hardware → Anagrafica Disposi
 sua riga scegli *Verticale* e la **rotazione**
 (90° o 270°).
 
+**Reinstallare o aggiornare lo script su un PC già installato**: stesso comando; se non indichi
+`-Server` e `-Tipo` lo script usa quelli della prima installazione (scritti in
+`C:\FuturaPro\impostazioni.json`). L'abbinamento resta, così come il certificato del totem.
+
 **Uscire dal player**: `Ctrl+Alt+Canc` → *Esci*, oppure Gestione attività.
 **Toglierlo dal PC**: stesso comando, aggiungendo `-Rimuovi`.
 

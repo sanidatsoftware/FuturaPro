@@ -104,6 +104,14 @@ if ($Configura) {
 
 # --- Domande -----------------------------------------------------------------------------
 Scrivi "`nFuturaPro - installazione del player`n" "Green"
+# Su un PC già installato, senza -Server e -Tipo valgono quelli della prima installazione.
+if (Test-Path $Impostazioni) {
+    try {
+        $precedenti = Get-Content $Impostazioni -Raw | ConvertFrom-Json
+        if (-not $Server -and $precedenti.server) { $Server = $precedenti.server; Scrivi "Server della prima installazione: $Server" }
+        if (-not $Tipo -and $precedenti.tipo) { $Tipo = $precedenti.tipo; Scrivi "Tipo della prima installazione: $Tipo" }
+    } catch {}
+}
 if (-not $Server) { $Server = Read-Host "Indirizzo del server (es. 10.0.100.41 oppure signage.miodominio.it)" }
 $Server = ($Server -replace '^https?://', '') -replace '/.*$', ''
 if (-not $Tipo) {
@@ -120,6 +128,11 @@ try {
     Invoke-WebRequest -UseBasicParsing -Uri "http://$Server/futurapro-ca.crt" -OutFile $fileCertificato -TimeoutSec 15
     $certificatoScaricato = (Get-Item $fileCertificato).Length -gt 0
 } catch {
+    # Il server ha risposto (es. 404): non usa un certificato interno. Non ha risposto affatto:
+    # l'indirizzo è sbagliato o il server non si raggiunge, ed è inutile andare avanti.
+    if (-not $_.Exception.Response) {
+        throw "Il server $Server non si raggiunge ($($_.Exception.Message)). Controlla l'indirizzo: è quello della prima installazione (C:\FuturaPro\impostazioni.json, voce «server») o quello che apri nel browser per il pannello."
+    }
     $certificatoScaricato = $false
 }
 if ($certificatoScaricato) {
