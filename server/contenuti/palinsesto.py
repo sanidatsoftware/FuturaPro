@@ -14,6 +14,7 @@ docs/SPECIFICA.md, «Palinsesto»): se cambiano qui, cambiano anche lì.
 
 from datetime import date, datetime, time, timedelta
 from hashlib import sha256
+import hmac
 import json
 
 from django.conf import settings
@@ -21,6 +22,7 @@ from django.db.models import Q
 from django.urls import reverse
 
 from dispositivi.stampanti import applica as applica_stampante
+from dispositivi.stampanti import per_il_player as per_il_player_stampante
 from layout.manifest import descrivi, layout_del_monitor, riferimenti
 
 from .models import DURATA_IMMAGINE, Contenuto, ElementoPlaylist, EventoStraordinario, Pubblicazione, Tipo
@@ -142,28 +144,46 @@ def annunci_della_sede(sede_id):
     return calcola(sede_id)
 
 
+def chiave_totem(sede_id) -> str:
+    """La chiave con cui i totem secondari chiedono i biglietti al Totem Master (server code)
+    della sede. Derivata dalla chiave del server: non si salva e cambia con lei."""
+    return hmac.new(settings.SECRET_KEY.encode(), f"totem-secondario:{sede_id}".encode(), sha256).hexdigest()
+
+
 def code_del_monitor(monitor, layout: dict) -> dict:
-    """Dove sono le code del negozio. Con un totem, il monitor le legge da lì e il
-    totem riceve anche la configurazione dei reparti (con le impronte delle chiavi
-    delle bilance) da passare al suo servizio code."""
+    """Dove sono le code del negozio. Le tiene il servizio code del Totem Master della sede:
+    i monitor leggono i numeri da lì; il master riceve la configurazione dei reparti (con le
+    impronte delle chiavi delle bilance e dei totem secondari) da passare al suo servizio; i
+    totem secondari ricevono la chiave per chiedergli i biglietti. Senza un master indicato,
+    come prima: ogni totem con la zona «prendi il numero» tiene le code in locale."""
+    from dispositivi.models import Monitor
     from eliminacode.models import CredenzialePulsante, Reparto
 
     totem = monitor.sede.indirizzo_totem
     if not totem:
         return {"modo": "server"}
     code = {"modo": "totem", "indirizzo": f"https://{totem}:{PORTA_CODE_HTTPS}"}
-    if any(z["tipo"] == "prendi_numero" for z in layout["zone"]):
-        chiavi = {}
-        for c in CredenzialePulsante.objects.filter(reparto__sede_id=monitor.sede_id):
-            chiavi.setdefault(str(c.reparto_id), []).append(c.impronta_chiave)
-        code["reparti"] = [
-            {
-                "id": str(r.id), "nome": r.nome, "colore": r.colore, "colore_testo": r.colore_testo,
-                "ordine": r.ordine, "massimo": r.massimo, "attivo": r.attivo,
-                "chiavi": sorted(chiavi.get(str(r.id), [])),
-            }
-            for r in Reparto.objects.filter(sede_id=monitor.sede_id).order_by("ordine", "nome")
-        ]
+    ha_prendi_numero = any(z["tipo"] == "prendi_numero" for z in layout["zone"])
+    master = Monitor.objects.filter(sede_id=monitor.sede_id, totem_master=True).values_list("id", flat=True).first()
+    if master is not None and master != monitor.id:
+        if ha_prendi_numero:
+            code["chiave"] = chiave_totem(monitor.sede_id)
+        return code
+    if master is None and not ha_prendi_numero:
+        return code
+    chiavi = {}
+    for c in CredenzialePulsante.objects.filter(reparto__sede_id=monitor.sede_id):
+        chiavi.setdefault(str(c.reparto_id), []).append(c.impronta_chiave)
+    code["reparti"] = [
+        {
+            "id": str(r.id), "nome": r.nome, "colore": r.colore, "colore_testo": r.colore_testo,
+            "ordine": r.ordine, "massimo": r.massimo, "attivo": r.attivo,
+            "chiavi": sorted(chiavi.get(str(r.id), [])),
+        }
+        for r in Reparto.objects.filter(sede_id=monitor.sede_id).order_by("ordine", "nome")
+    ]
+    if master is not None:
+        code["totem"] = [sha256(chiave_totem(monitor.sede_id).encode()).hexdigest()]
     return code
 
 
@@ -172,7 +192,7 @@ def manifest(monitor) -> dict:
     pubblicazioni = list(pubblicazioni_del_monitor(monitor))
     layout = descrivi(layout_del_monitor(monitor), monitor.orientamento)
     for zona in layout["zone"]:
-        # La stampante dei biglietti è del totem, non del layout (vedi dispositivi.stampanti).
+        # La stampante abbinata al totem vale sopra quella della zona (vedi dispositivi.stampanti).
         if zona["tipo"] == "prendi_numero":
             zona["configurazione"] = applica_stampante(monitor, zona["configurazione"])
     playlist_fisse, immagini_layout = riferimenti(layout)
@@ -238,6 +258,8 @@ def manifest(monitor) -> dict:
         "telefono": telefono_per_manifest(),
         # I file audio dei numeri chiamati, per i reparti della sede che li hanno.
         "annunci": annunci_della_sede(monitor.sede_id),
+        # La stampante dei biglietti abbinata (per la stampa di prova); null: quella del layout.
+        "stampante": per_il_player_stampante(monitor.stampante if monitor.stampante_id else None),
     }
     # La versione dipende solo dal contenuto: se nulla cambia, il player non riscarica.
     corpo["versione"] = sha256(json.dumps(corpo, sort_keys=True).encode()).hexdigest()

@@ -105,7 +105,7 @@ class RiferimentoCliente(serializers.PrimaryKeyRelatedField):
 
 
 def sedi_visibili(utente):
-    """Le sedi a cui è limitato un UserCliente, oppure None se vede tutto il cliente."""
+    """Le sedi a cui è limitato un User, oppure None se vede tutto il cliente."""
     if utente.ruolo != Ruolo.USER_CLIENTE:
         return None
     sedi = list(utente.sedi_consentite.values_list("id", flat=True))

@@ -250,8 +250,9 @@ async function abilitazioni(cliente, cella) {
 // --- Monitor ----------------------------------------------------------------------------
 
 async function schedaMonitor() {
-  const [monitor, sedi, gruppi, layout, riserve] = await Promise.all([
+  const [monitor, sedi, gruppi, layout, riserve, stampanti] = await Promise.all([
     elenco("/api/monitor/"), elenco("/api/sedi/"), elenco("/api/gruppi/"), elenco("/api/layout/"), tutteLePagine("/api/contenuti/?uso=riserva"),
+    elenco("/api/stampanti/").catch(() => []),
   ]);
   // Le riserve assegnate prima che si caricassero a parte (dalla libreria): restano scelte.
   const note = new Set(riserve.map((c) => c.id));
@@ -305,7 +306,7 @@ async function schedaMonitor() {
 
   const tutti = sezione("Schermi");
   if (!monitor.length) crea("p", { classe: "vuoto", testo: "Nessuno schermo abbinato." }, tutti);
-  const corpo = tabella(["Anteprima", "Nome", "Sede", "Stato", "In onda", "Gruppi", "Orientamento", "Rotazione", "Layout", "Se non c'è nulla in onda", ""], tutti);
+  const corpo = tabella(["Anteprima", "Nome", "Sede", "Stato", "In onda", "Gruppi", "Orientamento", "Rotazione", "Layout", "Totem: code e stampante", "Se non c'è nulla in onda", ""], tutti);
   for (const m of monitor) {
     const riga = crea("tr", {}, corpo);
     const schermo = schermoInMiniatura(m, crea("td", { classe: "cella-schermo" }, riga));
@@ -369,6 +370,24 @@ async function schedaMonitor() {
       });
       crea("td", {}, riga).appendChild(controllo);
     }
+    // Totem: chi detiene i turni delle code della sede (uno solo) e la stampante dei biglietti.
+    const cellaTotem = crea("td", { classe: "cella-totem" }, riga);
+    const etichettaMaster = crea("label", {
+      classe: "spunta", "data-aiuto": "Il Totem Master (server code) detiene i turni delle code della sede: gli altri totem e i monitor prendono i numeri da lui. Uno solo per sede: sceglierne un altro toglie il segno a questo.",
+    }, cellaTotem);
+    crea("input", {
+      type: "checkbox", checked: m.totem_master, disabled: !gestione,
+      onchange: (e) => prova(() => api("PATCH", `/api/monitor/${m.id}/`, { totem_master: e.target.checked }),
+        e.target.checked ? `«${m.nome}» è il Totem Master (server code) della sede.` : "Salvato."),
+    }, etichettaMaster);
+    etichettaMaster.append(m.totem_master ? " ★ Totem Master (server code)" : " Totem Master (server code)");
+    if (m.totem_master) etichettaMaster.classList.add("master");
+    const dellaSede = stampanti.filter((st) => st.sede === m.sede || st.id === m.stampante);
+    const sceltaStampante = scelta([["", "— stampante dal layout —"], ...dellaSede.map((st) => [st.id, `🖨 ${st.nome}`])], m.stampante || "");
+    sceltaStampante.disabled = !gestione;
+    sceltaStampante.title = "La stampante dei biglietti di questo totem (Hardware · Anagrafica Stampanti Ticket).";
+    sceltaStampante.addEventListener("change", () => salva({ stampante: sceltaStampante.value || null }));
+    cellaTotem.appendChild(sceltaStampante);
     riservaDelMonitor.disabled = !gestione;
     crea("td", {}, riga).appendChild(riservaDelMonitor);
     const azioni = crea("td", { classe: "azioni" }, riga);
@@ -776,12 +795,13 @@ async function schedaSedi() {
     }, crea("td", {}, riga));
   }
 
-  const totem = sezione("Totem delle code");
+  const totem = sezione("Totem Master (server code)");
   crea("p", {
     classe: "nota",
-    testo: "L'IP fisso del totem che gestisce le code della sede: numeri e biglietti li tiene il totem, che funziona anche senza server centrale. Vuoto: le code le tiene il server.",
+    testo: "L'IP fisso del Totem Master della sede, quello che detiene i turni delle code: numeri e biglietti li tiene lui, anche senza server centrale; gli altri totem gli chiedono i numeri. "
+      + "Quale totem è il master si sceglie in «Anagrafica Dispositivi Video». Vuoto: le code le tiene il server.",
   }, totem);
-  const corpoTotem = tabella(["Sede", "IP del totem", ""], totem);
+  const corpoTotem = tabella(["Sede", "IP del Totem Master", ""], totem);
   for (const sede of sedi) {
     const riga = crea("tr", {}, corpoTotem);
     crea("td", { testo: sede.nome }, riga);
@@ -890,7 +910,7 @@ async function schedaUtenti() {
   const riga = crea("div", { classe: "riga" }, nuovo);
   const nome = campo("Nome utente", crea("input", { autocomplete: "off" }), riga);
   const password = campo("Password (almeno 10 caratteri)", crea("input", { type: "password", autocomplete: "new-password" }), riga);
-  const ruolo = campo("Ruolo", scelta([["user_cliente", "UserCliente (contenuti e banco)"], ["admin_cliente", "Administrator"]]), riga);
+  const ruolo = campo("Ruolo", scelta([["user_cliente", "User (contenuti e banco)"], ["admin_cliente", "Administrator"]]), riga);
   crea("span", { classe: "etichetta", testo: "Limitato alle sedi (nessuna = tutte)" }, nuovo);
   const sediScelte = spunte(sedi.map((s) => [s.id, s.nome]), [], nuovo);
   crea("button", {
@@ -903,7 +923,7 @@ async function schedaUtenti() {
   for (const u of utenti) {
     const r = crea("tr", {}, corpo);
     crea("td", { testo: u.username }, r);
-    crea("td", { testo: u.ruolo === "admin_cliente" ? "Administrator" : "UserCliente" }, r);
+    crea("td", { testo: u.ruolo === "admin_cliente" ? "Administrator" : "User" }, r);
     const attivo = crea("input", { type: "checkbox", checked: u.is_active, disabled: u.id === stato.io.id }, crea("td", {}, r));
     attivo.addEventListener("change", () => prova(() => api("PATCH", `/api/utenti/${u.id}/`, { is_active: attivo.checked }), "Salvato."));
     const azioni = crea("td", { classe: "azioni" }, r);
@@ -941,7 +961,7 @@ function scegliCliente(id, scheda) {
 
 async function avvia() {
   stato.io = await api("GET", "/api/io/");
-  const ruoli = { admin_assoluto: "SystemAdministrator", tecnico: "Tecnico", admin_cliente: "Administrator", user_cliente: "UserCliente" };
+  const ruoli = { admin_assoluto: "SystemAdministrator", tecnico: "Tecnico", admin_cliente: "Administrator", user_cliente: "User" };
   document.getElementById("utente").textContent = `${stato.io.username} · ${ruoli[stato.io.ruolo]}`;
   if (stato.io.di_piattaforma) {
     document.getElementById("scelta-cliente").hidden = false;

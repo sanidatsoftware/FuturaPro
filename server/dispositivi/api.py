@@ -24,7 +24,7 @@ from . import schermate, stampanti
 from .models import (
     acceso_secondo_orario, orario_del_monitor,
     CredenzialeDispositivo, EventoSchermo, GruppoMonitor, ImpostazioniAllarmi, ImpostazioniDownload, Monitor, OrarioSchermi, Piattaforma,
-    PresenzaSchermo, RichiestaAbbinamento, impronta,
+    PresenzaSchermo, RichiestaAbbinamento, StampanteTicket, impronta,
 )
 
 
@@ -67,6 +67,7 @@ class MonitorSerializer(serializers.ModelSerializer):
     gruppi = RiferimentoCliente(GruppoMonitor, many=True, required=False)
     layout = RiferimentoCliente(Layout, required=False, allow_null=True)
     immagine_riserva = RiferimentoCliente(Contenuto, required=False, allow_null=True)
+    stampante = RiferimentoCliente(StampanteTicket, required=False, allow_null=True)
     online = serializers.BooleanField(read_only=True)
     problema = serializers.SerializerMethodField()
     riposo = serializers.SerializerMethodField()
@@ -84,10 +85,13 @@ class MonitorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Monitor
         fields = [
-            "id", "nome", "sede", "gruppi", "orientamento", "rotazione", "layout", "immagine_riserva", "piattaforma",
+            "id", "nome", "sede", "gruppi", "orientamento", "rotazione", "layout", "immagine_riserva", "stampante", "totem_master", "piattaforma",
             "versione_player", "ultimo_contatto", "online", "problema", "riposo", "attesa_download", "schermata_il", "abbinato_il",
         ]
         read_only_fields = ["piattaforma", "versione_player", "ultimo_contatto", "schermata_il", "abbinato_il"]
+        # Il Totem Master è uno per sede, ma sceglierne un altro è lecito: lo si toglie al
+        # precedente salvando (perform_update), invece di rifiutare.
+        validators = []
 
     def validate(self, dati):
         orientamento = dati.get("orientamento") or getattr(self.instance, "orientamento", "orizzontale")
@@ -97,6 +101,10 @@ class MonitorSerializer(serializers.ModelSerializer):
         riserva = dati.get("immagine_riserva")
         if riserva is not None and riserva.tipo not in ("immagine", "video"):
             raise serializers.ValidationError({"immagine_riserva": "Dev'essere un'immagine o un video."})
+        stampante = dati["stampante"] if "stampante" in dati else getattr(self.instance, "stampante", None)
+        sede = dati.get("sede") or getattr(self.instance, "sede", None)
+        if stampante is not None and sede is not None and stampante.sede_id != sede.id:
+            raise serializers.ValidationError({"stampante": f"La stampante «{stampante.nome}» è di un'altra sede."})
         return dati
 
 
@@ -287,16 +295,22 @@ class DownloadView(VistaConContesto, APIView):
         return Response(ImpostazioniDownloadSerializer(impostazioni).data)
 
 
-class StampanteSerializer(serializers.Serializer):
-    """Le impostazioni proprie di un totem; «personalizzata» falso = quelle del layout."""
+class StampanteTicketSerializer(serializers.ModelSerializer):
+    sede = RiferimentoCliente(Sede)
+    abbinata_a = serializers.SerializerMethodField()
+    prova = serializers.SerializerMethodField()
 
-    personalizzata = serializers.BooleanField()
-    stampa = serializers.ChoiceField(["nessuna", "browser", "epson"], required=False, default="nessuna")
-    stampante = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
-    intestazione = serializers.CharField(max_length=60, required=False, allow_blank=True, default="")
-    messaggio = serializers.CharField(max_length=120, required=False, allow_blank=True, default="Attendi il tuo turno, grazie!")
+    def get_abbinata_a(self, stampante):
+        return [{"id": str(m.id), "nome": m.nome, "online": m.online} for m in stampante.monitor.all()]
 
-    def validate_stampante(self, valore):
+    def get_prova(self, stampante):
+        return stampanti.stato_prova(stampante)
+
+    class Meta:
+        model = StampanteTicket
+        fields = ["id", "nome", "sede", "tipo", "indirizzo", "modello", "intestazione", "messaggio", "note", "abbinata_a", "prova"]
+
+    def validate_indirizzo(self, valore):
         valore = valore.strip()
         for prefisso in ("https://", "http://"):
             if valore.lower().startswith(prefisso):
@@ -307,74 +321,56 @@ class StampanteSerializer(serializers.Serializer):
         return valore
 
     def validate(self, dati):
-        if dati["personalizzata"] and dati["stampa"] == "epson" and not dati["stampante"]:
-            raise serializers.ValidationError({"stampante": "Indica l'indirizzo della stampante Epson."})
+        tipo = dati.get("tipo", getattr(self.instance, "tipo", StampanteTicket.Tipo.EPSON))
+        indirizzo = dati.get("indirizzo", getattr(self.instance, "indirizzo", ""))
+        if tipo == StampanteTicket.Tipo.EPSON and not indirizzo:
+            raise serializers.ValidationError({"indirizzo": "Indica l'indirizzo della stampante Epson."})
+        sede = dati.get("sede")
+        if self.instance is not None and sede is not None and sede != self.instance.sede:
+            if self.instance.monitor.exclude(sede=sede).exists():
+                raise serializers.ValidationError({"sede": "È abbinata a schermi di un'altra sede: prima togli l'abbinamento."})
         return dati
 
 
-def _descrivi_totem(monitor, zone):
-    layout = stampanti.dal_layout(zone)
-    proprie = monitor.stampante or {}
-    return {
-        "id": str(monitor.id), "nome": monitor.nome, "sede": monitor.sede.nome, "online": monitor.online,
-        "layout": zone[0].layout.nome, "totem_sede": monitor.sede.indirizzo_totem or "",
-        "dal_layout": layout, "personalizzata": bool(proprie),
-        "effettiva": {**layout, **proprie}, "prova": stampanti.stato_prova(monitor),
-    }
+class StampantiViewSet(ViewSetCliente):
+    """Anagrafica Stampanti Ticket. Le cambiano la gestione e i tecnici; la stampa di prova
+    (POST <id>/prova/) la può chiedere chiunque le veda: la esegue un totem abbinato."""
 
-
-class StampantiView(VistaConContesto, APIView):
-    """Le stampanti dei biglietti: ogni schermo con la zona «prendi il numero» (un totem).
-
-    GET l'elenco; PUT <id> le impostazioni del totem; POST <id>/prova una stampa di prova.
-    Le cambiano la gestione e i tecnici; la prova la può chiedere chiunque veda il totem.
-    """
-
+    serializer_class = StampanteTicketSerializer
     ruoli_scrittura = GESTIONE | {Ruolo.TECNICO}
 
-    def _monitor(self, request):
-        monitor = Monitor.objects.select_related("sede", "layout").order_by("sede__nome", "nome")
-        limitate = sedi_visibili(request.user)
-        return monitor if limitate is None else monitor.filter(sede_id__in=limitate)
-
-    def _totem(self, request, monitor_id):
-        monitor = self._monitor(request).filter(id=monitor_id).first()
-        zone = stampanti.zone_del_totem(monitor) if monitor else []
-        if not zone:
-            raise exceptions.NotFound("Questo schermo non ha la zona «prendi il numero».")
-        return monitor, zone
+    def get_queryset(self):
+        stampanti_ = StampanteTicket.objects.select_related("sede", "prova_monitor").prefetch_related("monitor")
+        limitate = sedi_visibili(self.request.user)
+        return stampanti_ if limitate is None else stampanti_.filter(sede_id__in=limitate)
 
     def get_permissions(self):
-        if self.request.method == "POST":
+        if getattr(self, "action", None) == "prova":
             self.ruoli_scrittura = self.ruoli_lettura
         return super().get_permissions()
 
-    def get(self, request, monitor_id=None):
-        if monitor_id:
-            return Response(_descrivi_totem(*self._totem(request, monitor_id)))
-        totem = []
-        for monitor in self._monitor(request):
-            zone = stampanti.zone_del_totem(monitor)
-            if zone:
-                totem.append(_descrivi_totem(monitor, zone))
-        return Response(totem)
+    def perform_create(self, serializer):
+        registra(self.request.user, "stampante_creata", serializer.save())
 
-    def put(self, request, monitor_id=None):
-        monitor, zone = self._totem(request, monitor_id)
-        dati = StampanteSerializer(data=request.data)
-        dati.is_valid(raise_exception=True)
-        valori = dati.validated_data
-        monitor.stampante = {c: valori[c] for c in stampanti.CAMPI} if valori["personalizzata"] else {}
-        monitor.save(update_fields=["stampante"])
-        registra(request.user, "stampante_modificata", monitor, nome=monitor.nome, stampa=monitor.stampante.get("stampa", "layout"))
-        return Response(_descrivi_totem(monitor, zone))
+    def perform_update(self, serializer):
+        registra(self.request.user, "stampante_modificata", serializer.save())
 
-    def post(self, request, monitor_id=None):
-        monitor, zone = self._totem(request, monitor_id)
-        stampanti.richiedi_prova(monitor)
-        registra(request.user, "prova_stampa", monitor, nome=monitor.nome)
-        return Response(_descrivi_totem(monitor, zone), status=status.HTTP_202_ACCEPTED)
+    def perform_destroy(self, stampante):
+        registra(self.request.user, "stampante_eliminata", stampante, nome=stampante.nome)
+        stampante.delete()
 
+    @action(detail=True, methods=["post"])
+    def prova(self, request, pk=None):
+        stampante = self.get_object()
+        abbinati = sorted(stampante.monitor.all(), key=lambda m: not m.online)
+        if not abbinati or not abbinati[0].online:
+            raise exceptions.ValidationError(
+                "La prova la fa un totem abbinato e in linea: abbina la stampante in «Anagrafica Dispositivi Video»."
+                if not abbinati else "Nessuno dei totem abbinati è in linea."
+            )
+        stampanti.richiedi_prova(stampante, abbinati[0])
+        registra(request.user, "prova_stampa", stampante, totem=abbinati[0].nome)
+        return Response(self.get_serializer(stampante).data, status=status.HTTP_202_ACCEPTED)
 
 def download_del_monitor(monitor):
     """Per il manifest: la fascia di download o None (si scarica sempre, senza limiti)."""
@@ -538,6 +534,12 @@ class MonitorViewSet(ViewSetCliente):
     def perform_update(self, serializer):
         self._verifica_abilitazione()
         vecchia = serializer.instance.immagine_riserva_id
+        dati = serializer.validated_data
+        master = dati.get("totem_master", serializer.instance.totem_master)
+        if master:
+            # Un solo Totem Master (server code) per sede: scegliendone uno, l'altro smette di esserlo.
+            sede = dati.get("sede", serializer.instance.sede)
+            Monitor.objects.filter(sede=sede, totem_master=True).exclude(id=serializer.instance.id).update(totem_master=False)
         registra(self.request.user, "monitor_modificato", serializer.save())
         elimina_riserve_orfane(vecchia)
 
@@ -593,11 +595,10 @@ class SchermataPlayerView(VistaPlayer):
     def get(self, request):
         credenziale = credenziale_dalla_richiesta(request)
         with contesto_cliente(credenziale.cliente_id):
-            monitor = Monitor.objects.only(
-                "schermata_il", "schermata_richiesta", "prova_stampa_richiesta", "prova_stampa_esito"
-            ).get(id=credenziale.monitor_id)
-        # Nella stessa domanda: c'è da fare una stampa di prova del biglietto?
-        return Response({"richiesta": schermate.richiesta(monitor), "prova_stampa": stampanti.prova_in_attesa(monitor)})
+            monitor = Monitor.objects.only("schermata_il", "schermata_richiesta").get(id=credenziale.monitor_id)
+            # Nella stessa domanda: c'è da fare una stampa di prova del biglietto? Con quale stampante?
+            prova = stampanti.per_il_player(stampanti.prova_per_il_monitor(monitor.id))
+        return Response({"richiesta": schermate.richiesta(monitor), "prova_stampa": prova})
 
     def post(self, request):
         credenziale = credenziale_dalla_richiesta(request)
@@ -620,9 +621,9 @@ class ProvaStampaPlayerView(VistaPlayer):
         ok = bool(request.data.get("ok"))
         messaggio = str(request.data.get("messaggio") or "")
         with contesto_cliente(credenziale.cliente_id):
-            monitor = Monitor.objects.get(id=credenziale.monitor_id)
-            if monitor.prova_stampa_richiesta and not monitor.prova_stampa_esito:
-                stampanti.salva_esito(monitor, ok, messaggio)
+            stampante = stampanti.prova_per_il_monitor(credenziale.monitor_id)
+            if stampante is not None:
+                stampanti.salva_esito(stampante, ok, messaggio)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

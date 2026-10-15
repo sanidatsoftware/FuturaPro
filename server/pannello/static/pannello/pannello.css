@@ -221,3 +221,6 @@ input.corto { width: 90px; }
 .esito-prova { font-size: 13.5px; margin: 8px 0 0; }
 .esito-prova.ok { color: var(--ok); }
 .esito-prova.errore { color: var(--errore); }
+.cella-totem { min-width: 190px; }
+.cella-totem label.master { font-weight: 700; color: var(--primario); }
+.cella-totem select { margin-top: 4px; max-width: 220px; }

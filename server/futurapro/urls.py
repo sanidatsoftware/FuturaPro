@@ -32,7 +32,7 @@ from dispositivi.api import (
     RichiestaAbbinamentoView,
     ProvaStampaPlayerView,
     SchermataPlayerView,
-    StampantiView,
+    StampantiViewSet,
     StatoPlayerView,
 )
 from eliminacode import views as eliminacode
@@ -56,6 +56,7 @@ router.register("piattaforma/audit", AuditPiattaformaViewSet, basename="audit-pi
 # Cliente: il proprio per gli utenti del cliente, quello in X-Cliente per la piattaforma.
 router.register("insegne", InsegneViewSet, basename="insegne")
 router.register("sedi", SediViewSet, basename="sedi")
+router.register("stampanti", StampantiViewSet, basename="stampanti")
 router.register("gruppi", GruppiViewSet, basename="gruppi")
 router.register("monitor", MonitorViewSet, basename="monitor")
 router.register("orari", OrariViewSet, basename="orari")
@@ -97,8 +98,6 @@ urlpatterns = [
     path("api/download/", DownloadView.as_view(), name="download"),
     path("api/storico-allarmi/", StoricoAllarmiView.as_view(), name="storico-allarmi"),
     path("api/stato-schermi/", StatoSchermiView.as_view(), name="stato-schermi"),
-    path("api/stampanti/", StampantiView.as_view(), name="stampanti"),
-    path("api/stampanti/<uuid:monitor_id>/", StampantiView.as_view(), name="stampante"),
     path("api/player/code/eventi/", EventiCodaPlayerView.as_view(), name="player-eventi-coda"),
     path("api/pubblico/biglietti/<str:codice>/", BigliettoPubblicoView.as_view(), name="biglietto-pubblico"),
     path("api/statistiche-code/", StatisticheCodeView.as_view(), name="statistiche-code"),

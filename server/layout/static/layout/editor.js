@@ -165,7 +165,7 @@ const CAMPI = {
     { nome: "colonne", etichetta: "Colonne di pulsanti (0 = automatico)", tipo: "numero", min: 0, max: 4, passo: 1, predefinito: 0 },
     { nome: "arrotondamento", etichetta: "Arrotondamento angoli (px)", tipo: "numero", min: 0, max: 60, passo: 2, predefinito: 14 },
     { nome: "testo_coda", etichetta: "Testo clienti in coda ({n} = numero; vuoto = nascosto)", tipo: "testo", predefinito: "Clienti in coda: {n}" },
-    { nome: "stampa", etichetta: "Stampa del biglietto (predefinita: ogni totem può avere la sua in Hardware · Stampante dei biglietti)", tipo: "scelta", valori: [["nessuna", "Nessuna"], ["browser", "Stampante di sistema"], ["epson", "Stampante Epson di rete"]], predefinito: "nessuna" },
+    { nome: "stampa", etichetta: "Stampa del biglietto (se il totem non ha una stampante abbinata in Anagrafica Dispositivi Video)", tipo: "scelta", valori: [["nessuna", "Nessuna"], ["browser", "Stampante di sistema"], ["epson", "Stampante Epson di rete"]], predefinito: "nessuna" },
     { nome: "stampante", etichetta: "Indirizzo stampante Epson", tipo: "testo", predefinito: "" },
     { nome: "intestazione", etichetta: "Intestazione del biglietto", tipo: "testo", predefinito: "" },
     { nome: "messaggio", etichetta: "Messaggio sul biglietto", tipo: "testo", predefinito: "Attendi il tuo turno, grazie!" },

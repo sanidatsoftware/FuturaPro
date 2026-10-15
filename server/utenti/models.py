@@ -9,7 +9,7 @@ class Ruolo(models.TextChoices):
     ADMIN_ASSOLUTO = "admin_assoluto", "SystemAdministrator"
     TECNICO = "tecnico", "Tecnico Teleassistenza"
     ADMIN_CLIENTE = "admin_cliente", "Administrator"
-    USER_CLIENTE = "user_cliente", "UserCliente"
+    USER_CLIENTE = "user_cliente", "User"
 
 
 RUOLI_PIATTAFORMA = {Ruolo.ADMIN_ASSOLUTO, Ruolo.TECNICO}
@@ -29,7 +29,7 @@ class Utente(AbstractUser):
     cliente = models.ForeignKey(
         "clienti.Cliente", on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )
-    # Facoltativo: un UserCliente con sedi assegnate vede solo quelle.
+    # Facoltativo: un User con sedi assegnate vede solo quelle.
     sedi_consentite = models.ManyToManyField("clienti.Sede", blank=True, related_name="+")
     # Aspetto delle pagine (pannello, editor, palinsesto): «auto» segue il sistema operativo.
     tema = models.CharField(

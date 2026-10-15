@@ -196,7 +196,7 @@ class AdminClienteTest(Base):
         self.assertEqual(self.client.get("/api/monitor/").status_code, 403)
 
 
-class UserClienteTest(Base):
+class UserTest(Base):
     def test_non_gestisce(self):
         self.come(self.user_a)
         self.assertEqual(self.client.post("/api/sedi/", {"nome": "Napoli"}).status_code, 403)

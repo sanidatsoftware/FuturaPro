@@ -47,7 +47,7 @@ teleassistenza.
 | **SystemAdministrator** | Piattaforma (Sanidat) | Tutto. Sceglie l'azienda dal selettore e opera nel suo contesto; crea clienti, Administrator, tecnici; decide le abilitazioni di ogni cliente. |
 | **Tecnico Teleassistenza** | Piattaforma | Designato dal SystemAdministrator. Apre sessioni remote sui player di **tutti** i clienti; legge l'elenco clienti e i monitor. Non gestisce contenuti né configurazioni. |
 | **Administrator** | Un cliente | Amministra il proprio parco **entro le abilitazioni concesse**: sedi, gruppi, monitor, contenuti, utenti del cliente. Legge le abilitazioni e il registro di audit e teleassistenza del cliente. Non avvia la teleassistenza. |
-| **UserCliente** | Un cliente | Gestisce contenuti, playlist e programmazione. Facoltativamente limitato a certe sedi: allora vede solo quelle e i loro monitor. |
+| **User** | Una sola azienda (quella di appartenenza) | Gestisce contenuti, playlist e programmazione. Facoltativamente limitato a certe sedi: allora vede solo quelle e i loro monitor. |
 
 **Abilitazioni** (per cliente, le imposta solo il SystemAdministrator): numero massimo di
 monitor e di utenti, spazio disponibile, se l'Administrator può gestire gli utenti, se può
@@ -318,8 +318,8 @@ il periodo appena concluso.
 
 ### Menu del pannello
 
-- **Hardware**: Anagrafica Dispositivi Video (abbinamento, sede, layout, riserva), Stampante dei
-  biglietti dei totem.
+- **Hardware**: Anagrafica Dispositivi Video (abbinamento, sede, layout anche diverso per ogni
+  schermo, riserva, Totem Master, stampante abbinata), Anagrafica Stampanti Ticket.
 - **Contenuti**: Creazione palinsesto, Listini.
 - **Code**: Reparti ed eliminacode, Coda sul telefono.
 - **Report & Log**: Stato e allarmi, Messa in onda, Tempi d'attesa, Registro operazioni,
@@ -403,11 +403,21 @@ delle chiavi) attraverso il manifest del totem. Per quella sede il server rifiut
 coda, così i numeri non stanno mai in due posti. Senza totem le code le tiene il server, come
 descritto sotto.
 
+**Totem Master (server code).** In un negozio ci possono essere più totem, ma i turni li detiene
+uno solo: il **Totem Master**, segnato con la spunta in *Anagrafica Dispositivi Video*
+(`Monitor.totem_master`, uno per sede: sceglierne un altro toglie il segno al precedente). L'IP
+della sede (*Totem Master (server code)* in *Sedi e gruppi*) è il suo. Solo il manifest del master
+porta la configurazione dei reparti (e copia gli annunci, inoltra il registro dei biglietti); i
+totem secondari ricevono una chiave della sede (HMAC della chiave del server) e chiedono i numeri
+al servizio code del master con `Authorization: Totem <chiave>`; al master arriva solo
+l'impronta. Senza nessun master indicato vale il comportamento precedente: ogni totem con la zona
+«prendi il numero» tiene le code in locale (va bene con un solo totem).
+
 Servizio code del totem:
 
 | Porta | Chi | Cosa |
 |---|---|---|
-| 8443 HTTPS | monitor e totem | `GET /stato` (numeri, chiunque in rete); `POST /config` e `POST /emetti/<reparto>` (solo dal totem stesso, 127.0.0.1) |
+| 8443 HTTPS | monitor e totem | `GET /stato` (numeri, chiunque in rete); `POST /config` (solo dal totem stesso, 127.0.0.1); `POST /emetti/<reparto>` (dal totem stesso o da un totem secondario con la chiave della sede) |
 | 8090 HTTP | bilance, banchi, pulsanti | `GET /banco/` (pagina), `GET /banco/stato/`, `POST /banco/{avanti,indietro,ripeti,azzera,imposta}/` con la chiave del reparto |
 
 Il certificato del servizio è autofirmato, creato all'installazione del totem per il suo IP (e per
@@ -426,7 +436,7 @@ Ogni operazione blocca la riga del reparto: due banchi o due totem che premono i
 ottengono mai lo stesso numero (verificato con 40 emissioni in parallelo).
 
 **Banco** (`/banco/`, su tablet, PC o browser della bilancia): avanti, indietro, ripeti,
-imposta numero, azzera. Le chiamate le fa anche lo UserCliente; configurare i reparti è della
+imposta numero, azzera. Le chiamate le fa anche lo User; configurare i reparti è della
 gestione. Il banco funziona con l'accesso al pannello oppure con la **chiave del reparto**.
 
 **Pulsantiere, bilance, script.** Una chiave per reparto, generata nel pannello (se ne conserva
@@ -492,12 +502,16 @@ le persone che lo precedono e il player stampa:
   (il suo certificato si accetta una volta sul totem). Se la stampante non risponde il totem lo
   dice e mostra comunque il numero.
 
-Le impostazioni della zona sono quelle di partenza: ogni totem può avere le sue
-(`Monitor.stampante`, menu **Hardware · Stampante dei biglietti**, `/api/stampanti/`), perché lo
-stesso layout gira in negozi con stampanti diverse; il manifest del totem le applica sopra la zona.
-Le cambiano Administrator e tecnici. La **stampa di prova** la chiede il pannello
-(`POST /api/stampanti/<id>/`) e la esegue il totem stesso — il server non vede la rete del
-negozio: la scopre nella domanda periodica `/api/player/schermata/` (`prova_stampa`), stampa un
+**Anagrafica Stampanti Ticket** (menu **Hardware**, `/api/stampanti/`, modello
+`StampanteTicket`): l'elenco delle stampanti dei negozi — nome, sede, tipo (Epson di rete o di
+sistema), indirizzo, modello, note, intestazione e messaggio facoltativi. La gestiscono
+Administrator e tecnici. Ogni totem si abbina alla sua stampante in **Anagrafica Dispositivi
+Video** (`Monitor.stampante`, solo una stampante della stessa sede); il manifest del totem applica
+tipo e indirizzo della stampante, e intestazione/messaggio se compilati, sopra la zona «prendi il
+numero». Senza stampante abbinata vale la zona del layout. La **stampa di prova**
+(`POST /api/stampanti/<id>/prova/`, la può chiedere chiunque veda la stampante) la esegue un totem
+abbinato e in linea — il server non vede la rete del negozio: il totem la scopre nella domanda
+periodica `/api/player/schermata/` (`prova_stampa`, con i dati della stampante), stampa un
 biglietto «PROVA STAMPA» che non consuma numeri e riferisce l'esito a `/api/player/prova-stampa/`
 (la richiesta vale due minuti).
 
@@ -630,9 +644,9 @@ piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
 | `GET /api/audit/` | SystemAdministrator, Administrator |
 | `GET /api/teleassistenza/sessioni/` | SystemAdministrator, Tecnico, Administrator |
 | `POST /api/teleassistenza/sessioni/`, `POST …/{id}/chiudi/` | SystemAdministrator, Tecnico |
-| `/api/contenuti/` (upload multipart), `GET /api/contenuti/{id}/file/` | lettura: tutti — scrittura: SystemAdministrator, Administrator, UserCliente |
-| `/api/playlist/`, `/api/pubblicazioni/` | lettura: tutti — scrittura: SystemAdministrator, Administrator, UserCliente |
-| `POST /api/pubblica/` | SystemAdministrator, Administrator, UserCliente |
+| `/api/contenuti/` (upload multipart), `GET /api/contenuti/{id}/file/` | lettura: tutti — scrittura: SystemAdministrator, Administrator, User |
+| `/api/playlist/`, `/api/pubblicazioni/` | lettura: tutti — scrittura: SystemAdministrator, Administrator, User |
+| `POST /api/pubblica/` | SystemAdministrator, Administrator, User |
 | `GET /api/anteprima/{monitor}/?quando=` | tutti |
 | `/api/layout/`, `POST /api/layout/da-modello/`, `GET /api/layout/modelli/` | lettura: tutti — scrittura: SystemAdministrator, Administrator (se abilitato) |
 | `GET /api/zone/{id}/dati/`, `GET /api/anteprima/{monitor}/manifest/` | tutti (anteprima) |
@@ -640,7 +654,7 @@ piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
 | `POST /api/player/abbinamento/`, `GET /api/player/stato/`, `POST /api/player/heartbeat/` | player |
 | `GET /api/player/zone/{id}/dati/`, `POST /api/player/zone/{id}/emetti/` | player |
 | `/api/reparti/` | lettura: tutti — scrittura: SystemAdministrator, Administrator |
-| `POST /api/reparti/{id}/avanti/` (anche `indietro`, `ripeti`, `imposta`, `azzera`, `emetti`) | SystemAdministrator, Administrator, UserCliente |
+| `POST /api/reparti/{id}/avanti/` (anche `indietro`, `ripeti`, `imposta`, `azzera`, `emetti`) | SystemAdministrator, Administrator, User |
 | `POST/DELETE /api/reparti/{id}/chiave/` | SystemAdministrator, Administrator |
 | `GET /api/eliminacode/pulsante/`, `POST /api/eliminacode/pulsante/{avanti,indietro,ripeti}/` | chiave del reparto |
 | `GET /api/player/palinsesto/`, `GET /api/player/file/{id}/` | player |

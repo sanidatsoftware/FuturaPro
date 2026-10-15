@@ -1803,7 +1803,7 @@ async function avvia() {
   document.getElementById("al-pannello").href = conCliente("/pannello/");
   try {
     S.io = await api("GET", "/api/io/");
-    const ruoli = { admin_assoluto: "SystemAdministrator", tecnico: "Tecnico", admin_cliente: "Administrator", user_cliente: "UserCliente" };
+    const ruoli = { admin_assoluto: "SystemAdministrator", tecnico: "Tecnico", admin_cliente: "Administrator", user_cliente: "User" };
     document.getElementById("utente").textContent = `${S.io.username} · ${ruoli[S.io.ruolo] || ""}`;
   } catch {
     location.href = `/accesso/?next=${encodeURIComponent(location.pathname + location.search)}`;

@@ -1,5 +1,5 @@
 // Le schede degli schermi oltre all'anagrafica: accensione e spegnimento, stato e allarmi,
-// fasce di download, stampante dei biglietti dei totem. Gli strumenti (api, crea, sezione…) arrivano da pannello.js.
+// fasce di download, anagrafica delle stampanti ticket. Gli strumenti (api, crea, sezione…) arrivano da pannello.js.
 // I testi che arrivano dai dati passano sempre da textContent.
 
 import { sezioneInvii } from "./invii.js";
@@ -368,94 +368,124 @@ export async function schedaDownload() {
   for (const c of [attivo, dalle, alle, kbps]) c.disabled = !H.ruoloGestione();
 }
 
-// --- Stampante dei biglietti (Hardware) ---------------------------------------------
-// Una scheda per totem (schermo con la zona «prendi il numero»): le impostazioni vengono dal
-// layout, ma ogni totem può avere le sue (indirizzo della sua stampante). La prova la fa il totem.
+// --- Anagrafica Stampanti Ticket (Hardware) -------------------------------------------
+// Solo l'elenco delle stampanti dei negozi: l'abbinamento ai totem si fa in «Anagrafica
+// Dispositivi Video». La stampa di prova la esegue un totem abbinato e in linea.
 
-const MODI_STAMPA = [
-  ["nessuna", "Nessuna stampa (solo il numero a schermo)"],
-  ["browser", "Stampante di sistema del PC del totem (Chrome --kiosk-printing)"],
-  ["epson", "Stampante di rete Epson TM (ePOS-Print)"],
+export const TIPI_STAMPANTE = [
+  ["epson", "Epson di rete (ePOS-Print)"],
+  ["browser", "Stampante di sistema del PC del totem"],
 ];
 
 function esitoProva(p) {
   const ora = (iso) => new Date(iso).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
-  if (p.stato === "in_attesa") return ["⏳ Stampa di prova chiesta: il totem la esegue entro pochi secondi…", "tenue"];
-  if (p.stato === "riuscita") return [`✅ Prova delle ${ora(p.quando)}: ${p.messaggio}`, "ok"];
-  if (p.stato === "fallita") return [`❌ Prova delle ${ora(p.quando)}: ${p.messaggio}`, "errore"];
-  if (p.stato === "senza_risposta") return ["⚠️ Il totem non ha risposto all'ultima prova: era spento o scollegato?", "errore"];
-  return ["", "tenue"];
+  const dove = p.totem ? ` (da «${p.totem}»)` : "";
+  if (p.stato === "in_attesa") return [`⏳ Prova in corso${dove}…`, "tenue"];
+  if (p.stato === "riuscita") return [`✅ ${ora(p.quando)}${dove}: ${p.messaggio}`, "ok"];
+  if (p.stato === "fallita") return [`❌ ${ora(p.quando)}${dove}: ${p.messaggio}`, "errore"];
+  if (p.stato === "senza_risposta") return [`⚠️ Il totem${dove} non ha risposto: spento o scollegato?`, "errore"];
+  return ["—", "tenue"];
 }
 
 let attesaProva = null;
 
 export async function schedaStampanti() {
-  const { crea, sezione, api, avvisa } = H;
+  const { crea, sezione, api, prova, campo, scelta, tabella, avvisa } = H;
   clearTimeout(attesaProva);
-  const totem = await api("GET", "/api/stampanti/");
-  const intro = sezione("Stampante dei biglietti");
+  const [stampanti, sedi] = await Promise.all([H.elenco("/api/stampanti/"), H.elenco("/api/sedi/")]);
+  const modifica = H.ruoloGestione() || H.stato.io.ruolo === "tecnico";
+  const nomeSede = (id) => sedi.find((s) => s.id === id)?.nome || "";
+
+  // Il modulo serve sia per aggiungere sia per modificare (st = la stampante da modificare).
+  const modulo = (box, st = null) => {
+    const riga = crea("div", { classe: "riga" }, box);
+    const nome = campo("Nome", crea("input", { value: st?.nome || "", placeholder: "es. Epson banco salumi", maxLength: 100 }), riga);
+    const sede = campo("Sede", scelta(sedi.map((x) => [x.id, x.nome]), st?.sede), riga);
+    const tipo = campo("Tipo", scelta(TIPI_STAMPANTE, st?.tipo || "epson"), riga);
+    const indirizzo = campo("Indirizzo IP", crea("input", { value: st?.indirizzo || "", placeholder: "es. 192.168.1.50", maxLength: 100 }), riga);
+    const modello = campo("Modello", crea("input", { value: st?.modello || "", placeholder: "es. TM-m30III", maxLength: 60 }), riga);
+    const riga2 = crea("div", { classe: "riga" }, box);
+    const intestazione = campo("Intestazione del biglietto (vuoto = dal layout)", crea("input", { value: st?.intestazione || "", maxLength: 60, size: 28 }), riga2);
+    const messaggio = campo("Messaggio in fondo (vuoto = dal layout)", crea("input", { value: st?.messaggio || "", maxLength: 120, size: 34 }), riga2);
+    const note = campo("Note", crea("input", { value: st?.note || "", maxLength: 200, size: 28 }), riga2);
+    const aggiorna = () => (indirizzo.closest("label").hidden = tipo.value !== "epson");
+    tipo.addEventListener("change", aggiorna);
+    aggiorna();
+    return () => ({
+      nome: nome.value.trim(), sede: sede.value, tipo: tipo.value, indirizzo: tipo.value === "epson" ? indirizzo.value : "",
+      modello: modello.value, intestazione: intestazione.value, messaggio: messaggio.value, note: note.value,
+    });
+  };
+
+  const intro = sezione("Anagrafica Stampanti Ticket");
   crea("p", {
     classe: "nota",
-    testo: "I totem sono gli schermi con la zona «prendi il numero» nel layout. Le impostazioni di partenza sono quelle della zona nel layout; "
-      + "qui ogni totem può avere le sue, per esempio l'indirizzo della propria stampante quando lo stesso layout gira in più negozi. "
-      + "La stampa di prova la esegue il totem stesso (il server non vede la rete del negozio): esce un biglietto «PROVA STAMPA» che non consuma numeri.",
+    testo: "L'elenco delle stampanti dei biglietti dei negozi. Ogni totem si abbina alla sua stampante in «Anagrafica Dispositivi Video» (colonna «Totem»). "
+      + "Un totem senza stampante abbinata stampa come indicato nella zona «prendi il numero» del layout.",
   }, intro);
   crea("p", {
     classe: "tenue",
-    testo: "Epson: la stampante va in rete con indirizzo fisso e ePOS-Print attivo (Epson TM-m30, TM-T88VI/VII, TM-T20III…). "
-      + "Se il totem apre il player in HTTPS, il certificato della stampante va accettato una volta dal browser del totem (https://indirizzo-stampante). "
-      + "Stampante di sistema: quella predefinita di Windows, con Chrome avviato con --kiosk-printing (lo fa l'installazione del totem).",
+    testo: "Epson: in rete con indirizzo fisso e ePOS-Print attivo (TM-m30, TM-T88VI/VII, TM-T20III…); se il totem usa il player in HTTPS, il certificato della stampante va accettato una volta dal browser del totem. "
+      + "Stampante di sistema: quella predefinita di Windows sul PC del totem (Chrome con --kiosk-printing).",
   }, intro);
-  if (!totem.length) {
-    crea("p", { classe: "vuoto", testo: "Nessun totem: assegna a uno schermo un layout con la zona «prendi il numero» (Impostazioni · Layout)." }, intro);
+  if (modifica) {
+    if (!sedi.length) crea("p", { classe: "nota", testo: "Prima crea una sede, in «Sedi e gruppi»." }, intro);
+    else {
+      const valori = modulo(intro);
+      crea("button", { classe: "primario", testo: "Aggiungi stampante", onclick: () => prova(() => api("POST", "/api/stampanti/", valori()), "Stampante aggiunta.") }, intro);
+    }
+  }
+
+  const box = sezione("Stampanti");
+  if (!stampanti.length) {
+    crea("p", { classe: "vuoto", testo: "Nessuna stampante in anagrafica." }, box);
     return;
   }
-  const modifica = H.ruoloGestione() || H.stato.io.ruolo === "tecnico";
+  const corpo = tabella(["Nome", "Sede", "Tipo", "Indirizzo", "Modello", "Abbinata ai totem", "Ultima prova", ""], box);
   let inAttesa = false;
-  for (const t of totem) {
-    const box = sezione(`🖨 ${t.nome} · ${t.sede}`);
-    const testa = crea("p", { classe: "tenue" }, box);
-    crea("span", { classe: `pallino ${t.online ? "acceso" : "spento"}` }, testa);
-    testa.append(` ${t.online ? "In linea" : "Non in linea"} · layout «${t.layout}» · dal layout: ${MODI_STAMPA.find(([v]) => v === t.dal_layout.stampa)?.[1] || "nessuna"}${t.dal_layout.stampante ? ` (${t.dal_layout.stampante})` : ""}`);
-    const proprie = crea("input", { type: "checkbox", checked: t.personalizzata });
-    const l = crea("label", { classe: "spunta interruttore" }, crea("div", {}, box));
-    l.append(proprie, " Impostazioni proprie di questo totem (altrimenti quelle del layout)");
-    const e = t.effettiva;
-    const riga = crea("div", { classe: "riga" }, box);
-    const modo = H.campo("Stampa", H.scelta(MODI_STAMPA, e.stampa || "nessuna"), riga);
-    const indirizzo = H.campo("Indirizzo stampante Epson", crea("input", { value: e.stampante || "", placeholder: "es. 192.168.1.50", maxLength: 100 }), riga);
-    const riga2 = crea("div", { classe: "riga" }, box);
-    const intestazione = H.campo("Intestazione del biglietto", crea("input", { value: e.intestazione || "", placeholder: "es. nome del negozio", maxLength: 60, size: 30 }), riga2);
-    const messaggio = H.campo("Messaggio in fondo", crea("input", { value: e.messaggio || "", maxLength: 120, size: 40 }), riga2);
-    const campi = [modo, indirizzo, intestazione, messaggio];
-    const aggiorna = () => {
-      for (const c of campi) c.disabled = !modifica || !proprie.checked;
-      indirizzo.closest("label").hidden = modo.value !== "epson";
-    };
-    proprie.disabled = !modifica;
-    proprie.addEventListener("change", aggiorna);
-    modo.addEventListener("change", aggiorna);
-    aggiorna();
-    const azioni = crea("div", { classe: "riga" }, box);
+  for (const st of stampanti) {
+    const riga = crea("tr", {}, corpo);
+    crea("td", { testo: st.nome, title: st.note || "" }, riga);
+    crea("td", { testo: nomeSede(st.sede) }, riga);
+    crea("td", { testo: TIPI_STAMPANTE.find(([v]) => v === st.tipo)?.[1] || st.tipo }, riga);
+    crea("td", { testo: st.indirizzo || "—" }, riga);
+    crea("td", { testo: st.modello || "—" }, riga);
+    const abbinati = crea("td", {}, riga);
+    if (!st.abbinata_a.length) abbinati.append("— nessuno —");
+    for (const m of st.abbinata_a) {
+      const d = crea("div", {}, abbinati);
+      crea("span", { classe: `pallino ${m.online ? "acceso" : "spento"}` }, d);
+      d.append(` ${m.nome}`);
+    }
+    const [testo, classe] = esitoProva(st.prova);
+    crea("td", { classe: `esito-prova ${classe}`, testo }, riga);
+    if (st.prova.stato === "in_attesa") inAttesa = true;
+    const azioni = crea("td", { classe: "azioni" }, riga);
+    crea("button", {
+      testo: "🖨 Prova",
+      "data-aiuto": "Un totem abbinato e in linea stampa un biglietto «PROVA STAMPA» (non consuma numeri); l'esito compare qui.",
+      disabled: !st.abbinata_a.some((m) => m.online),
+      onclick: () => prova(() => api("POST", `/api/stampanti/${st.id}/prova/`), "Prova chiesta al totem."),
+    }, azioni);
     if (modifica) {
       crea("button", {
-        classe: "primario", testo: "Salva",
-        onclick: () => H.prova(() => api("PUT", `/api/stampanti/${t.id}/`, {
-          personalizzata: proprie.checked, stampa: modo.value, stampante: indirizzo.value,
-          intestazione: intestazione.value, messaggio: messaggio.value,
-        }), "Salvato: il totem lo riceve entro un minuto."),
+        testo: "Modifica",
+        onclick: () => {
+          const dettaglio = crea("tr", {}, null);
+          const cella = crea("td", { colSpan: 8 }, dettaglio);
+          riga.after(dettaglio);
+          const valori = modulo(cella, st);
+          const pulsanti = crea("div", { classe: "riga" }, cella);
+          crea("button", { classe: "primario", testo: "Salva", onclick: () => prova(() => api("PATCH", `/api/stampanti/${st.id}/`, valori()), "Salvato: i totem abbinati lo ricevono entro un minuto.") }, pulsanti);
+          crea("button", { testo: "Annulla", onclick: () => dettaglio.remove() }, pulsanti);
+        },
+      }, azioni);
+      crea("button", {
+        testo: "Elimina", classe: "pericolo",
+        onclick: () => confirm(`Eliminare «${st.nome}»?${st.abbinata_a.length ? " I totem abbinati torneranno a stampare come dice il layout." : ""}`)
+          && prova(() => api("DELETE", `/api/stampanti/${st.id}/`), "Eliminata."),
       }, azioni);
     }
-    crea("button", {
-      testo: "🖨 Stampa di prova",
-      "data-aiuto": "Il totem stampa un biglietto «PROVA STAMPA» con le impostazioni salvate (non quelle non ancora salvate) e dice qui com'è andata.",
-      disabled: !t.online,
-      onclick: () => H.prova(() => api("POST", `/api/stampanti/${t.id}/`), "Prova chiesta al totem."),
-    }, azioni);
-    if (!t.online) crea("span", { classe: "tenue", testo: "Il totem non è in linea: la prova si può chiedere quando torna." }, azioni);
-    const [testo, classe] = esitoProva(t.prova);
-    if (testo) crea("p", { classe: `esito-prova ${classe}`, testo }, box);
-    if (t.prova.stato === "in_attesa") inAttesa = true;
   }
   // Finché un totem deve rispondere alla prova, la scheda si aggiorna da sola.
   if (inAttesa) {

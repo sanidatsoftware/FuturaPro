@@ -146,13 +146,16 @@ class StoricoERegistroTest(Base):
         self.assertEqual(self.client.get("/api/audit/").status_code, 403)
 
 
+
 class StampanteTest(Base):
     def manifest(self, monitor):
         with contesto_cliente(self.a.id):
             return palinsesto.manifest(Monitor.objects.get(id=monitor.id))
 
-    def test_impostazioni_del_totem_nel_manifest_e_prova(self):
+    def test_anagrafica_abbinamento_e_prova(self):
         import secrets
+
+        from django.utils import timezone
 
         from layout.models import Layout, Zona
 
@@ -161,36 +164,69 @@ class StampanteTest(Base):
         with contesto_cliente(self.a.id):
             layout = Layout.objects.create(cliente=self.a, nome="Totem", orientamento="orizzontale")
             Zona.objects.create(cliente=self.a, layout=layout, tipo="prendi_numero", x=0, y=0, larghezza=100, altezza=100,
-                                configurazione={"stampa": "epson", "stampante": "10.0.0.9", "messaggio": "Grazie"})
+                                configurazione={"stampa": "browser", "messaggio": "Grazie"})
             Monitor.objects.filter(id=self.mon_a_milano.id).update(layout=layout)
             token = secrets.token_urlsafe(32)
             CredenzialeDispositivo.objects.create(impronta_token=impronta(token), monitor=self.mon_a_milano, cliente_id=self.a.id)
         self.come(self.admin_a)
-        totem = self.client.get("/api/stampanti/").json()
-        self.assertEqual([t["nome"] for t in totem], ["Ingresso"])  # solo gli schermi con la zona
-        self.assertFalse(totem[0]["personalizzata"])
+        nuova = {"nome": "Epson salumi", "sede": str(self.a_milano.id), "tipo": "epson", "indirizzo": ""}
+        self.assertEqual(self.client.post("/api/stampanti/", nuova, format="json").status_code, 400)
+        r = self.client.post("/api/stampanti/", {**nuova, "indirizzo": "https://192.168.5.20/", "intestazione": "Negozio"}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        stampante = r.json()
+        self.assertEqual(stampante["indirizzo"], "192.168.5.20")
+        roma = self.client.post("/api/stampanti/", {**nuova, "nome": "Roma", "sede": str(self.a_roma.id), "tipo": "browser"}, format="json").json()
 
-        url = f"/api/stampanti/{self.mon_a_milano.id}/"
-        self.assertEqual(self.client.put(url, {"personalizzata": True, "stampa": "epson", "stampante": ""}, format="json").status_code, 400)
-        r = self.client.put(url, {"personalizzata": True, "stampa": "epson", "stampante": "https://192.168.5.20/", "intestazione": "Negozio"}, format="json")
-        self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(r.json()["effettiva"]["stampante"], "192.168.5.20")
-        zona = self.manifest(self.mon_a_milano)["layout"]["zone"][0]["configurazione"]
-        self.assertEqual((zona["stampante"], zona["intestazione"]), ("192.168.5.20", "Negozio"))
+        # Si abbina dall'anagrafica degli schermi, solo una stampante della stessa sede.
+        url = f"/api/monitor/{self.mon_a_milano.id}/"
+        self.assertEqual(self.client.patch(url, {"stampante": roma["id"]}, format="json").status_code, 400)
+        self.assertEqual(self.client.patch(url, {"stampante": stampante["id"]}, format="json").status_code, 200)
+        m = self.manifest(self.mon_a_milano)
+        zona = m["layout"]["zone"][0]["configurazione"]
+        self.assertEqual((zona["stampa"], zona["stampante"], zona["intestazione"], zona["messaggio"]), ("epson", "192.168.5.20", "Negozio", "Grazie"))
+        self.assertEqual(m["stampante"]["nome"], "Epson salumi")
 
-        # Il semplice utente non cambia la stampante, ma può chiedere la prova.
+        # La prova: serve un totem abbinato in linea; il semplice utente la può chiedere.
+        prova = f"/api/stampanti/{stampante['id']}/prova/"
         self.come(self.user_a)
-        self.assertEqual(self.client.put(url, {"personalizzata": False}, format="json").status_code, 403)
-        self.assertEqual(self.client.post(url).status_code, 202)
+        self.assertEqual(self.client.patch(f"/api/stampanti/{stampante['id']}/", {"nome": "x"}, format="json").status_code, 403)
+        self.assertEqual(self.client.post(prova).status_code, 400)
+        with contesto_cliente(self.a.id):
+            Monitor.objects.filter(id=self.mon_a_milano.id).update(ultimo_contatto=timezone.now())
+        self.assertEqual(self.client.post(prova).status_code, 202)
         intestazione = {"HTTP_AUTHORIZATION": f"Device {token}"}
-        self.assertTrue(self.client.get("/api/player/schermata/", **intestazione).json()["prova_stampa"])
+        self.assertEqual(self.client.get("/api/player/schermata/", **intestazione).json()["prova_stampa"]["stampante"], "192.168.5.20")
         self.client.post("/api/player/prova-stampa/", {"ok": False, "messaggio": "tempo scaduto"}, format="json", **intestazione)
-        self.assertFalse(self.client.get("/api/player/schermata/", **intestazione).json()["prova_stampa"])
-        self.assertEqual(self.client.get(url).json()["prova"]["stato"], "fallita")
+        self.assertIsNone(self.client.get("/api/player/schermata/", **intestazione).json()["prova_stampa"])
+        self.assertEqual(self.client.get(f"/api/stampanti/{stampante['id']}/").json()["prova"]["stato"], "fallita")
 
-        # Un altro cliente non lo vede; tornando al layout il manifest riprende quello.
+        # Un altro cliente non la vede; eliminandola il totem torna alla stampa del layout.
         self.come(self.admin_b)
-        self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.get(f"/api/stampanti/{stampante['id']}/").status_code, 404)
         self.come(self.admin_a)
-        self.client.put(url, {"personalizzata": False}, format="json")
-        self.assertEqual(self.manifest(self.mon_a_milano)["layout"]["zone"][0]["configurazione"]["stampante"], "10.0.0.9")
+        self.assertEqual(self.client.delete(f"/api/stampanti/{stampante['id']}/").status_code, 204)
+        self.assertEqual(self.manifest(self.mon_a_milano)["layout"]["zone"][0]["configurazione"]["stampa"], "browser")
+
+    def test_un_solo_totem_master_per_sede(self):
+        from hashlib import sha256
+
+        from layout.models import Layout, Zona
+
+        with contesto_cliente(self.a.id):
+            layout = Layout.objects.create(cliente=self.a, nome="Totem", orientamento="orizzontale")
+            Zona.objects.create(cliente=self.a, layout=layout, tipo="prendi_numero", x=0, y=0, larghezza=100, altezza=100, configurazione={})
+            secondo = Monitor.objects.create(cliente=self.a, sede=self.a_milano, nome="Totem 2", piattaforma="windows", layout=layout)
+            Monitor.objects.filter(id=self.mon_a_milano.id).update(layout=layout)
+        self.come(self.admin_a)
+        self.client.patch(f"/api/sedi/{self.a_milano.id}/", {"indirizzo_totem": "192.168.1.70"})
+        # Senza master, come prima: ogni totem tiene le code.
+        self.assertIn("reparti", self.manifest(secondo)["code"])
+        self.assertEqual(self.client.patch(f"/api/monitor/{self.mon_a_milano.id}/", {"totem_master": True}, format="json").status_code, 200)
+        master, altro = self.manifest(self.mon_a_milano)["code"], self.manifest(secondo)["code"]
+        self.assertIn("reparti", master)
+        self.assertNotIn("reparti", altro)
+        self.assertEqual(master["totem"], [sha256(altro["chiave"].encode()).hexdigest()])
+        # Scegliendone un altro, il primo smette di esserlo.
+        self.assertEqual(self.client.patch(f"/api/monitor/{secondo.id}/", {"totem_master": True}, format="json").status_code, 200)
+        with contesto_cliente(self.a.id):
+            self.assertEqual(list(Monitor.objects.filter(totem_master=True).values_list("nome", flat=True)), ["Totem 2"])

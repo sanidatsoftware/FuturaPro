@@ -34,6 +34,38 @@ class GruppoMonitor(ModelloCliente):
         return self.nome
 
 
+class StampanteTicket(ModelloCliente):
+    """Una stampante dei biglietti di un negozio. Si abbina ai totem dall'anagrafica degli schermi."""
+
+    class Tipo(models.TextChoices):
+        SISTEMA = "browser", "Stampante di sistema del PC del totem"
+        EPSON = "epson", "Stampante di rete Epson TM (ePOS-Print)"
+
+    nome = models.CharField(max_length=100)
+    sede = models.ForeignKey("clienti.Sede", on_delete=models.PROTECT, related_name="stampanti")
+    tipo = models.CharField(max_length=10, choices=Tipo.choices, default=Tipo.EPSON)
+    # Epson: indirizzo IP o nome in rete, eventualmente con la porta.
+    indirizzo = models.CharField(max_length=100, blank=True)
+    modello = models.CharField(max_length=60, blank=True)
+    # Vuoti: valgono quelli della zona «prendi il numero» del layout.
+    intestazione = models.CharField(max_length=60, blank=True)
+    messaggio = models.CharField(max_length=120, blank=True)
+    note = models.CharField(max_length=200, blank=True)
+    # La stampa di prova: la chiede il pannello, la esegue un totem abbinato (vedi «stampanti»).
+    prova_richiesta = models.DateTimeField(null=True, blank=True)
+    prova_monitor = models.ForeignKey("dispositivi.Monitor", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    prova_esito = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["nome"]
+        verbose_name = "stampante ticket"
+        verbose_name_plural = "stampanti ticket"
+        constraints = [models.UniqueConstraint(fields=["cliente", "nome"], name="stampante_nome_unico")]
+
+    def __str__(self):
+        return self.nome
+
+
 class Monitor(ModelloCliente):
     nome = models.CharField(max_length=200)
     sede = models.ForeignKey("clienti.Sede", on_delete=models.PROTECT, related_name="monitor")
@@ -63,14 +95,20 @@ class Monitor(ModelloCliente):
     immagine_riserva = models.ForeignKey(
         "contenuti.Contenuto", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
-    # La stampante dei biglietti di questo totem (vedi «stampanti»): vuoto = come nel layout.
-    stampante = models.JSONField(default=dict, blank=True)
-    prova_stampa_richiesta = models.DateTimeField(null=True, blank=True)
-    prova_stampa_esito = models.JSONField(default=dict, blank=True)
+    # Il totem che detiene i turni delle code della sede (il suo servizio code): uno per sede.
+    # Gli altri totem chiedono a lui i numeri dei biglietti.
+    totem_master = models.BooleanField(default=False)
+    # La stampante dei biglietti del totem (Anagrafica Stampanti Ticket); vuoto = come nel layout.
+    stampante = models.ForeignKey(
+        "dispositivi.StampanteTicket", on_delete=models.SET_NULL, null=True, blank=True, related_name="monitor"
+    )
 
     class Meta:
         ordering = ["nome"]
         verbose_name_plural = "monitor"
+        constraints = [
+            models.UniqueConstraint(fields=["sede"], condition=models.Q(totem_master=True), name="un_totem_master_per_sede"),
+        ]
 
     def __str__(self):
         return self.nome

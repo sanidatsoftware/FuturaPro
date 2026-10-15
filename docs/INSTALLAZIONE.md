@@ -205,9 +205,12 @@ chiamano per indirizzo.
    - il suo certificato e le regole del firewall per le porte **8443** (monitor) e **8090** (bilance).
 
    Alla fine mostra l'**impronta del certificato del totem**: annotala, la chiederanno i monitor.
-3. Nel pannello: **Sedi e gruppi → Totem delle code**, scrivi l'IP del totem accanto alla sede e
-   **Salva**. Da quel momento le code della sede le tiene il totem.
-4. Abbina il totem (**Monitor → Abbina**) con il tipo **Totem verticale**. Nel layout del totem
+3. Nel pannello: **Sedi e gruppi → Totem Master (server code)**, scrivi l'IP del totem accanto alla
+   sede e **Salva**. Da quel momento le code della sede le tiene il totem.
+4. Abbina il totem (**Hardware → Anagrafica Dispositivi Video → Abbina**) con il tipo **Totem
+   verticale** e spunta **Totem Master (server code)**. Con più totem nello stesso negozio il
+   master è uno solo (quello con l'IP indicato nella sede): gli altri si installano allo stesso
+   modo, senza spunta, e chiedono a lui i numeri dei biglietti. Nel layout del totem
    (**Layout ↗** → zona *Prendi il numero*) imposta **Stampa del biglietto: Stampante di sistema**.
 
 Lo stato delle code è salvato sul totem (`C:\FuturaPro\code\stato.json`) e sopravvive ai
@@ -216,13 +219,14 @@ riavvii; ogni giorno le code ripartono da 0. Registro delle operazioni:
 
 La stampante non risponde? Il totem lo dice e mostra comunque il numero al cliente.
 
-> **Dove si configura.** Pannello → **Hardware · Stampante dei biglietti**: per ogni totem il tipo
-> di stampa, l'indirizzo della Epson, intestazione e messaggio (altrimenti valgono quelli della zona
-> nel layout), e il pulsante **Stampa di prova**, che fa stampare al totem un biglietto di prova e
-> mostra l'esito nel pannello.
+> **Dove si configura.** Pannello → **Hardware · Anagrafica Stampanti Ticket**: aggiungi la
+> stampante (nome, sede, tipo, indirizzo della Epson, eventuali intestazione e messaggio). Poi in
+> **Hardware · Anagrafica Dispositivi Video**, colonna *Totem*, scegli la stampante del totem. Il
+> pulsante **Prova** dell'anagrafica fa stampare al totem abbinato un biglietto di prova e mostra
+> l'esito nel pannello.
 
-> **Stampante Epson di rete senza driver (ePOS).** In *Hardware · Stampante dei biglietti* scegli
-> *Stampante di rete Epson TM* e scrivi l'indirizzo IP della stampante. Siccome il player è in HTTPS, anche la stampante va usata in
+> **Stampante Epson di rete senza driver (ePOS).** In *Hardware · Anagrafica Stampanti Ticket* scegli
+> *Epson di rete* e scrivi l'indirizzo IP della stampante. Siccome il player è in HTTPS, anche la stampante va usata in
 > HTTPS: rilancia lo script con `-Configura`, apri `https://IP-STAMPANTE`, accetta il certificato,
 > chiudi la finestra. La strada con il driver di Windows è più semplice e robusta.
 
@@ -263,7 +267,7 @@ python3 pulsante.py https://SERVER CHIAVE avanti      # oppure: indietro, ripeti
 
 **Dal banco con tablet o PC**: con il totem, lo stesso collegamento del reparto delle bilance
 (`http://IP-TOTEM:8090/banco/#chiave=…`). Senza totem, `https://SERVER/banco/` con l'utente del
-pannello (anche un UserCliente): mostra tutti i reparti della sede.
+pannello (anche un User): mostra tutti i reparti della sede.
 
 ### Cosa funziona senza server centrale
 
@@ -301,7 +305,7 @@ $c = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 "
 |---|---|
 | Il player resta su «Server non raggiungibile» | Dal PC apri `https://SERVER/player/` nel browser: se dà errore di certificato, rilancia lo script di installazione; se non si apre, controlla rete e firewall della VM. |
 | Lo schermo mostra il codice ma il pannello dice «Codice inesistente o scaduto» | Il codice vale 15 minuti; se è scaduto lo schermo ne mostra uno nuovo da solo. |
-| Il totem non stampa | Usa *Stampa di prova* in Hardware · Stampante dei biglietti e leggi l'esito; stampa una pagina di prova da Windows; la stampante deve essere la *predefinita*; il totem deve avere *Stampante di sistema*. |
+| Il totem non stampa | Usa *Prova* in Hardware · Anagrafica Stampanti Ticket e leggi l'esito; stampa una pagina di prova da Windows; la stampante deve essere la *predefinita*; il totem deve avere *Stampante di sistema*. |
 | La bilancia dice «Non collegato» | Il collegamento è stato revocato o rigenerato: creane uno nuovo dal pannello. |
 | Lo script Windows dice che l'impronta non coincide | **Non proseguire**: il PC potrebbe non parlare con il tuo server. Controlla l'indirizzo. |
 | Log del server | `sudo docker compose -f /opt/futurapro/deploy/docker-compose.yml logs --tail 200 app` |

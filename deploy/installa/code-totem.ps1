@@ -9,13 +9,18 @@
   annunci dei numeri (es. «SALUMERIA_27.mp3»): restano qui, in annunci\, e i monitor
   del negozio li prendono da qui anche quando il server non è raggiungibile.
 
+  Lavora sul Totem Master (server code) della sede, scelto nel pannello: è lui a detenere i
+  turni. Gli eventuali altri totem del negozio chiedono a lui i numeri dei biglietti.
+
   Lo installa e lo avvia player-windows.ps1 (tipo totem) come attività di sistema.
   Porte: 8443 HTTPS (monitor e totem), 8090 HTTP (bilance e banchi in rete locale).
 
   Chi può fare cosa:
     - leggere i numeri (/stato): chiunque in rete; sono gli stessi mostrati a schermo;
     - leggere i file degli annunci (/annunci/<impronta>): chiunque in rete;
-    - emettere biglietti, ricevere la configurazione e i file: solo il totem stesso (127.0.0.1);
+    - ricevere la configurazione e i file: solo il totem stesso (127.0.0.1);
+    - emettere biglietti: il totem stesso e i totem secondari della sede, con la chiave
+      «Authorization: Totem <chiave>» (qui ne arriva solo l'impronta, con la configurazione);
     - chiamare i numeri (/banco/…): solo con la chiave del reparto, come nel pannello.
 
   Numeri da 0 a 99 (o al massimo del reparto) e poi di nuovo 0; al primo uso di un
@@ -30,7 +35,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.2"
+$Versione = "1.3"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -50,12 +55,14 @@ function Registra([string]$testo) {
 # --- Stato: configurazione dei reparti e contatori della giornata ----------------
 
 $script:reparti = @()
+$script:totem = @()   # impronte delle chiavi dei totem secondari
 $script:code = @{}
 
 function Carica-Stato {
     if (-not (Test-Path $fileStato)) { return }
     $dati = Get-Content -Raw -Encoding UTF8 $fileStato | ConvertFrom-Json
     if ($dati.reparti) { $script:reparti = @($dati.reparti) }
+    if ($dati.totem) { $script:totem = @($dati.totem) }
     foreach ($c in @($dati.code)) {
         if ($c) {
             $script:code[[string]$c.id] = @{
@@ -71,7 +78,7 @@ function Salva-Stato {
         $c = $script:code[$id]
         [pscustomobject]@{ id = $id; giornata = $c.giornata; chiamati = $c.chiamati; emessi = $c.emessi; chiamato_il = $c.chiamato_il }
     })
-    $testo = [pscustomobject]@{ reparti = $script:reparti; code = $elenco } | ConvertTo-Json -Depth 6
+    $testo = [pscustomobject]@{ reparti = $script:reparti; totem = @($script:totem); code = $elenco } | ConvertTo-Json -Depth 6
     # Prima su un file temporaneo, poi lo scambio: un'interruzione di corrente non lascia un file a metà.
     $temporaneo = "$fileStato.tmp"
     [System.IO.File]::WriteAllText($temporaneo, $testo, (New-Object System.Text.UTF8Encoding($false)))
@@ -251,6 +258,13 @@ function Locale($richiesta) {
     return [System.Net.IPAddress]::IsLoopback($richiesta.RemoteEndPoint.Address)
 }
 
+# Un totem secondario della sede (Authorization: Totem <chiave>).
+function Totem-Secondario($richiesta) {
+    $parti = ([string]$richiesta.Headers["Authorization"]) -split " "
+    if ($parti.Count -ne 2 -or $parti[0] -ne "Totem" -or @($script:totem).Count -eq 0) { return $false }
+    return @($script:totem) -contains (Impronta $parti[1])
+}
+
 function Impronta([string]$testo) {
     $sha = [System.Security.Cryptography.SHA256]::Create()
     return (($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($testo)) | ForEach-Object { $_.ToString("x2") }) -join "")
@@ -302,6 +316,7 @@ function Gestisci($contesto) {
         if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }
         $dati = Leggi-Corpo $richiesta
         $script:reparti = @($dati.reparti)
+        $script:totem = @($dati.totem | Where-Object { $_ })
         Salva-Stato
         if ($null -ne $dati.annunci) { Pulisci-Annunci $dati.annunci }
         Registra "configurazione: $(@($script:reparti).Count) reparti"
@@ -324,7 +339,7 @@ function Gestisci($contesto) {
         Rispondi $contesto 200 @{ eventi = $nuovi; ultimo = $script:seq }; return
     }
     if ($metodo -eq "POST" -and $percorso -match "^/emetti/([0-9a-fA-F-]{36})$") {
-        if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }
+        if (-not ((Locale $richiesta) -or (Totem-Secondario $richiesta))) { Rispondi $contesto 403 @{ errore = "Solo dai totem della sede." }; return }
         $r = Trova-Reparto $Matches[1]
         if (-not $r -or -not $r.attivo) { Rispondi $contesto 400 @{ errore = "Reparto non disponibile." }; return }
         Rispondi $contesto 201 (Emetti $r); return

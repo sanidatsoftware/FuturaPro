@@ -10,7 +10,7 @@ export function preparaSchedeReport(strumenti) {
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const quando = (t) => new Date(t).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "medium" });
 const durata = (minuti) => (minuti < 60 ? `${minuti} min` : minuti < 2880 ? `${Math.floor(minuti / 60)} h ${minuti % 60} min` : `${Math.floor(minuti / 1440)} giorni`);
-const RUOLI = { admin_assoluto: "SystemAdministrator", tecnico: "Tecnico", admin_cliente: "Administrator", user_cliente: "UserCliente" };
+const RUOLI = { admin_assoluto: "SystemAdministrator", tecnico: "Tecnico", admin_cliente: "Administrator", user_cliente: "User" };
 
 // «campagna_creata» → «Campagna creata»
 const azione = (codice) => codice.charAt(0).toUpperCase() + codice.slice(1).replaceAll("_", " ");

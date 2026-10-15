@@ -300,7 +300,7 @@ class CodeSulTotemTest(ConReparti):
         with override_settings(MEDIA_ROOT=cartella):
             dispositivo = self.player(self.mon_a_milano)
             self.assertFalse(self.client.get("/api/player/schermata/", **dispositivo).json()["richiesta"])
-            self.come(self.user_a)  # anche un UserCliente può chiederla: non cambia nulla in onda
+            self.come(self.user_a)  # anche un User può chiederla: non cambia nulla in onda
             self.assertEqual(self.client.post(f"/api/monitor/{self.mon_a_milano.id}/schermata/").status_code, 202)
             self.client.logout()
             self.assertTrue(self.client.get("/api/player/schermata/", **dispositivo).json()["richiesta"])

@@ -18,7 +18,7 @@ from layout.manifest import layout_del_monitor
 from . import annunci, registro, servizi
 from .models import Biglietto, CredenzialePulsante, FileAnnuncio, ImpostazioniTelefono, Reparto, SerieAnnunci
 
-# Operazioni del banco: le fa anche lo UserCliente, che non gestisce i reparti.
+# Operazioni del banco: le fa anche lo User, che non gestisce i reparti.
 AZIONI_BANCO = {"avanti", "indietro", "ripeti", "azzera", "imposta", "emetti"}
 
 

@@ -200,9 +200,10 @@ async function conRiserva(chiave, leggi) {
 
 // --- Code del negozio: sul totem o sul server -----------------------------------
 //
-// Se la sede ha un totem, le code le tiene il suo servizio (porta 8443): i monitor
-// leggono i numeri da lì, il totem stesso emette i biglietti in locale. Il totem si
-// riconosce perché solo il suo manifest porta la configurazione dei reparti.
+// Se la sede ha un totem, le code le tiene il servizio (porta 8443) del Totem Master
+// (server code): i monitor leggono i numeri da lì, il master emette i biglietti in locale,
+// gli altri totem li chiedono a lui. Il master si riconosce perché solo il suo manifest
+// porta la configurazione dei reparti.
 
 const SERVIZIO_LOCALE = "https://127.0.0.1:8443";
 
@@ -233,12 +234,12 @@ async function inviaConfigCode(manifest, scarica) {
   if (!reparti) return;
   // Con la configurazione va l'elenco degli annunci da tenere: gli altri il servizio li cancella.
   const annunci = fileAnnunci(manifest);
-  const firma = JSON.stringify([reparti, annunci.map((v) => v.sha256)]);
+  const firma = JSON.stringify([reparti, manifest.code.totem || [], annunci.map((v) => v.sha256)]);
   if (firma !== configInviata) {
     try {
       const risposta = await conLimite(`${SERVIZIO_LOCALE}/config`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reparti, annunci: annunci.map((v) => v.sha256) }),
+        body: JSON.stringify({ reparti, totem: manifest.code.totem || [], annunci: annunci.map((v) => v.sha256) }),
       });
       if (risposta.ok) configInviata = firma;
     } catch {
@@ -416,10 +417,14 @@ async function avviaPlayer() {
         return risposta.json();
       }),
     emetti: async (zonaId, reparto) => {
-      const totem = serviziCode(motore.manifest);
-      const risposta = totem
+      const code = motore.manifest?.code;
+      // Il Totem Master (server code) emette in locale; un totem secondario chiede il numero
+      // al servizio code del master, con la chiave della sede; senza totem, il server.
+      const risposta = code?.modo === "totem" && code.reparti
         ? await conLimite(`${SERVIZIO_LOCALE}/emetti/${reparto}`, { method: "POST" }, 5000)
-        : await conLimite(`/api/player/zone/${zonaId}/emetti/`, {
+        : code?.modo === "totem" && code.chiave
+          ? await conLimite(`${code.indirizzo}/emetti/${reparto}`, { method: "POST", headers: { Authorization: `Totem ${code.chiave}` } }, 5000)
+          : await conLimite(`/api/player/zone/${zonaId}/emetti/`, {
           method: "POST",
           headers: { ...intestazioni, "Content-Type": "application/json" },
           body: JSON.stringify({ reparto }),
@@ -513,7 +518,7 @@ async function avviaPlayer() {
       const domanda = await risposta.json();
       if (domanda.prova_stampa) {
         scatto = true;
-        const esito = await motore.provaStampa();
+        const esito = await motore.provaStampa(domanda.prova_stampa);
         await conLimite("/api/player/prova-stampa/", {
           method: "POST", headers: { ...intestazioni, "Content-Type": "application/json" }, body: JSON.stringify(esito),
         }, 10000);
