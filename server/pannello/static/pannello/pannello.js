@@ -9,6 +9,8 @@ import { preparaSchedeTicket, schedaLayoutTicket } from "./schede-ticket.js";
 import { osservaAiuti } from "./aiuti-campi.js";
 import { apriRiquadro, paginaIncorporata } from "./riquadro.js";
 import { preparaSchedeReport, schedaRegistro, schedaStoricoAllarmi } from "./schede-report.js";
+import { preparaSchedeDistribuzione, schedaDistribuzione } from "./schede-distribuzione.js";
+import { preparaSchedeProfilo, schedaProfilo, schedaUtentiPiattaforma } from "./schede-profilo.js";
 import { preparaSchedeCode, schedaAttese, schedaTelefono } from "./schede-code.js";
 import { preparaSchedeContenuti, schedaListini, schedaMessaInOnda } from "./schede-contenuti.js";
 import { preparaSchedeSchermi, schedaAccensione, schedaDownload, schedaStampanti, schedaStato } from "./schede-schermi.js";
@@ -141,6 +143,7 @@ const SCHEDE = {
   monitor: schedaMonitor,
   accensione: schedaAccensione,
   stato: schedaStato,
+  distribuzione: schedaDistribuzione,
   download: schedaDownload,
   stampanti: schedaStampanti,
   layout_ticket: schedaLayoutTicket,
@@ -156,6 +159,8 @@ const SCHEDE = {
   reparti: schedaReparti,
   sedi: schedaSedi,
   utenti: schedaUtenti,
+  utenti_piattaforma: schedaUtentiPiattaforma,
+  profilo: schedaProfilo,
   aspetto: schedaAspetto,
   // Pagine a sé (editor dei layout, banco) mostrate dentro il pannello, sotto il menu.
   layout: () => paginaIncorporata(contenuto, conCliente("/editor/"), "Layout Video"),
@@ -883,19 +888,83 @@ async function sezioneMarchio() {
   crea("p", { classe: "nota", testo: "Compaiono nella pagina di accesso, nella barra del pannello e nei titoli delle pagine. Valgono per tutti i clienti." }, box);
   const riga = crea("div", { classe: "riga" }, box);
   const nome = campo("Nome dell'applicazione", crea("input", { value: aspetto.nome_app, maxLength: 60 }), riga);
-  const sottotitolo = campo("Frase della pagina di accesso", crea("input", { value: aspetto.sottotitolo, maxLength: 120, size: 50 }), riga);
   const colore = campo("Colore", crea("input", { type: "color", value: aspetto.colore }), riga);
   const rigaLogo = crea("div", { classe: "riga" }, box);
   if (aspetto.ha_logo) crea("img", { src: `/aspetto/logo/?v=${Date.parse(aspetto.modificato)}`, classe: "anteprima-logo", alt: "Logo attuale" }, rigaLogo);
-  const logo = campo("Logo (PNG, JPEG o WebP, fino a 2 MB; meglio con fondo trasparente)", crea("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif" }), rigaLogo);
-  const azioni = crea("div", { classe: "riga" }, box);
+  const logo = campo("Logo (PNG, JPEG o WebP, fino a 3 MB; meglio con fondo trasparente)", crea("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif" }), rigaLogo);
+
+  // La pagina di accesso: posizione e grandezza del logo, righe di testo, con l'anteprima dal vivo.
+  const pagina = sezione("Pagina di accesso");
+  crea("p", { classe: "nota", testo: "Componi la parte sinistra della pagina di accesso: dove sta il logo e quanto è grande, e le righe di testo con la loro grandezza e il loro colore. L'anteprima si aggiorna mentre scrivi; diventa definitiva con «Salva»." }, pagina);
+  const c = structuredClone(aspetto.accesso);
+  const colonne = crea("div", { classe: "editor-accesso" }, pagina);
+  const opzioni = crea("div", { classe: "colonna-opzioni" }, colonne);
+  const vista = crea("div", { classe: "colonna-vista" }, colonne);
+  // La pagina a grandezza di schermo (1280×800), rimpicciolita per stare nella colonna.
+  const schermo = crea("div", { classe: "vista-accesso" }, vista);
+  const cornice = crea("iframe", { classe: "anteprima-accesso", title: "Anteprima della pagina di accesso" }, schermo);
+  const scala = () => { if (schermo.isConnected) cornice.style.transform = `scale(${schermo.clientWidth / 1280})`; };
+  new ResizeObserver(scala).observe(schermo);
+  let attesa = null;
+  const aggiorna = () => {
+    clearTimeout(attesa);
+    attesa = setTimeout(() => {
+      const codice = btoa(unescape(encodeURIComponent(JSON.stringify(c)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+      cornice.src = `/accesso/?anteprima=1&prova=${codice}`;
+    }, 350);
+  };
+  const rigaLogoPos = crea("div", { classe: "riga" }, opzioni);
+  const posizione = campo("Posizione del logo", scelta([["in_alto", "In alto, accanto al nome"], ["nel_messaggio", "Sopra le righe di testo"], ["al_centro", "Grande, al centro"]], c.logo.posizione), rigaLogoPos);
+  const altezza = campo("Altezza del logo (px)", crea("input", { type: "number", min: 24, max: 360, step: 4, value: c.logo.altezza, classe: "corto" }), rigaLogoPos);
+  const rigaSpunte = crea("div", { classe: "riga" }, opzioni);
+  const spunta = (testo, valore, alCambio) => {
+    const l = crea("label", { classe: "spunta" }, rigaSpunte);
+    const i = crea("input", { type: "checkbox", checked: valore }, l);
+    l.append(` ${testo}`);
+    i.addEventListener("change", () => { alCambio(i.checked); aggiorna(); });
+  };
+  spunta("Mostra il nome accanto al logo", c.logo.mostra_nome, (v) => (c.logo.mostra_nome = v));
+  spunta("Mostra i disegni degli schermi in basso", c.mostra_schermi, (v) => (c.mostra_schermi = v));
+  const allineamento = campo("Allineamento", scelta([["sinistra", "A sinistra"], ["centro", "Al centro"]], c.allineamento), rigaLogoPos);
+  posizione.addEventListener("change", () => { c.logo.posizione = posizione.value; aggiorna(); });
+  altezza.addEventListener("input", () => { c.logo.altezza = parseInt(altezza.value, 10) || 64; aggiorna(); });
+  allineamento.addEventListener("change", () => { c.allineamento = allineamento.value; aggiorna(); });
+
+  crea("div", { classe: "etichetta", testo: "Righe di testo" }, opzioni);
+  const elenco = crea("div", { classe: "righe-accesso" }, opzioni);
+  const disegnaRighe = () => {
+    elenco.replaceChildren();
+    c.righe.forEach((r, i) => {
+      const box = crea("div", { classe: "riga riga-accesso" }, elenco);
+      const testo = campo(`Riga ${i + 1}`, crea("input", { value: r.testo, maxLength: 200, size: 34 }), box);
+      const dimensione = campo("Grandezza (px)", crea("input", { type: "number", min: 10, max: 96, value: r.dimensione, classe: "corto" }), box);
+      const peso = campo("Stile", scelta([["normale", "Normale"], ["grassetto", "Grassetto"]], r.peso), box);
+      const tinta = campo("Colore del testo", crea("input", { type: "color", value: r.colore }), box);
+      testo.addEventListener("input", () => { r.testo = testo.value; aggiorna(); });
+      dimensione.addEventListener("input", () => { r.dimensione = parseInt(dimensione.value, 10) || 18; aggiorna(); });
+      peso.addEventListener("change", () => { r.peso = peso.value; aggiorna(); });
+      tinta.addEventListener("input", () => { r.colore = tinta.value; aggiorna(); });
+      crea("button", { type: "button", testo: "↑", title: "Sposta su", disabled: i === 0, onclick: () => { [c.righe[i - 1], c.righe[i]] = [c.righe[i], c.righe[i - 1]]; disegnaRighe(); aggiorna(); } }, box);
+      crea("button", { type: "button", testo: "✕", title: "Togli la riga", classe: "pericolo", onclick: () => { c.righe.splice(i, 1); disegnaRighe(); aggiorna(); } }, box);
+    });
+    if (c.righe.length < 8) {
+      crea("button", {
+        type: "button", testo: "＋ Riga di testo",
+        onclick: () => { c.righe.push({ testo: "", dimensione: 18, peso: "normale", colore: "#ffffff" }); disegnaRighe(); aggiorna(); },
+      }, elenco);
+    }
+  };
+  disegnaRighe();
+  aggiorna();
+
+  const azioni = crea("div", { classe: "riga" }, pagina);
   crea("button", {
     classe: "primario", testo: "Salva",
     onclick: () => prova(async () => {
       const dati = new FormData();
       dati.append("nome_app", nome.value.trim());
-      dati.append("sottotitolo", sottotitolo.value.trim());
       dati.append("colore", colore.value);
+      dati.append("accesso", JSON.stringify(c));
       if (logo.files[0]) dati.append("logo", logo.files[0]);
       await api("PATCH", "/api/piattaforma/aspetto/", dati);
       setTimeout(() => location.reload(), 600);
@@ -910,7 +979,7 @@ async function sezioneMarchio() {
       }, "Logo tolto."),
     }, azioni);
   }
-  crea("button", { type: "button", testo: "Vedi la pagina di accesso", "data-aiuto": "Mostra in un riquadro come appare la pagina di accesso con nome, frase, colore e logo salvati.", onclick: () => apriRiquadro("Pagina di accesso", "/accesso/?anteprima=1") }, azioni);
+  crea("button", { type: "button", testo: "Vedi la pagina di accesso salvata", onclick: () => apriRiquadro("Pagina di accesso", "/accesso/?anteprima=1") }, azioni);
 }
 
 // --- Utenti --------------------------------------------------------------------------------------
@@ -921,7 +990,9 @@ async function schedaUtenti() {
   const riga = crea("div", { classe: "riga" }, nuovo);
   const nome = campo("Nome utente", crea("input", { autocomplete: "off" }), riga);
   const password = campo("Password (almeno 10 caratteri)", crea("input", { type: "password", autocomplete: "new-password" }), riga);
-  const ruolo = campo("Ruolo", scelta([["user_cliente", "User (contenuti e banco)"], ["admin_cliente", "Administrator"]]), riga);
+  // Gli Administrator li crea solo il SystemAdministrator; l'Administrator crea gli User.
+  const assoluto = stato.io.ruolo === "admin_assoluto";
+  const ruolo = campo("Ruolo", scelta([["user_cliente", "User (contenuti e banco)"], ...(assoluto ? [["admin_cliente", "Administrator"]] : [])]), riga);
   crea("span", { classe: "etichetta", testo: "Limitato alle sedi (nessuna = tutte)" }, nuovo);
   const sediScelte = spunte(sedi.map((s) => [s.id, s.nome]), [], nuovo);
   crea("button", {
@@ -935,9 +1006,16 @@ async function schedaUtenti() {
     const r = crea("tr", {}, corpo);
     crea("td", { testo: u.username }, r);
     crea("td", { testo: u.ruolo === "admin_cliente" ? "Administrator" : "User" }, r);
-    const attivo = crea("input", { type: "checkbox", checked: u.is_active, disabled: u.id === stato.io.id }, crea("td", {}, r));
+    // L'Administrator non gestisce gli altri Administrator (lo fa il SystemAdministrator); sé stesso dal Profilo.
+    const intoccabile = u.id === stato.io.id || (!assoluto && u.ruolo === "admin_cliente");
+    const attivo = crea("input", { type: "checkbox", checked: u.is_active, disabled: intoccabile }, crea("td", {}, r));
     attivo.addEventListener("change", () => prova(() => api("PATCH", `/api/utenti/${u.id}/`, { is_active: attivo.checked }), "Salvato."));
     const azioni = crea("td", { classe: "azioni" }, r);
+    if (u.id === stato.io.id) {
+      crea("button", { testo: "Il mio profilo", "data-aiuto": "Il tuo nome utente e la tua password si cambiano dal Profilo.", onclick: () => mostra("profilo") }, azioni);
+      continue;
+    }
+    if (intoccabile) continue;
     crea("button", {
       testo: "Nuova password",
       onclick: () => {
@@ -945,7 +1023,7 @@ async function schedaUtenti() {
         if (nuova) prova(() => api("PATCH", `/api/utenti/${u.id}/`, { password: nuova }), "Password cambiata.");
       },
     }, azioni);
-    if (u.id !== stato.io.id) crea("button", { testo: "Elimina", classe: "pericolo", onclick: () => confirm(`Eliminare ${u.username}?`) && prova(() => api("DELETE", `/api/utenti/${u.id}/`), "Eliminato.") }, azioni);
+    crea("button", { testo: "Elimina", classe: "pericolo", onclick: () => confirm(`Eliminare ${u.username}?`) && prova(() => api("DELETE", `/api/utenti/${u.id}/`), "Eliminato.") }, azioni);
   }
 }
 
@@ -990,6 +1068,13 @@ async function avvia() {
   preparaSchedeCode(strumenti);
   preparaSchedeImpostazioni(strumenti);
   preparaSchedeReport(strumenti);
+  preparaSchedeDistribuzione(strumenti);
+  preparaSchedeProfilo(strumenti);
+  // Il nome in alto apre il Profilo.
+  const nomeUtente = document.getElementById("utente");
+  nomeUtente.classList.add("cliccabile");
+  nomeUtente.dataset.aiuto = "Il tuo profilo: nome utente, email e password.";
+  nomeUtente.addEventListener("click", () => mostra("profilo"));
   preparaSchedePlugin(strumenti);
   preparaSchedeTicket(strumenti);
   osservaAiuti(contenuto, () => stato.scheda);

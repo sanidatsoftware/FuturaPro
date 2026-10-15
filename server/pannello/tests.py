@@ -42,6 +42,35 @@ class AspettoTest(Base):
         self.assertContains(r, "/aspetto/logo/")
         self.assertEqual(self.client.get("/aspetto/logo/").status_code, 200)
 
+    def test_pagina_di_accesso_composta(self):
+        import base64
+        import json
+
+        self.come(self.assoluto)
+        composizione = {"logo": {"posizione": "al_centro", "altezza": 9999, "mostra_nome": False}, "allineamento": "centro",
+                        "righe": [{"testo": "Benvenuti", "dimensione": 50, "peso": "grassetto", "colore": "#ff0000"},
+                                  {"testo": "<script>x</script>", "dimensione": 18, "colore": "rosso"}]}
+        r = self.client.patch("/api/piattaforma/aspetto/", {"accesso": composizione}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["accesso"]["logo"]["altezza"], 360)  # riportata nei limiti
+        self.assertEqual(r.json()["sottotitolo"], "Benvenuti")  # la prima riga resta la frase
+        # Anteprima dal vivo (non salva): i valori arrivano nell'indirizzo.
+        prova = base64.urlsafe_b64encode(json.dumps({"righe": [{"testo": "Solo anteprima"}]}).encode()).decode().rstrip("=")
+        self.assertContains(self.client.get(f"/accesso/?anteprima=1&prova={prova}"), "Solo anteprima")
+        self.client.logout()
+        pagina = self.client.get("/accesso/").content.decode()
+        self.assertIn("font-size: 50px; color: #ff0000", pagina)
+        self.assertIn("allinea-centro", pagina)
+        self.assertNotIn("<script>x</script>", pagina)  # i testi passano dall'escape del template
+        self.assertNotIn("Solo anteprima", pagina)
+        # L'anteprima con valori non salvati è solo per chi è nel pannello di piattaforma.
+        self.assertNotContains(self.client.get(f"/accesso/?anteprima=1&prova={prova}"), "Solo anteprima")
+
+    def test_logo_fino_a_3_mb(self):
+        from pannello.views import LOGO_MAX
+
+        self.assertEqual(LOGO_MAX, 3 * 1024 * 1024)
+
     def test_solo_l_administrator_assoluto_cambia_l_aspetto(self):
         self.come(self.admin_a)
         self.assertEqual(self.client.patch("/api/piattaforma/aspetto/", {"nome_app": "X"}, format="json").status_code, 403)

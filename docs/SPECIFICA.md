@@ -44,10 +44,19 @@ teleassistenza.
 
 | Ruolo | Livello | Può |
 |---|---|---|
-| **SystemAdministrator** | Piattaforma (Sanidat) | Tutto. Sceglie l'azienda dal selettore e opera nel suo contesto; crea clienti, Administrator, tecnici; decide le abilitazioni di ogni cliente. |
+| **SystemAdministrator** | Piattaforma (chi gestisce l'installazione) | Tutto. Sceglie l'azienda dal selettore e opera nel suo contesto; crea clienti, Administrator, tecnici e altri SystemAdministrator («Utenti di piattaforma»); decide le abilitazioni di ogni cliente. |
 | **Tecnico Teleassistenza** | Piattaforma | Designato dal SystemAdministrator. Apre sessioni remote sui player di **tutti** i clienti; legge l'elenco clienti e i monitor. Non gestisce contenuti né configurazioni. |
-| **Administrator** | Un cliente | Amministra il proprio parco **entro le abilitazioni concesse**: sedi, gruppi, monitor, contenuti, utenti del cliente. Legge le abilitazioni e il registro di audit e teleassistenza del cliente. Non avvia la teleassistenza. |
+| **Administrator** | Un cliente | Amministra il proprio parco **entro le abilitazioni concesse**: sedi, gruppi, monitor, contenuti, gli User del cliente (gli Administrator li crea e li gestisce solo il SystemAdministrator). Legge le abilitazioni e il registro di audit e teleassistenza del cliente. Non avvia la teleassistenza. |
 | **User** | Una sola azienda (quella di appartenenza) | Gestisce contenuti, playlist e programmazione. Facoltativamente limitato a certe sedi: allora vede solo quelle e i loro monitor. |
+
+**Chi crea chi.** Solo il SystemAdministrator crea SystemAdministrator, Tecnici e Administrator;
+l'Administrator crea, modifica e disattiva solo gli User della sua azienda (se l'abilitazione lo
+consente) e non può promuoverli Administrator. Nessuno disattiva sé stesso né si cambia il ruolo.
+
+**Profilo.** Ogni utente, SystemAdministrator compreso, cambia da sé nome utente, nome, cognome,
+email e password nella scheda «Profilo» (menu Impostazioni, o clic sul proprio nome in alto;
+`PATCH /api/io/`). Nome utente e password chiedono la password attuale; la password nuova ha almeno
+10 caratteri e passa i controlli di Django; si resta collegati. I cambi finiscono nel registro.
 
 **Abilitazioni** (per cliente, le imposta solo il SystemAdministrator): numero massimo di
 monitor e di utenti, spazio disponibile, se l'Administrator può gestire gli utenti, se può
@@ -58,7 +67,7 @@ wall, …) man mano che arrivano.
 dalla piattaforma per suo conto (marcate `per_conto_piattaforma`). Ogni sessione di
 teleassistenza è visibile all'Administrator: chi, quando, su quale monitor, perché.
 
-Nelle installazioni presso il cliente il SystemAdministrator resta Sanidat; il cliente ha
+Nelle installazioni presso il cliente il SystemAdministrator resta il gestore della piattaforma; il cliente ha
 il proprio Administrator.
 
 ## 4. Isolamento tra clienti
@@ -265,8 +274,12 @@ una riga ha un errore non si salva nulla. È riservata a chi vede tutto il clien
 scheda «Aspetto interfaccia» (`PATCH /api/io/`); vale per pannello, editor e palinsesto.
 
 **Aspetto della piattaforma.** Nome dell'applicazione, frase, colore e logo (PNG, JPEG, GIF o
-WebP; niente SVG) della pagina di accesso `/accesso/` e del pannello. Li cambia solo
-il SystemAdministrator, nella scheda «Aspetto interfaccia» (`/api/piattaforma/aspetto/`).
+WebP fino a 3 MB; niente SVG) della pagina di accesso `/accesso/` e del pannello. Li cambia solo
+il SystemAdministrator, nella scheda «Aspetto interfaccia» (`/api/piattaforma/aspetto/`). La
+pagina di accesso è componibile (`Aspetto.accesso`): posizione del logo (in alto, nel messaggio,
+al centro) e altezza (24–360 px), con o senza il nome accanto, allineamento a sinistra o al
+centro, fino a 8 righe di testo ognuna con grandezza, peso e colore propri; l'anteprima nel
+pannello si aggiorna mentre si modifica, senza salvare.
 
 ### Schermi: accensione, stato e allarmi
 
@@ -333,10 +346,11 @@ funzione nuova deve aggiungere le sue spiegazioni lì.
 - **Contenuti**: Creazione palinsesto, Listini.
 - **Code**: Reparti ed eliminacode, Coda sul telefono.
 - **Plugin** (facoltativi): Info Prezzo, Info Ingredienti.
-- **Report & Log**: Stato e allarmi, Messa in onda, Tempi d'attesa, Registro operazioni,
+- **Report & Log**: Stato e allarmi, Distribuzione contenuti, Messa in onda, Tempi d'attesa, Registro operazioni,
   Storico allarmi.
 - **Impostazioni**: Layout Video, Layout Ticket, Sedi e gruppi, Utenti, Email, Accensione e
-  spegnimento, Fasce di download, Banchi Code, Aspetto interfaccia.
+  spegnimento, Fasce di download, Banchi Code, Aspetto interfaccia, Utenti di piattaforma (solo
+  SystemAdministrator), Profilo.
 
 Tutte le voci si aprono nella stessa pagina: «Layout Video» (l'editor, `/editor/`) e «Banchi
 Code» (`/banco/`) sono mostrate dentro il pannello, sotto il menu. Le pagine di prova e le
@@ -352,6 +366,29 @@ operazioni** (`/api/audit/` per l'azienda, `/api/piattaforma/audit/` per il Syst
 con «tutta la piattaforma»; filtri per periodo, utente e testo, 100 righe per pagina, CSV) e lo
 **storico degli allarmi** (`/api/storico-allarmi/`: eventi per periodo e schermo, con il
 riepilogo di scollegamenti e tempo fuori linea, anche se lo schermo è ancora scollegato; CSV).
+
+### Distribuzione contenuti
+
+«Report & Log → Distribuzione contenuti» risponde a: le immagini del palinsesto o della promozione
+appena salvata sono arrivate agli schermi? E cosa va in onda?
+
+- **Il player riferisce** a ogni segnale periodico (e ogni 10 secondi mentre scarica) quanti file
+  e byte del palinsesto più recente ha già nella cache, quali mancano, il file in corso con i
+  byte ricevuti, la velocità media e i file non riusciti; e per ogni zona slide il contenuto in
+  onda con la playlist e da che ora (`info_dispositivo.distribuzione` e `in_onda`).
+- **Il server confronta** con il manifest che lo schermo dovrebbe avere adesso
+  (`dispositivi/distribuzione.py`): stato per schermo (*aggiornato*, *file arrivati*, *in
+  scaricamento*, *attende la fascia*, *download non riuscito*, *in arrivo*, *non in linea*, *mai
+  collegato*), percentuale in byte, per negozio e per promozione (su quanti schermi destinatari
+  sono arrivati tutti i suoi file e su quanti è in onda).
+- **Il pannello** (`schede-distribuzione.js`) mostra anello e cartellini dei totali, la banda
+  degli stati, le promozioni con la loro barra e, per negozio, una tessera per schermo con la
+  miniatura di ciò che è in onda, la barra dei file, il file in corso con velocità e la fascia di
+  download se si aspetta quella. Si aggiorna da sola ogni 10 secondi; filtri «Da completare» e
+  «Non in linea» e ricerca.
+- **Administrator** (e User, limitati alle loro sedi): la propria azienda, `GET /api/distribuzione/`.
+  **SystemAdministrator e Tecnico**: anche «Tutte le aziende», `GET /api/piattaforma/distribuzione/`,
+  con i totali della piattaforma e una riga per azienda che si apre su promozioni, negozi e schermi.
 
 ### Listini prezzi (facoltativi)
 
@@ -523,7 +560,10 @@ le persone che lo precedono e il player stampa:
 **Layout Ticket** (menu **Impostazioni**, `/api/layout-ticket/`, modello `LayoutTicket`): com'è
 fatto il biglietto. Elementi in colonna, nell'ordine in cui escono dalla carta: logo,
 intestazione, reparto (il tasto toccato sul totem), numero, persone in coda, testo di fine
-biglietto, data e ora, QR della coda sul telefono, testi liberi e linee. Per ogni elemento:
+biglietto, data e ora, QR della coda sul telefono, testi liberi e linee. L'ordine si cambia
+trascinando gli elementi nell'elenco oppure direttamente sull'anteprima del biglietto (la linea
+blu mostra dove cadono; lasciandoli a sinistra, al centro o a destra se ne cambia anche
+l'allineamento); un clic sull'anteprima seleziona l'elemento. Per ogni elemento:
 visibile, carattere, grandezza (in punti della stampante, 8 = 1 mm), grassetto, corsivo,
 maiuscolo, bianco su nero, allineamento, spazio sotto; per logo e QR la larghezza. Carta 80 mm
 di riferimento (80 o 58 mm); la larghezza vera è quella della stampante che lo usa: il catalogo
@@ -581,7 +621,7 @@ Li abilita il SystemAdministrator per l'azienda (`Abilitazioni.plugin_prezzo`,
 
 **Dove stanno i dati.** In un file SQLite su un PC del negozio, in una cartella condivisa
 (`\\indirizzo\condivisione\…\file.db`, con utente e password). Il server centrale non lo vede:
-lo copia il **servizio code del Totem Master** (`code-totem.ps1` 1.4), ogni N minuti e solo se è
+lo copia il **servizio code del Totem Master** (`code-totem.ps1` 1.5), ogni N minuti e solo se è
 cambiato (dimensione e data, anche del `-wal`), in un processo a parte per non fermare le code;
 dopo la copia un `PRAGMA quick_check`: se il file era in scrittura e la copia non è integra, la si
 scarta, resta la precedente e si riprova dopo 2 minuti. Perché non leggerlo direttamente dalla
@@ -627,6 +667,15 @@ superare 1,5 GB: meglio uno o due orari fissi e il pulsante **Aggiorna adesso** 
 (`POST /api/fonti-plugin/<id>/aggiorna/`) quando servono subito le modifiche. La firma dell'ultima
 copia resta sul totem (`plugin/copie.json`): dopo un riavvio un file uguale non si ricopia e,
 con gli orari, si aspetta l'orario. Sul totem serve spazio libero per due volte il file.
+
+**Prova accesso.** Accanto a cartella, file, utente e password di ogni negozio, il pulsante
+«Prova accesso» salva i dati e chiede al Totem Master del negozio di provarli
+(`POST /api/fonti-plugin/<id>/prova/`): il totem lo vede entro pochi secondi, apre la cartella
+condivisa con quelle credenziali, controlla che il file ci sia e sia un database SQLite e
+riferisce (`POST /api/player/prova-plugin/`). Il LED diventa verde («Accesso riuscito: file di
+… MB, modificato il …») o rosso con il motivo (cartella non raggiungibile o credenziali errate,
+file mancante, file che non è SQLite); lampeggia giallo mentre si aspetta, e se in 2 minuti il
+totem non risponde lo dice.
 
 **Più totem.** Solo il Totem Master legge i file; gli altri totem e i monitor del negozio
 chiedono prezzi e ingredienti al suo servizio (`https://IP-master:8443/plugin/…`).
@@ -724,7 +773,7 @@ certificato legato a monitor e cliente.
 
 **Installazioni presso il cliente.** Il cliente ha accesso fisico al server: non possiamo
 impedirgli tecnicamente di alterare il proprio database. L'isolamento lì è comunque irrilevante
-(c'è un solo cliente); la licenza firmata e il contratto regolano l'accesso di Sanidat.
+(c'è un solo cliente); la licenza firmata e il contratto regolano l'accesso del gestore della piattaforma.
 
 ## 10. Hardware Android — cosa verificare
 
@@ -747,10 +796,13 @@ piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
 | `GET/POST/PATCH /api/piattaforma/clienti/` | lettura: SystemAdministrator, Tecnico — scrittura: SystemAdministrator |
 | `GET/POST/PATCH/DELETE /api/piattaforma/utenti/` | SystemAdministrator |
 | `GET /api/piattaforma/audit/` | SystemAdministrator |
+| `PATCH /api/io/` (profilo: tema, nome utente, nome, email, password con `password_attuale`) | tutti gli autenticati, per sé |
+| `GET /api/distribuzione/` | tutti (User: le sue sedi) |
+| `GET /api/piattaforma/distribuzione/` | SystemAdministrator, Tecnico |
 | `GET/PATCH /api/abilitazioni/` | lettura: SystemAdministrator, Administrator — scrittura: SystemAdministrator |
 | `/api/sedi/`, `/api/gruppi/` | lettura: tutti — scrittura: SystemAdministrator, Administrator |
 | `GET/PATCH/DELETE /api/monitor/`, `POST /api/monitor/abbina/` | lettura: tutti — scrittura: SystemAdministrator, Administrator (se abilitato) |
-| `/api/utenti/` | SystemAdministrator, Administrator (se abilitato) |
+| `/api/utenti/` | SystemAdministrator, Administrator (se abilitato; solo gli User) |
 | `GET /api/audit/` | SystemAdministrator, Administrator |
 | `GET /api/teleassistenza/sessioni/` | SystemAdministrator, Tecnico, Administrator |
 | `POST /api/teleassistenza/sessioni/`, `POST …/{id}/chiudi/` | SystemAdministrator, Tecnico |

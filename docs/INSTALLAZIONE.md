@@ -36,7 +36,7 @@ Il repository è privato, quindi serve un **token di accesso GitHub in sola lett
 
 1. su GitHub: foto profilo → **Settings** → **Developer settings** → **Personal access tokens** →
    **Fine-grained tokens** → **Generate new token**;
-2. *Repository access*: **Only select repositories** → `sanidatsoftware/FuturaPro`;
+2. *Repository access*: **Only select repositories** → il repository di FuturaPro (`<ORGANIZZAZIONE>/FuturaPro`);
 3. *Permissions* → *Repository permissions* → **Contents: Read-only**;
 4. genera e copia il token (inizia con `github_pat_`).
 
@@ -44,10 +44,11 @@ Poi, sulla VM:
 
 ```bash
 sudo apt update && sudo apt install -y git
-sudo git clone https://github.com/sanidatsoftware/FuturaPro.git /opt/futurapro
+sudo git clone https://github.com/<ORGANIZZAZIONE>/FuturaPro.git /opt/futurapro
 ```
 
-Come *Username* scrivi il tuo utente GitHub, come *Password* incolla il token.
+Al posto di `<ORGANIZZAZIONE>` metti il nome dell'organizzazione (o dell'utente) GitHub che ospita
+il repository. Come *Username* scrivi il tuo utente GitHub, come *Password* incolla il token.
 
 > In alternativa, senza token sulla VM: dalla pagina del repository su GitHub (ramo `main`),
 > **Code → Download ZIP**; copia lo ZIP sulla VM (es. con WinSCP) ed estrailo in `/opt/futurapro`

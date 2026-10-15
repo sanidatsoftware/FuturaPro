@@ -183,3 +183,47 @@ class DigiTest(Base):
         self.assertEqual(cerca("2120254002242")["ingredienti"], "INGREDIENTI: coscia di suino, sale")  # dal testo 5
         self.assertIsNone(cerca("2110099001000"))  # PLU disattivato
         self.assertIsNone(cerca("8001234567890"))
+
+
+class ProvaAccessoTest(Base):
+    """«Prova accesso»: il pannello chiede, il Totem Master prova cartella e file, il LED si accende."""
+
+    def test_richiesta_esecuzione_ed_esito(self):
+        import secrets
+
+        from dispositivi.models import CredenzialeDispositivo, impronta
+
+        with contesto_cliente(self.a.id):
+            Abilitazioni.objects.update(plugin_prezzo=True)
+            altro = Monitor.objects.create(cliente=self.a, sede=self.a_milano, nome="Cassa", piattaforma="android")
+        self.come(self.admin_a)
+        fonte = {"tipo": "prezzo", "sede": str(self.a_milano.id), "indirizzo": "192.168.1.20", "percorso": "Dati/articoli.db"}
+        fonte_id = self.client.post("/api/fonti-plugin/", fonte, format="json").json()["id"]
+        url = f"/api/fonti-plugin/{fonte_id}/"
+        self.assertEqual(self.client.get(url).json()["prova"]["stato"], "mai")
+        self.assertEqual(self.client.post(f"{url}prova/").json()["prova"]["stato"], "in_attesa")
+        self.client.patch(f"/api/monitor/{self.mon_a_milano.id}/", {"totem_master": True}, format="json")
+
+        def intestazione(monitor):
+            token = secrets.token_urlsafe(32)
+            with contesto_cliente(self.a.id):
+                CredenzialeDispositivo.objects.create(impronta_token=impronta(token), monitor=monitor, cliente_id=self.a.id)
+            return {"HTTP_AUTHORIZATION": f"Device {token}"}
+
+        # Tocca solo al Totem Master della sede.
+        self.assertEqual(self.client.get("/api/player/schermata/", **intestazione(altro)).json()["prova_plugin"], [])
+        master = intestazione(self.mon_a_milano)
+        prove = self.client.get("/api/player/schermata/", **master).json()["prova_plugin"]
+        self.assertEqual([p["tipo"] for p in prove], ["prezzo"])
+        # Una risposta a una richiesta vecchia non conta.
+        self.client.post("/api/player/prova-plugin/", {"tipo": "prezzo", "richiesta": "2020-01-01", "ok": True}, format="json", **master)
+        self.assertEqual(self.client.get(url).json()["prova"]["stato"], "in_attesa")
+        r = self.client.post("/api/player/prova-plugin/", {"tipo": "prezzo", "richiesta": prove[0]["richiesta"], "ok": False,
+                                                          "messaggio": "Cartella non raggiungibile"}, format="json", **master)
+        self.assertEqual(r.status_code, 204)
+        prova = self.client.get(url).json()["prova"]
+        self.assertEqual((prova["stato"], prova["messaggio"], prova["totem"]), ("errore", "Cartella non raggiungibile", self.mon_a_milano.nome))
+        self.assertEqual(self.client.get("/api/player/schermata/", **master).json()["prova_plugin"], [])  # fatta
+        # Un'altra azienda non può chiedere la prova.
+        self.come(self.admin_b)
+        self.assertEqual(self.client.post(f"{url}prova/").status_code, 404)

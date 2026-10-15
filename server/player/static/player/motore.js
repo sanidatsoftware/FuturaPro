@@ -57,6 +57,8 @@ export class Motore {
     this.zone = [];
     this.manifest = null;
     this.evento = null;
+    // Cosa mostra adesso ogni zona slide: lo riferisce il segnale periodico (Distribuzione contenuti).
+    this.inOnda = {};
     window.addEventListener("resize", () => this.adatta());
     this.inRiposo = false;
     // Orari di accensione ed eventi straordinari si controllano ogni secondo.
@@ -340,6 +342,15 @@ class ZonaSlide {
     this.attivo = false;
     this.strato?.querySelector("video")?.pause();
     this.strato?.chiudi?.();
+    delete this.motore.inOnda[this.zona.id];
+  }
+
+  segnaInOnda(elemento) {
+    if (this.motore.inOnda[this.zona.id]?.contenuto === elemento.contenuto) return;
+    this.motore.inOnda[this.zona.id] = {
+      contenuto: elemento.contenuto, playlist: elemento.playlist || null, evento: elemento.evento || null,
+      riserva: Boolean(elemento.riserva), da: new Date().toISOString(),
+    };
   }
 
   // La sequenza si ricalcola a ogni passaggio: le regole del palinsesto valgono
@@ -381,6 +392,7 @@ class ZonaSlide {
       // Un'immagine sola resta ferma: niente transizione su se stessa.
       const inizio = Date.now();
       if (sequenza.length === 1 && this.corrente === elemento.contenuto && voce.tipo !== "video") {
+        this.segnaInOnda(elemento);
         await this.aspetta(attendi((elemento.durata || 10) * 1000));
         this.annota(elemento, inizio);
         if (elemento.evento && !this.motore.evento) indice = 0; // finito l'evento, la playlist riparte da capo
@@ -389,6 +401,7 @@ class ZonaSlide {
       // Un video solo ricomincia da capo dove si trova, senza transizione su se stesso.
       const video = this.strato?.querySelector("video");
       if (sequenza.length === 1 && this.corrente === elemento.contenuto && voce.tipo === "video" && video) {
+        this.segnaInOnda(elemento);
         video.currentTime = 0;
         video.play().catch(() => {});
         await this.aspetta(Promise.race([
@@ -406,6 +419,7 @@ class ZonaSlide {
         continue;
       }
       const inOndaDa = Date.now();
+      this.segnaInOnda(elemento);
       await this.aspetta(mostrato.fine);
       this.annota(elemento, inOndaDa);
       if (elemento.evento) indice = 0; // dopo un evento straordinario la playlist riparte da capo
@@ -422,6 +436,7 @@ class ZonaSlide {
   }
 
   svuota() {
+    delete this.motore.inOnda[this.zona.id];
     this.strato?.chiudi?.();
     this.strato?.remove();
     this.strato = null;

@@ -14,9 +14,10 @@ from rest_framework.decorators import action
 
 from core.api import GESTIONE, SOLO_ASSOLUTO, TUTTI, ViewSetCliente, VistaConContesto
 
+from .accesso import pulita as pulita_accesso
 from .models import Aspetto, ImpostazioniEmail, InvioRapporto
 
-LOGO_MAX = 2 * 1024 * 1024
+LOGO_MAX = 3 * 1024 * 1024
 
 
 def pannello(request):
@@ -44,6 +45,25 @@ class Accesso(LoginView):
             self.redirect_authenticated_user = False
         return super().dispatch(request, *args, **kwargs)
 
+    def get_context_data(self, **kwargs):
+        dati = super().get_context_data(**kwargs)
+        aspetto = Aspetto.attuale()
+        composizione = aspetto.accesso
+        # Anteprima dal vivo mentre il SystemAdministrator compone: i valori non salvati arrivano
+        # nell'indirizzo e valgono solo per questa pagina.
+        prova = self.request.GET.get("prova")
+        utente = self.request.user
+        if prova and self.request.GET.get("anteprima") and utente.is_authenticated and getattr(utente, "di_piattaforma", False):
+            import base64
+            import json
+
+            try:
+                composizione = json.loads(base64.urlsafe_b64decode(prova.encode() + b"==").decode())
+            except ValueError:
+                pass
+        dati["accesso"] = pulita_accesso(composizione, aspetto.sottotitolo)
+        return dati
+
 
 def logo(request):
     """Il logo della pagina di accesso: pubblico, come ogni logo."""
@@ -63,8 +83,23 @@ class AspettoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Aspetto
-        fields = ["nome_app", "sottotitolo", "colore", "logo", "ha_logo", "modificato"]
+        fields = ["nome_app", "sottotitolo", "colore", "logo", "ha_logo", "accesso", "modificato"]
         read_only_fields = ["modificato"]
+
+    def validate_accesso(self, valore):
+        if isinstance(valore, str):  # dal modulo con il logo arriva come testo JSON
+            import json
+
+            try:
+                valore = json.loads(valore)
+            except ValueError:
+                raise serializers.ValidationError("Composizione non valida.")
+        return pulita_accesso(valore)
+
+    def to_representation(self, aspetto):
+        dati = super().to_representation(aspetto)
+        dati["accesso"] = pulita_accesso(aspetto.accesso, aspetto.sottotitolo)
+        return dati
 
     def get_ha_logo(self, aspetto):
         return bool(aspetto.logo)
@@ -73,7 +108,7 @@ class AspettoSerializer(serializers.ModelSerializer):
         if file is None:
             return None
         if file.size > LOGO_MAX:
-            raise serializers.ValidationError("Il logo supera 2 MB.")
+            raise serializers.ValidationError("Il logo supera 3 MB.")
         # Solo immagini riconosciute dal contenuto: niente SVG, che può contenere script.
         formato = riconosci(file)
         if formato is None or formato[0] != "immagine":
@@ -81,6 +116,9 @@ class AspettoSerializer(serializers.ModelSerializer):
         return file
 
     def update(self, aspetto, dati):
+        # La prima riga della vetrina resta anche la «frase» della piattaforma.
+        if dati.get("accesso", {}).get("righe"):
+            dati["sottotitolo"] = dati["accesso"]["righe"][0]["testo"][:120]
         if "logo" in dati:
             nuovo = dati.pop("logo")
             if aspetto.logo:

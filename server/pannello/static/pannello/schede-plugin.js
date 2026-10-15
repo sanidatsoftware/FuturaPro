@@ -1,10 +1,11 @@
-// Il gruppo «Plugin»: Info Prezzo e Info Ingredienti (facoltativi, abilitati da Sanidat).
+// Il gruppo «Plugin»: Info Prezzo e Info Ingredienti (facoltativi, abilitati dal SystemAdministrator).
 // Per ogni negozio il file SQLite sul PC del negozio; dove sono i dati nel file; i prefissi dei
 // codici bilancia; l'aspetto del riquadro, con l'anteprima. I testi dei dati passano da textContent.
 
 import { disegnaRiquadro } from "../player/plugin.js";
 
 let H = null;
+let attesaProva = null;
 
 export function preparaSchedePlugin(strumenti) {
   H = strumenti;
@@ -86,6 +87,7 @@ async function schedaPlugin(tipo) {
       + "Il file si copia solo se è cambiato; per i file grandi che cambiano a ogni pesata (bilancia) meglio uno o due orari fissi, e «Aggiorna adesso» quando servono subito le modifiche. Sul totem serve spazio libero per due volte il file.",
   }, negozi);
   const corpo = tabella(["Negozio", "Totem Master", "File", "Utente", "Quando copiarlo", "Ultima copia", ""], negozi);
+  let inAttesa = false;
   for (const n of p.negozi) {
     const r = crea("tr", {}, corpo);
     crea("td", { testo: n.nome }, r);
@@ -140,6 +142,24 @@ async function schedaPlugin(tipo) {
       classe: "primario", testo: f ? "Salva" : "Aggiungi",
       onclick: () => prova(() => (f ? api("PATCH", `/api/fonti-plugin/${f.id}/`, dati()) : api("POST", "/api/fonti-plugin/", dati())), "Salvato: il Totem Master lo riceve entro un minuto."),
     }, azioni);
+    // Prova accesso: salva i dati scritti e chiede al Totem Master di provare cartella e file.
+    const led = crea("div", { classe: "prova-accesso" }, azioni);
+    const prova_ = f?.prova || { stato: "mai" };
+    const colore = { ok: "acceso", errore: "guasto", in_attesa: "attesa", senza_risposta: "guasto" }[prova_.stato];
+    if (colore) {
+      crea("span", { classe: `pallino ${colore}` }, led);
+      led.append(` ${prova_.stato === "in_attesa" ? "Prova in corso sul Totem Master…" : prova_.messaggio || ""}`);
+      if (prova_.stato === "in_attesa") inAttesa = true;
+    }
+    crea("button", {
+      testo: "🔌 Prova accesso",
+      "data-aiuto": "Salva i dati e fa provare al Totem Master del negozio la cartella condivisa, l'utente e la password e il file: LED verde se riesce, rosso con il motivo se no. Ci vogliono pochi secondi.",
+      disabled: !n.master_online && !!n.indirizzo_totem,
+      onclick: () => prova(async () => {
+        const salvata = f ? await api("PATCH", `/api/fonti-plugin/${f.id}/`, dati()) : await api("POST", "/api/fonti-plugin/", dati());
+        await api("POST", `/api/fonti-plugin/${salvata.id}/prova/`);
+      }, "Prova chiesta: il Totem Master risponde entro pochi secondi."),
+    }, azioni);
     if (f) {
       crea("button", {
         testo: "⟳ Aggiorna adesso",
@@ -152,6 +172,10 @@ async function schedaPlugin(tipo) {
       }, azioni);
     }
   }
+
+  // Finché un Totem Master deve rispondere alla prova di accesso, la scheda si aggiorna da sola.
+  clearTimeout(attesaProva);
+  if (inAttesa) attesaProva = setTimeout(() => { if (H.stato.scheda === `info_${tipo}`) H.mostra(`info_${tipo}`); }, 3000);
 
   // --- Dove sono i dati nel file ---
   const dove = sezione("Dove sono i dati nel file");

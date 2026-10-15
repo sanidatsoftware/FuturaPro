@@ -288,3 +288,69 @@ class LayoutTicketTest(Base):
         self.assertEqual(self.client.patch(url, {"nome": "x"}, format="json").status_code, 403)
         self.come(self.admin_b)
         self.assertEqual(self.client.get(url).status_code, 404)
+
+
+class DistribuzioneTest(Base):
+    """«Distribuzione contenuti»: i file del palinsesto sono arrivati agli schermi? Cosa è in onda?"""
+
+    def test_avanzamento_promozioni_e_vista_globale(self):
+        import secrets
+
+        from contenuti.models import Campagna, Contenuto, ElementoPlaylist, Playlist, Promozione, Pubblicazione
+
+        from .models import CredenzialeDispositivo, impronta
+
+        with contesto_cliente(self.a.id):
+            immagini = [Contenuto.objects.create(cliente=self.a, nome=f"Volantino {n}", tipo="immagine", sha256=f"{n}" * 64,
+                                                 dimensione=1000 * n, mime="image/jpeg") for n in (1, 2)]
+            playlist = Playlist.objects.create(cliente=self.a, nome="Volantino")
+            for ordine, c in enumerate(immagini):
+                ElementoPlaylist.objects.create(cliente=self.a, playlist=playlist, contenuto=c, ordine=ordine)
+            campagna = Campagna.objects.create(cliente=self.a, nome="Autunno", colore="#ff8800")
+            promozione = Promozione.objects.create(cliente=self.a, campagna=campagna, nome="Volantino ottobre")
+            pubblicazione = Pubblicazione.objects.create(cliente=self.a, nome="Volantino ottobre", playlist=playlist, promozione=promozione)
+            pubblicazione.monitor.set([self.mon_a_milano])
+            token = secrets.token_urlsafe(32)
+            CredenzialeDispositivo.objects.create(impronta_token=impronta(token), monitor=self.mon_a_milano, cliente_id=self.a.id)
+        player = {"HTTP_AUTHORIZATION": f"Device {token}"}
+        versione = self.client.get("/api/player/palinsesto/", **player).json()["versione"]
+
+        def schermo(nome):
+            dati = self.client.get("/api/distribuzione/").json()
+            return dati, next(s for sede in dati["sedi"] for s in sede["schermi"] if s["nome"] == nome)
+
+        self.come(self.admin_a)
+        dati, s = schermo("Ingresso")
+        self.assertEqual((s["stato"], s["file_totali"], s["byte_totali"]), ("mai_collegato", 2, 3000))
+        # Il player scarica: un file c'è, il secondo è a metà.
+        self.client.post("/api/player/heartbeat/", {
+            "versione": "web", "manifest": "vecchia", "distribuzione": {
+                "versione": versione, "file": 2, "presenti": 1, "mancanti": ["2" * 64], "falliti": 0, "velocita": 500,
+                "in_corso": {"nome": "Volantino 2", "byte": 1000, "totale": 2000}},
+            "in_onda": [{"zona": "z1", "contenuto": str(immagini[0].id), "playlist": str(playlist.id), "da": "2026-10-15T10:00:00Z"}],
+        }, format="json", **player)
+        dati, s = schermo("Ingresso")
+        self.assertEqual((s["stato"], s["file_presenti"], s["byte_presenti"], s["percentuale"]), ("scaricamento", 1, 2000, 66))
+        self.assertEqual(s["in_corso"]["percentuale"], 50)
+        self.assertEqual(s["in_onda"][0]["nome"], "Volantino 1")
+        self.assertEqual((s["in_onda"][0]["promozione"], s["in_onda"][0]["campagna"]), ("Volantino ottobre", "Autunno"))
+        promo = dati["promozioni"][0]
+        self.assertEqual((promo["nome"], promo["schermi"], promo["completi"]), ("Volantino ottobre", 1, 0))
+        # Tutto arrivato e in onda.
+        self.client.post("/api/player/heartbeat/", {"versione": "web", "manifest": versione, "distribuzione": {
+            "versione": versione, "file": 2, "presenti": 2, "mancanti": []}}, format="json", **player)
+        dati, s = schermo("Ingresso")
+        self.assertEqual((s["stato"], s["percentuale"]), ("aggiornato", 100))
+        self.assertEqual(dati["promozioni"][0]["completi"], 1)
+        self.assertEqual(dati["stati"]["aggiornato"], 1)
+        # Lo user limitata a Milano vede solo Milano; l'altra azienda non vede nulla di A.
+        self.come(self.user_a_milano)
+        self.assertEqual([sede["nome"] for sede in self.client.get("/api/distribuzione/").json()["sedi"]], ["Milano"])
+        self.come(self.admin_b)
+        self.assertEqual([sede["nome"] for sede in self.client.get("/api/distribuzione/").json()["sedi"]], ["Torino"])
+        self.assertEqual(self.client.get("/api/piattaforma/distribuzione/").status_code, 403)
+        # Il SystemAdministrator vede tutte le aziende, ognuna con i suoi totali.
+        self.come(self.assoluto)
+        globale = self.client.get("/api/piattaforma/distribuzione/").json()
+        self.assertEqual(globale["schermi"], 3)
+        self.assertEqual({a["nome"]: a["stati"]["aggiornato"] for a in globale["aziende"]}, {"Azienda A": 1, "Azienda B": 0})

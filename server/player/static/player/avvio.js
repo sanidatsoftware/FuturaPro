@@ -138,6 +138,70 @@ async function preparaFile(manifest, scarica, voci = Object.values(manifest.cont
   return completo;
 }
 
+// --- Avanzamento della distribuzione ------------------------------------------------
+
+// Come vanno i file del palinsesto più recente: li riferisce il segnale periodico e il pannello
+// li mostra in «Distribuzione contenuti», con le barre di avanzamento.
+const avanzamento = { versione: "", file: 0, presenti: 0, byte: 0, byte_presenti: 0, mancanti: [], in_corso: null, falliti: 0, velocita: 0, senza_cache: false };
+
+// Come preparaFile per i file del palinsesto, ma contando file e byte mentre arrivano.
+async function preparaSeguendo(manifest, scarica, soloCache, avvisa) {
+  const uniche = [...new Map(Object.values(manifest.contenuti).filter((v) => v.sha256).map((v) => [v.sha256, v])).values()];
+  const peso = (voce) => Number(voce.dimensione) || 0;
+  let cache;
+  try {
+    cache = await caches.open(CACHE_FILE);
+  } catch {
+    Object.assign(avanzamento, { versione: manifest.versione, file: uniche.length, presenti: uniche.length, byte: 0, byte_presenti: 0, mancanti: [], in_corso: null, falliti: 0, senza_cache: true });
+    return true; // niente Cache API (pagina non sicura): i file arrivano quando servono
+  }
+  const mancanti = [];
+  for (const voce of uniche) if (!(await cache.match(`/file/${voce.sha256}`))) mancanti.push(voce);
+  const totale = uniche.reduce((somma, v) => somma + peso(v), 0);
+  Object.assign(avanzamento, {
+    versione: manifest.versione, file: uniche.length, presenti: uniche.length - mancanti.length, byte: totale,
+    byte_presenti: totale - mancanti.reduce((somma, v) => somma + peso(v), 0),
+    mancanti: mancanti.map((v) => v.sha256), in_corso: null, falliti: 0, velocita: 0, senza_cache: false,
+  });
+  if (!mancanti.length || soloCache) return !mancanti.length;
+  let completo = true;
+  let scaricati = 0;
+  const partenza = performance.now();
+  for (const voce of mancanti) {
+    const inCorso = { nome: voce.nome || "", byte: 0, totale: peso(voce) };
+    avanzamento.in_corso = inCorso;
+    avvisa();
+    try {
+      const risposta = await scarica(voce, (n) => {
+        inCorso.byte += n;
+        scaricati += n;
+        avanzamento.velocita = Math.round(scaricati / Math.max(1, (performance.now() - partenza) / 1000));
+        avvisa();
+      });
+      if (!risposta.ok) throw new Error(risposta.status);
+      await cache.put(`/file/${voce.sha256}`, risposta);
+      avanzamento.presenti += 1;
+      avanzamento.byte_presenti += peso(voce);
+      avanzamento.mancanti = avanzamento.mancanti.filter((sha) => sha !== voce.sha256);
+    } catch {
+      completo = false;
+      avanzamento.falliti += 1;
+    }
+  }
+  avanzamento.in_corso = null;
+  avvisa(true);
+  return completo;
+}
+
+// Il riassunto per il segnale periodico (l'elenco dei mancanti non cresce senza limiti).
+function riassuntoAvanzamento() {
+  const { in_corso: inCorso, mancanti, ...resto } = avanzamento;
+  return {
+    ...resto, mancanti: mancanti.slice(0, 300),
+    in_corso: inCorso && { ...inCorso, byte: Math.min(inCorso.byte, inCorso.totale || inCorso.byte) },
+  };
+}
+
 // --- Fasce di download --------------------------------------------------------------
 
 // Si possono scaricare file adesso? Senza fascia sempre; «Scarica adesso» la scavalca.
@@ -156,9 +220,10 @@ function fileUrgenti(manifest) {
   return [...ids].map((id) => manifest.contenuti[id]).filter(Boolean);
 }
 
-// Legge la risposta senza superare i kilobyte al secondo indicati (0: senza limite).
-async function conVelocita(risposta, kbps) {
-  if (!kbps || !risposta.ok || !risposta.body) return risposta;
+// Legge la risposta senza superare i kilobyte al secondo indicati (0: senza limite); con
+// «conta», riferisce i byte man mano che arrivano (le barre di avanzamento del pannello).
+async function conVelocita(risposta, kbps, conta = null) {
+  if ((!kbps && !conta) || !risposta.ok || !risposta.body) return risposta;
   const lettore = risposta.body.getReader();
   const pezzi = [];
   let letti = 0;
@@ -168,6 +233,8 @@ async function conVelocita(risposta, kbps) {
     if (done) break;
     pezzi.push(value);
     letti += value.length;
+    conta?.(value.length);
+    if (!kbps) continue;
     const atteso = (letti / (kbps * 1024)) * 1000;
     const trascorso = performance.now() - inizio;
     if (atteso > trascorso) await attendi(atteso - trascorso);
@@ -394,7 +461,7 @@ async function avviaPlayer() {
   const token = memoria("futurapro.token") && salvato ? memoria("futurapro.token") : await abbina();
   const intestazioni = { Authorization: `Device ${token}` };
   let limiteKbps = 0; // dalla fascia di download dell'ultimo manifest
-  const scaricaFile = async (voce) => conVelocita(await conLimite(voce.url, { headers: intestazioni }, 120_000), limiteKbps);
+  const scaricaFile = async (voce, conta = null) => conVelocita(await conLimite(voce.url, { headers: intestazioni }, 120_000), limiteKbps, conta);
   // Gli annunci dei numeri: prima dal totem del negozio (rete locale), poi dal server.
   const scaricaAnnuncio = async (voce) => {
     const totem = serviziCode(motore.manifest);
@@ -475,7 +542,7 @@ async function avviaPlayer() {
       // Il nuovo palinsesto va in onda solo quando tutti i suoi file sono sul monitor; fuori
       // fascia (e se c'è già qualcosa in onda) si aspetta, senza scaricare.
       const libero = !mostrato || scaricaLibero(manifest);
-      const pronto = await preparaFile(manifest, scaricaFile, undefined, !libero);
+      const pronto = await preparaSeguendo(manifest, scaricaFile, !libero, avvisaAvanzamento);
       if (!pronto && mostrato) {
         inAttesa = { manifest, etichetta: nuovaEtichetta, fascia: !libero };
         return; // si riprova al prossimo giro, intanto resta il precedente
@@ -489,13 +556,25 @@ async function avviaPlayer() {
       // Gli annunci dei numeri si scaricano dopo, senza far aspettare le slide.
       pulisciCache(manifest).then(() => preparaFile(manifest, scaricaAnnuncio, fileAnnunci(manifest), !libero));
       battito();
+      // Poco dopo, di nuovo: il pannello vede subito cosa è andato in onda.
+      setTimeout(battito, 5000);
     } catch {
       // Offline: si continua con quello che c'è.
     } finally {
       inCorso = false;
-      inviaConfigCode(mostrato, scaricaFile);
+      // La configurazione del servizio code (reparti, plugin) non dipende dai file: va subito,
+      // anche se il palinsesto nuovo aspetta la fascia di download.
+      inviaConfigCode(inAttesa?.manifest || mostrato, scaricaFile);
       inoltraEventiCode(mostrato, intestazioni);
     }
+  };
+
+  // Mentre scarica, il pannello vede le barre muoversi: un segnale ogni 10 secondi, non ogni minuto.
+  let ultimoAvviso = 0;
+  const avvisaAvanzamento = (subito = false) => {
+    if (!subito && Date.now() - ultimoAvviso < 10_000) return;
+    ultimoAvviso = Date.now();
+    battito();
   };
 
   // Il segnale periodico dice anche quale versione del palinsesto è in onda.
@@ -513,7 +592,8 @@ async function avviaPlayer() {
     fetch("/api/player/heartbeat/", {
       method: "POST",
       headers: { ...intestazioni, "Content-Type": "application/json" },
-      body: JSON.stringify({ versione: VERSIONE, manifest: mostrato?.versione || "", problema: motore.problema || null, riposo: motore.inRiposo, attesa_download: Boolean(inAttesa?.fascia), plugin }),
+      body: JSON.stringify({ versione: VERSIONE, manifest: mostrato?.versione || "", problema: motore.problema || null, riposo: motore.inRiposo, attesa_download: Boolean(inAttesa?.fascia), plugin,
+        distribuzione: riassuntoAvanzamento(), in_onda: Object.entries(motore.inOnda).map(([zona, voce]) => ({ zona, ...voce })) }),
     }).catch(() => {});
   };
   await aggiorna();
@@ -537,6 +617,10 @@ async function avviaPlayer() {
           method: "POST", headers: { ...intestazioni, "Content-Type": "application/json" }, body: JSON.stringify(esito),
         }, 10000);
       }
+      if (domanda.prova_plugin?.length) {
+        scatto = true;
+        for (const prova of domanda.prova_plugin) await provaPlugin(prova, intestazioni, aggiorna);
+      }
       if (!domanda.richiesta) return;
       scatto = true;
       const foto = await fotografaSchermo(motore);
@@ -549,6 +633,32 @@ async function avviaPlayer() {
       scatto = false;
     }
   }, OGNI_SCHERMATA);
+}
+
+// --- Prova di accesso al file di un plugin (Totem Master) ----------------------------------
+// Prima si rilegge il manifest, così il servizio code ha le credenziali appena salvate; poi gli
+// si chiede di provare cartella e file e si riferisce l'esito al server.
+async function provaPlugin({ tipo, richiesta }, intestazioni, aggiorna) {
+  let esito = { ok: false, messaggio: "Il servizio code di questo totem non risponde." };
+  try {
+    await aggiorna();
+    await new Promise((ok) => setTimeout(ok, 1500)); // il servizio riceve la configurazione
+    const avvio = await conLimite(`${SERVIZIO_LOCALE}/plugin/prova/${tipo}`, { method: "POST" }, 5000);
+    if (avvio.status === 404) esito = { ok: false, messaggio: "Questo totem non ha ancora la configurazione del plugin: riprova tra un minuto." };
+    else if (avvio.ok) {
+      for (let i = 0; i < 25; i++) {
+        await new Promise((ok) => setTimeout(ok, 2000));
+        const r = await conLimite(`${SERVIZIO_LOCALE}/plugin/prova/${tipo}`, {}, 5000);
+        const d = await r.json();
+        if (d.stato === "fatto") { esito = { ok: d.ok, messaggio: d.messaggio }; break; }
+      }
+    }
+  } catch {
+    // il servizio code non risponde: resta il messaggio di partenza
+  }
+  await conLimite("/api/player/prova-plugin/", {
+    method: "POST", headers: { ...intestazioni, "Content-Type": "application/json" }, body: JSON.stringify({ tipo, richiesta, ...esito }),
+  }, 10000).catch(() => {});
 }
 
 // --- Fotografia dello schermo -------------------------------------------------------

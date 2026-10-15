@@ -92,7 +92,7 @@ export async function schedaLayoutTicket() {
   const colProprieta = crea("div", { classe: "colonna-proprieta" }, area);
   const colAnteprima = crea("div", { classe: "colonna-anteprima" }, area);
   const carta_ = crea("div", { classe: "carta-ticket" }, colAnteprima);
-  crea("p", { classe: "tenue", testo: "Anteprima con dati di esempio. Clicca un elemento per modificarlo." }, colAnteprima);
+  crea("p", { classe: "tenue", testo: "Anteprima con dati di esempio. Clic su un elemento per modificarlo; trascinalo in alto o in basso per cambiargli posto, a sinistra, al centro o a destra per allinearlo." }, colAnteprima);
 
   const ridisegna = async () => {
     const tela = await disegnaTicket({ punti: puntiAnteprima(), elementi, logo }, ESEMPIO);
@@ -105,11 +105,52 @@ export async function schedaLayoutTicket() {
       const scala = tela.getBoundingClientRect().height / tela.height || 0.6;
       Object.assign(segno.style, { top: `${blocco.y * scala}px`, height: `${blocco.h * scala}px` });
     }
-    tela.addEventListener("click", (e) => {
-      const scala = tela.height / tela.getBoundingClientRect().height;
-      const y = (e.clientY - tela.getBoundingClientRect().top) * scala;
+    // Sul biglietto: clic per scegliere un elemento; trascinandolo in alto o in basso cambia
+    // posto, trascinandolo a sinistra, al centro o a destra cambia allineamento.
+    const punto = (e) => {
+      const r = tela.getBoundingClientRect();
+      return { x: (e.clientX - r.left) / r.width, y: ((e.clientY - r.top) * tela.height) / r.height };
+    };
+    let presa = null;
+    tela.addEventListener("pointerdown", (e) => {
+      const { y } = punto(e);
       const trovato = tela.blocchi.find((b) => y >= b.y && y <= b.y + b.h);
-      if (trovato) { selezionato = trovato.indice; disegnaTutto(); }
+      if (!trovato) return;
+      presa = { indice: trovato.indice, x0: e.clientX, y0: e.clientY, mosso: false };
+      tela.setPointerCapture(e.pointerId);
+    });
+    tela.addEventListener("pointermove", (e) => {
+      if (!presa || !modifica) return;
+      if (Math.abs(e.clientX - presa.x0) + Math.abs(e.clientY - presa.y0) < 6) return;
+      presa.mosso = true;
+      tela.classList.add("trascina");
+      const { y } = punto(e);
+      // La linea dove andrà l'elemento.
+      const dopo = tela.blocchi.filter((b) => b.y + b.h / 2 < y).pop();
+      const quota = dopo ? dopo.y + dopo.h : 0;
+      let linea = carta_.querySelector(".linea-ticket");
+      if (!linea) linea = crea("div", { classe: "linea-ticket" }, carta_);
+      linea.style.top = `${(quota * tela.getBoundingClientRect().height) / tela.height}px`;
+    });
+    tela.addEventListener("pointerup", (e) => {
+      if (!presa) return;
+      const { indice, mosso } = presa;
+      presa = null;
+      tela.classList.remove("trascina");
+      carta_.querySelector(".linea-ticket")?.remove();
+      if (!mosso || !modifica) { selezionato = indice; disegnaTutto(); return; }
+      const { x, y } = punto(e);
+      const el = elementi[indice];
+      // Allineamento secondo dove lo si lascia (per i testi, il logo e il QR).
+      if (el.campo !== "linea") el.allineamento = x < 0.34 ? "sinistra" : x > 0.66 ? "destra" : "centro";
+      // Nuovo posto: dopo l'ultimo elemento che sta sopra il punto di rilascio.
+      const sopra = tela.blocchi.filter((b) => b.indice !== indice && b.y + b.h / 2 < y).pop();
+      const [spostato] = elementi.splice(indice, 1);
+      // Tolto l'elemento, quelli che venivano dopo scalano di un posto.
+      const dove = sopra ? (sopra.indice > indice ? sopra.indice - 1 : sopra.indice) + 1 : 0;
+      elementi.splice(dove, 0, spostato);
+      selezionato = dove;
+      disegnaTutto();
     });
   };
 

@@ -248,6 +248,17 @@ const DOWNLOAD = {
 };
 
 const ASPETTO = {
+  "Posizione del logo": "Dove sta il logo nella pagina di accesso: piccolo in alto accanto al nome, sopra le righe di testo, oppure grande al centro.",
+  "Altezza del logo": "L'altezza del logo in pixel (la larghezza segue le proporzioni).",
+  "Mostra il nome accanto al logo": "Mostra il nome dell'applicazione in alto. Toglilo se il nome è già scritto nel logo.",
+  "Mostra i disegni degli schermi": "I disegni di monitor e totem in basso a sinistra.",
+  "Allineamento": "Testi e logo allineati a sinistra o al centro della parte colorata.",
+  "Riga": "Il testo di questa riga (vuota: non si mostra).",
+  "Grandezza (px)": "La grandezza del testo della riga, in pixel.",
+  "Stile": "Normale o grassetto.",
+  "Colore del testo": "Il colore della riga.",
+  "pulsante:＋ Riga di testo": "Aggiunge una riga di testo (al massimo 8).",
+  "pulsante:Vedi la pagina di accesso salvata": "Mostra in un riquadro la pagina di accesso come è salvata adesso.",
   "Nome dell'applicazione": "Il nome della piattaforma: pagina di accesso, barra del pannello, titoli. Vale per tutti i clienti.",
   "Frase della pagina di accesso": "La frase sotto il nome nella pagina di accesso.",
   "Colore": "Il colore principale della pagina di accesso e della barra del pannello.",

@@ -177,6 +177,47 @@ class ImpostazioniAllarmiSerializer(serializers.ModelSerializer):
         return dati
 
 
+class DistribuzioneView(VistaConContesto, APIView):
+    """Distribuzione contenuti dell'azienda: per ogni schermo quanti file del palinsesto ha
+    già, cosa sta scaricando e cosa va in onda; per ogni promozione su quanti schermi è arrivata."""
+
+    def get(self, request):
+        from . import distribuzione
+
+        monitor = Monitor.objects.select_related("sede").order_by("sede__nome", "nome")
+        limitate = sedi_visibili(request.user)
+        if limitate is not None:
+            monitor = monitor.filter(sede_id__in=limitate)
+        adesso = timezone.now()
+        return Response({"adesso": adesso, **distribuzione.riepilogo([distribuzione.stato_schermo(m, adesso) for m in monitor])})
+
+
+class DistribuzionePiattaformaView(VistaConContesto, APIView):
+    """La stessa vista per tutte le aziende, per il SystemAdministrator (e il tecnico)."""
+
+    ambito = "piattaforma"
+    ruoli_lettura = frozenset({Ruolo.ADMIN_ASSOLUTO, Ruolo.TECNICO})
+
+    def get(self, request):
+        from clienti.models import Cliente
+
+        from . import distribuzione
+
+        adesso = timezone.now()
+        aziende = []
+        tutti = []
+        for cliente in Cliente.objects.filter(attivo=True).order_by("nome"):
+            with contesto_cliente(cliente.id):
+                schermi = [distribuzione.stato_schermo(m, adesso) for m in Monitor.objects.select_related("sede").order_by("sede__nome", "nome")]
+            for s in schermi:
+                s["cliente"] = str(cliente.id)
+            tutti.extend(schermi)
+            aziende.append({"id": str(cliente.id), "nome": cliente.nome, **distribuzione.riepilogo(schermi)})
+        totale = distribuzione.riepilogo(tutti)
+        del totale["sedi"], totale["promozioni"]
+        return Response({"adesso": adesso, **totale, "aziende": aziende})
+
+
 class StatoSchermiView(VistaConContesto, APIView):
     """Lo stato di tutti gli schermi, i minuti di collegamento degli ultimi giorni e lo storico
     degli allarmi. Con PUT/POST le impostazioni degli allarmi (solo la gestione)."""
@@ -687,7 +728,11 @@ class SchermataPlayerView(VistaPlayer):
             monitor = Monitor.objects.only("schermata_il", "schermata_richiesta").get(id=credenziale.monitor_id)
             # Nella stessa domanda: c'è da fare una stampa di prova del biglietto? Con quale stampante?
             prova = stampanti.per_il_player(stampanti.prova_per_il_monitor(monitor.id))
-        return Response({"richiesta": schermate.richiesta(monitor), "prova_stampa": prova})
+            # E le prove di accesso ai file dei plugin (le fa il Totem Master).
+            from plugin.api import prove_per_il_monitor
+
+            prove_plugin = prove_per_il_monitor(monitor)
+        return Response({"richiesta": schermate.richiesta(monitor), "prova_stampa": prova, "prova_plugin": prove_plugin})
 
     def post(self, request):
         credenziale = credenziale_dalla_richiesta(request)
@@ -713,6 +758,26 @@ class ProvaStampaPlayerView(VistaPlayer):
             stampante = stampanti.prova_per_il_monitor(credenziale.monitor_id)
             if stampante is not None:
                 stampanti.salva_esito(stampante, ok, messaggio)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProvaPluginPlayerView(VistaPlayer):
+    """Il Totem Master riferisce com'è andata la prova di accesso al file di un plugin."""
+
+    def post(self, request):
+        from plugin.models import FontePlugin
+
+        credenziale = credenziale_dalla_richiesta(request)
+        tipo = str(request.data.get("tipo", ""))
+        with contesto_cliente(credenziale.cliente_id):
+            monitor = Monitor.objects.get(id=credenziale.monitor_id)
+            fonte = FontePlugin.objects.filter(sede_id=monitor.sede_id, tipo=tipo).first()
+            if fonte and fonte.prova_richiesta and str(request.data.get("richiesta", "")) == fonte.prova_richiesta.isoformat():
+                fonte.prova_esito = {
+                    "ok": bool(request.data.get("ok")), "messaggio": str(request.data.get("messaggio") or "")[:300],
+                    "quando": timezone.now().isoformat(), "totem": monitor.nome,
+                }
+                fonte.save(update_fields=["prova_esito"])
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -803,6 +868,15 @@ class HeartbeatView(VistaPlayer):
                 }
             else:
                 info.pop("plugin", None)
+            # Distribuzione contenuti: come vanno i file del palinsesto nuovo e cosa è in onda.
+            from .distribuzione import pulisci_avanzamento, pulisci_in_onda
+
+            avanzamento = pulisci_avanzamento(request.data.get("distribuzione"))
+            if avanzamento is not None:
+                info["distribuzione"] = {**avanzamento, "riferito": adesso.isoformat()}
+            in_onda = pulisci_in_onda(request.data.get("in_onda"))
+            if in_onda is not None:
+                info["in_onda"] = in_onda
             monitor.info_dispositivo = info
             monitor.save(update_fields=["ultimo_contatto", "versione_player", "manifest_ricevuto", "info_dispositivo"])
         return Response(status=status.HTTP_204_NO_CONTENT)

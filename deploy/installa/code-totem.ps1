@@ -24,7 +24,8 @@
   Chi può fare cosa:
     - leggere i numeri (/stato): chiunque in rete; sono gli stessi mostrati a schermo;
     - leggere i file degli annunci (/annunci/<impronta>): chiunque in rete;
-    - cercare un articolo (/plugin/…): chiunque in rete; sono i prezzi esposti in negozio;
+    - cercare un articolo (/plugin/prezzo, /plugin/ingredienti): chiunque in rete; sono i prezzi esposti in negozio;
+    - provare l'accesso al file di un plugin (/plugin/prova/…): solo il totem stesso;
     - ricevere la configurazione e i file: solo il totem stesso (127.0.0.1);
     - emettere biglietti: il totem stesso e i totem secondari della sede, con la chiave
       «Authorization: Totem <chiave>» (qui ne arriva solo l'impronta, con la configurazione);
@@ -42,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.4"
+$Versione = "1.5"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -541,6 +542,61 @@ function Gestisci-Plugin($contesto, [string]$tipo) {
     }
 }
 
+# «Prova accesso» dal pannello: si prova cartella e file con le credenziali attuali, in un processo
+# a parte (una cartella che non risponde può far aspettare decine di secondi).
+$script:prove = @{}
+$provaFonte = {
+    param($condivisione, $file, $utente, $password)
+    $nome = "FP" + [guid]::NewGuid().ToString("N").Substring(0, 8)
+    try {
+        $parametri = @{ Name = $nome; PSProvider = "FileSystem"; Root = $condivisione; ErrorAction = "Stop" }
+        if ($utente) {
+            $segreta = ConvertTo-SecureString $password -AsPlainText -Force
+            $parametri.Credential = New-Object System.Management.Automation.PSCredential($utente, $segreta)
+        }
+        try { New-PSDrive @parametri | Out-Null } catch { return @{ ok = $false; messaggio = "Cartella condivisa non raggiungibile o credenziali errate: $($_.Exception.Message)" } }
+        $sorgente = "$($nome):\$file"
+        if (-not (Test-Path -LiteralPath $sorgente)) { return @{ ok = $false; messaggio = "Cartella raggiunta, ma il file non c'è: controlla il percorso ($file)." } }
+        $info = Get-Item -LiteralPath $sorgente
+        $flusso = [System.IO.File]::Open($info.FullName, "Open", "Read", "ReadWrite")
+        try {
+            $testa = New-Object byte[] 16
+            [void]$flusso.Read($testa, 0, 16)
+        } finally { $flusso.Dispose() }
+        if ([System.Text.Encoding]::ASCII.GetString($testa, 0, 15) -ne "SQLite format 3") { return @{ ok = $false; messaggio = "Il file si apre ma non è un database SQLite." } }
+        $peso = if ($info.Length -ge 1MB) { "$([Math]::Round($info.Length / 1MB, 1)) MB" } else { "$([Math]::Ceiling($info.Length / 1KB)) KB" }
+        return @{ ok = $true; messaggio = "Accesso riuscito: file di $peso, modificato il $($info.LastWriteTime.ToString('dd/MM/yyyy HH:mm'))." }
+    } catch {
+        return @{ ok = $false; messaggio = $_.Exception.Message }
+    } finally {
+        Remove-PSDrive -Name $nome -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Gestisci-Prova($contesto, [string]$metodo, [string]$tipo) {
+    $c = $script:plugin[$tipo]
+    if ($metodo -eq "POST") {
+        if (-not $c) { Rispondi $contesto 404 @{ errore = "Plugin non configurato su questo totem." }; return }
+        $vecchia = $script:prove[$tipo]
+        if ($vecchia -and $vecchia.lavoro) { Remove-Job $vecchia.lavoro -Force -ErrorAction SilentlyContinue }
+        $script:prove[$tipo] = @{ lavoro = (Start-Job -ScriptBlock $provaFonte -ArgumentList $c.condivisione, $c.file, $c.utente, $c.password); esito = $null }
+        Rispondi $contesto 202 @{ stato = "in_corso" }; return
+    }
+    $p = $script:prove[$tipo]
+    if (-not $p) { Rispondi $contesto 404 @{ stato = "nessuna" }; return }
+    if (-not $p.esito) {
+        if ($p.lavoro.State -eq "Running") { Rispondi $contesto 200 @{ stato = "in_corso" }; return }
+        $esito = $null
+        try { $esito = Receive-Job $p.lavoro -ErrorAction Stop | Select-Object -Last 1 } catch { $esito = @{ ok = $false; messaggio = $_.Exception.Message } }
+        Remove-Job $p.lavoro -Force -ErrorAction SilentlyContinue
+        if (-not $esito) { $esito = @{ ok = $false; messaggio = "Prova interrotta." } }
+        $p.esito = $esito
+        $p.lavoro = $null
+        Registra "plugin $($tipo): prova accesso $(if ($esito.ok) { 'riuscita' } else { 'non riuscita: ' + $esito.messaggio })"
+    }
+    Rispondi $contesto 200 @{ stato = "fatto"; ok = [bool]$p.esito.ok; messaggio = [string]$p.esito.messaggio }
+}
+
 function Stato-Plugin {
     $stato = @{}
     foreach ($tipo in $script:plugin.Keys) {
@@ -587,6 +643,10 @@ function Gestisci($contesto) {
     }
 
     # --- Solo dal totem stesso ---
+    if ($percorso -match "^/plugin/prova/(prezzo|ingredienti)$" -and ($metodo -eq "POST" -or $metodo -eq "GET")) {
+        if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }
+        Gestisci-Prova $contesto $metodo $Matches[1]; return
+    }
     if ($metodo -eq "POST" -and $percorso -eq "/config") {
         if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }
         $dati = Leggi-Corpo $richiesta

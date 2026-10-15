@@ -25,11 +25,16 @@
       background-size: 48px 48px; transform: rotate(-12deg);
     }
     .marchio { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; }
-    .marchio img { max-height: 64px; max-width: 240px; object-fit: contain; filter: drop-shadow(0 4px 14px rgba(0,0,0,.35)); }
+    .marchio img { object-fit: contain; filter: drop-shadow(0 4px 14px rgba(0,0,0,.35)); }
     .marchio .nome { font-size: 26px; font-weight: 700; letter-spacing: .2px; }
-    .messaggio { position: relative; z-index: 1; max-width: 560px; }
-    .messaggio h1 { font-size: clamp(30px, 3.4vw, 46px); line-height: 1.1; margin: 0 0 14px; font-weight: 750; }
-    .messaggio p { font-size: 17px; opacity: .85; margin: 0; line-height: 1.5; }
+    .messaggio { position: relative; z-index: 1; max-width: 640px; display: flex; flex-direction: column; gap: 12px; }
+    .messaggio .riga { margin: 0; line-height: 1.2; font-weight: 400; overflow-wrap: anywhere; }
+    .messaggio .riga.grassetto { font-weight: 750; line-height: 1.1; }
+    .messaggio .logo-grande { max-width: 100%; object-fit: contain; align-self: flex-start; margin-bottom: 8px; filter: drop-shadow(0 6px 20px rgba(0,0,0,.35)); }
+    .marchio img { max-width: 100%; }
+    .allinea-centro .messaggio, .allinea-centro .marchio, .allinea-centro .schermi { align-self: center; text-align: center; align-items: center; justify-content: center; }
+    .allinea-centro .messaggio .logo-grande { align-self: center; }
+    .logo-al_centro .messaggio { margin: auto 0; }
     .schermi { position: relative; z-index: 1; display: flex; gap: 14px; align-items: flex-end; }
     .schermi span { display: block; border-radius: 10px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25); backdrop-filter: blur(4px); }
     .schermi .monitor { width: 180px; height: 104px; }
@@ -55,22 +60,23 @@
     @media (max-width: 820px) {
       body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
       .vetrina { padding: 28px 22px; gap: 20px; }
-      .schermi, .messaggio p { display: none; }
-      .messaggio h1 { font-size: 24px; margin: 0; }
+      .schermi, .messaggio .riga:not(:first-of-type) { display: none; }
+      .messaggio .riga { font-size: 24px !important; }
+      .marchio img, .messaggio .logo-grande { max-height: 72px; }
     }
   </style>
 </head>
 <body>
-  <section class="vetrina">
+  <section class="vetrina allinea-{{ accesso.allineamento }} logo-{{ accesso.logo.posizione }}">
     <div class="marchio">
-      {% if aspetto.logo %}<img src="/aspetto/logo/?v={{ aspetto.modificato|date:'U' }}" alt="">{% endif %}
-      <span class="nome">{{ aspetto.nome_app }}</span>
+      {% if aspetto.logo and accesso.logo.posizione == "in_alto" %}<img src="/aspetto/logo/?v={{ aspetto.modificato|date:'U' }}" alt="" style="height: {{ accesso.logo.altezza }}px">{% endif %}
+      {% if accesso.logo.mostra_nome %}<span class="nome">{{ aspetto.nome_app }}</span>{% endif %}
     </div>
     <div class="messaggio">
-      <h1>{{ aspetto.sottotitolo }}</h1>
-      <p>Monitor, totem ed eliminacode di tutti i punti vendita, da un'unica console.</p>
+      {% if aspetto.logo and accesso.logo.posizione != "in_alto" %}<img class="logo-grande" src="/aspetto/logo/?v={{ aspetto.modificato|date:'U' }}" alt="" style="height: {{ accesso.logo.altezza }}px">{% endif %}
+      {% for riga in accesso.righe %}{% if riga.testo %}<p class="riga {{ riga.peso }}" style="font-size: {{ riga.dimensione }}px; color: {{ riga.colore }}">{{ riga.testo }}</p>{% endif %}{% endfor %}
     </div>
-    <div class="schermi" aria-hidden="true"><span class="monitor"></span><span class="totem"></span><span class="monitor"></span></div>
+    <div class="schermi" aria-hidden="true">{% if accesso.mostra_schermi %}<span class="monitor"></span><span class="totem"></span><span class="monitor"></span>{% endif %}</div>
   </section>
   <main class="modulo">
     <form method="post">

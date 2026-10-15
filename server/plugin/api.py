@@ -2,6 +2,7 @@
 (/api/fonti-plugin/). Le usa chi gestisce il cliente, se il SystemAdministrator ha abilitato il plugin."""
 
 import re
+from datetime import timedelta
 
 from rest_framework import exceptions, serializers
 from rest_framework.decorators import action
@@ -59,6 +60,36 @@ def aspetto_pulito(dati) -> dict:
             valore = str(valore or "")[:regola]
         pulito[chiave] = valore
     return pulito
+
+
+VALIDITA_PROVA = timedelta(minutes=2)
+
+
+def stato_prova(fonte) -> dict:
+    """in_attesa, ok, errore, senza_risposta o mai."""
+    from django.utils import timezone
+
+    if fonte.prova_esito:
+        return {"stato": "ok" if fonte.prova_esito.get("ok") else "errore", **fonte.prova_esito}
+    if not fonte.prova_richiesta:
+        return {"stato": "mai"}
+    if timezone.now() - fonte.prova_richiesta <= VALIDITA_PROVA:
+        return {"stato": "in_attesa", "chiesta": fonte.prova_richiesta.isoformat()}
+    return {"stato": "senza_risposta", "messaggio": "Il Totem Master non ha risposto: è acceso e in linea?"}
+
+
+def prove_per_il_monitor(monitor) -> list:
+    """Le prove di accesso che questo schermo deve fare: tocca al Totem Master della sede
+    (o, se la sede non ne ha uno, a uno qualsiasi dei suoi totem)."""
+    from django.utils import timezone
+
+    master = Monitor.objects.filter(sede_id=monitor.sede_id, totem_master=True).values_list("id", flat=True).first()
+    if master is not None and master != monitor.id:
+        return []
+    attese = FontePlugin.objects.filter(
+        sede_id=monitor.sede_id, prova_esito={}, prova_richiesta__gt=timezone.now() - VALIDITA_PROVA
+    )
+    return [{"tipo": f.tipo, "richiesta": f.prova_richiesta.isoformat()} for f in attese]
 
 
 def abilitato(tipo: str) -> bool:
@@ -127,7 +158,8 @@ class FontePluginSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = FontePlugin
-        fields = ["id", "tipo", "sede", "indirizzo", "percorso", "utente", "password", "ha_password", "aggiorna_minuti", "orari", "richiesta_copia"]
+        fields = ["id", "tipo", "sede", "indirizzo", "percorso", "utente", "password", "ha_password", "aggiorna_minuti", "orari",
+                  "richiesta_copia", "prova"]
         read_only_fields = ["richiesta_copia"]
         extra_kwargs = {"aggiorna_minuti": {"min_value": 0, "max_value": 1440}}
 
@@ -138,8 +170,13 @@ class FontePluginSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"orari": "Indica almeno un orario o ogni quanti minuti copiare il file."})
         return dati
 
+    prova = serializers.SerializerMethodField()
+
     def get_ha_password(self, fonte):
         return bool(fonte.password_cifrata)
+
+    def get_prova(self, fonte):
+        return stato_prova(fonte)
 
     def validate_orari(self, valore):
         if not isinstance(valore, list) or len(valore) > 8:
@@ -187,7 +224,7 @@ class PluginView(VistaConContesto, APIView):
         if tipo not in TipoPlugin.values:
             raise exceptions.NotFound()
         if not abilitato(tipo):
-            raise exceptions.PermissionDenied("Plugin non abilitato per questa azienda: lo attiva Sanidat (SystemAdministrator).")
+            raise exceptions.PermissionDenied("Plugin non abilitato per questa azienda: lo attiva il SystemAdministrator.")
         return ImpostazioniPlugin.objects.filter(tipo=tipo).first() or ImpostazioniPlugin.objects.create(tipo=tipo)
 
     def _risposta(self, impostazioni):
@@ -253,6 +290,18 @@ class FontiPluginViewSet(ViewSetCliente):
     def perform_destroy(self, fonte):
         registra(self.request.user, "fonte_plugin_eliminata", fonte)
         fonte.delete()
+
+    @action(detail=True, methods=["post"])
+    def prova(self, request, pk=None):
+        """«Prova accesso»: il Totem Master del negozio prova cartella condivisa e file (entro poco)."""
+        from django.utils import timezone
+
+        fonte = self.get_object()
+        self._verifica(fonte.tipo)
+        fonte.prova_richiesta = timezone.now()
+        fonte.prova_esito = {}
+        fonte.save(update_fields=["prova_richiesta", "prova_esito"])
+        return Response(self.get_serializer(fonte).data)
 
     @action(detail=True, methods=["post"])
     def aggiorna(self, request, pk=None):

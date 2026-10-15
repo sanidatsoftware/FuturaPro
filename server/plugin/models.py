@@ -58,6 +58,9 @@ class FontePlugin(ModelloCliente):
     orari = models.JSONField(default=list, blank=True)
     # «Aggiorna adesso» dal pannello: il totem ricopia appena riceve la configurazione.
     richiesta_copia = models.DateTimeField(null=True, blank=True)
+    # «Prova accesso»: la fa il Totem Master (vede la rete del negozio) e riferisce l'esito.
+    prova_richiesta = models.DateTimeField(null=True, blank=True)
+    prova_esito = models.JSONField(default=dict, blank=True)
 
     class Meta:
         verbose_name_plural = "fonti plugin"
