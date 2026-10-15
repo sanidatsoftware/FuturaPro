@@ -10,6 +10,12 @@ COLORE = re.compile(r"^#[0-9a-fA-F]{6}$")
 POSIZIONI_LOGO = ["in_alto", "nel_messaggio", "al_centro"]
 ALLINEAMENTI = ["sinistra", "centro"]
 PESI = ["normale", "grassetto"]
+# Lo stile della vetrina: «classico» (sfondo nel colore della piattaforma) oppure «oro», con il
+# titolo dorato che scintilla, e «oro_animato», con in più lo sfondo animato (onde, bagliori).
+STILI = ["classico", "oro", "oro_animato"]
+# Sopra il titolo degli stili «oro»: il simbolo di FuturaPro (disegnato, animato), il logo
+# caricato, o niente.
+SIMBOLI = ["futurapro", "logo", "nessuno"]
 
 
 def predefinita(sottotitolo: str = "") -> dict:
@@ -17,6 +23,10 @@ def predefinita(sottotitolo: str = "") -> dict:
         "logo": {"posizione": "in_alto", "altezza": 64, "mostra_nome": True, "riquadro_barra": False},
         "allineamento": "sinistra",
         "mostra_schermi": True,
+        "stile": "classico",
+        "simbolo": "futurapro",
+        # «Powered by» con il logo di chi fornisce il servizio (immagine caricata a parte).
+        "powered": {"mostra": False, "testo": "Powered by"},
         "righe": [
             {"testo": sottotitolo or "Videocomunicazione per il punto vendita", "dimensione": 44, "peso": "grassetto", "colore": "#ffffff"},
             {"testo": "Monitor, totem ed eliminacode di tutti i punti vendita, da un'unica console.", "dimensione": 17, "peso": "normale", "colore": "#dbe3ee"},
@@ -37,6 +47,7 @@ def pulita(dati, sottotitolo: str = "") -> dict:
     if not isinstance(dati, dict) or not dati:
         return base
     logo = dati.get("logo") if isinstance(dati.get("logo"), dict) else {}
+    powered = dati.get("powered") if isinstance(dati.get("powered"), dict) else {}
     righe = []
     for riga in (dati.get("righe") if isinstance(dati.get("righe"), list) else base["righe"])[:8]:
         if not isinstance(riga, dict):
@@ -58,5 +69,11 @@ def pulita(dati, sottotitolo: str = "") -> dict:
         },
         "allineamento": dati.get("allineamento") if dati.get("allineamento") in ALLINEAMENTI else "sinistra",
         "mostra_schermi": bool(dati.get("mostra_schermi", True)),
+        "stile": dati.get("stile") if dati.get("stile") in STILI else "classico",
+        "simbolo": dati.get("simbolo") if dati.get("simbolo") in SIMBOLI else "futurapro",
+        "powered": {
+            "mostra": bool(powered.get("mostra", False)),
+            "testo": str(powered.get("testo") if powered.get("testo") is not None else "Powered by")[:40],
+        },
         "righe": righe,
     }

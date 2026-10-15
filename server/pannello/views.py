@@ -97,6 +97,17 @@ def logo(request):
     return risposta
 
 
+def logo_powered(request):
+    """Il logo accanto a «Powered by» nella pagina di accesso: pubblico."""
+    aspetto = Aspetto.attuale()
+    if not aspetto.logo_powered:
+        raise Http404()
+    risposta = FileResponse(aspetto.logo_powered.open("rb"))
+    risposta["Cache-Control"] = "public, max-age=86400"
+    risposta["X-Content-Type-Options"] = "nosniff"
+    return risposta
+
+
 def icona(request):
     """L'icona della piattaforma (barra del pannello, scheda del browser): pubblica."""
     aspetto = Aspetto.attuale()
@@ -117,12 +128,14 @@ class AspettoSerializer(serializers.ModelSerializer):
     colore = serializers.RegexField(r"^#[0-9a-fA-F]{6}$", required=False)
     logo = serializers.FileField(required=False, allow_null=True, write_only=True)
     icona = serializers.FileField(required=False, allow_null=True, write_only=True)
+    logo_powered = serializers.FileField(required=False, allow_null=True, write_only=True)
     ha_logo = serializers.SerializerMethodField()
+    ha_logo_powered = serializers.SerializerMethodField()
     ha_icona = serializers.SerializerMethodField()
 
     class Meta:
         model = Aspetto
-        fields = ["nome_app", "sottotitolo", "colore", "logo", "ha_logo", "icona", "ha_icona", "accesso", "modificato"]
+        fields = ["nome_app", "sottotitolo", "colore", "logo", "ha_logo", "icona", "ha_icona", "logo_powered", "ha_logo_powered", "accesso", "modificato"]
         read_only_fields = ["modificato"]
 
     def validate_accesso(self, valore):
@@ -145,6 +158,12 @@ class AspettoSerializer(serializers.ModelSerializer):
 
     def get_ha_icona(self, aspetto):
         return bool(aspetto.icona)
+
+    def get_ha_logo_powered(self, aspetto):
+        return bool(aspetto.logo_powered)
+
+    def validate_logo_powered(self, file):
+        return self.validate_logo(file)
 
     def validate_icona(self, file):
         """Un file .ico vero (intestazione 00 00 01 00), un SVG senza codice, o un'immagine PNG,
@@ -192,6 +211,12 @@ class AspettoSerializer(serializers.ModelSerializer):
                 aspetto.logo.delete(save=False)
             if nuovo is not None:
                 aspetto.logo.save(f"logo{nuovo.name[nuovo.name.rfind('.'):].lower() if '.' in nuovo.name else ''}", nuovo, save=False)
+        if "logo_powered" in dati:
+            nuovo = dati.pop("logo_powered")
+            if aspetto.logo_powered:
+                aspetto.logo_powered.delete(save=False)
+            if nuovo is not None:
+                aspetto.logo_powered.save(f"powered{nuovo.name[nuovo.name.rfind('.'):].lower() if '.' in nuovo.name else ''}", nuovo, save=False)
         if "icona" in dati:
             nuova = dati.pop("icona")
             if aspetto.icona:

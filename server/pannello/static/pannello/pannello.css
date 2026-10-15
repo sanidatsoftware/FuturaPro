@@ -66,6 +66,7 @@ td.attenzione { color: var(--errore); font-weight: 600; cursor: help; }
 
 .pallino { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; }
 .anteprima-logo { max-height: 70px; max-width: 220px; object-fit: contain; margin: 0 16px 10px 0; padding: 6px; border: 1px solid var(--linea); border-radius: 8px; background: #fff; }
+.anteprima-logo.piccola { max-height: 40px; max-width: 140px; margin: 0 8px 10px 0; padding: 3px; background: #0b0e14; }
 .anteprima-icona { width: 48px; height: 48px; object-fit: contain; margin: 0 16px 10px 0; padding: 4px; border: 1px solid var(--linea); border-radius: 10px; background: var(--fondo); }
 
 /* Aspetto interfaccia: le tre scelte del tema */

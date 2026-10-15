@@ -1,0 +1,64 @@
+{# Lo sfondo animato dello stile «oro_animato»: bagliori che fluttuano, puntini, onde concentriche, archi che ruotano, stelline. #}
+<svg class="sfondo" aria-hidden="true" viewBox="0 0 880 560" preserveAspectRatio="xMidYMid slice">
+<defs>
+<radialGradient id="bg" cx="0.5" cy="0.5" r="0.8">
+<stop offset="0" stop-color="#101F42"></stop>
+<stop offset="0.6" stop-color="#0A1430"></stop>
+<stop offset="1" stop-color="#050A18"></stop>
+</radialGradient>
+<radialGradient id="glowC" cx="0.5" cy="0.5" r="0.5">
+<stop offset="0" stop-color="#00B4D8" stop-opacity="0.38"></stop>
+<stop offset="1" stop-color="#00B4D8" stop-opacity="0"></stop>
+</radialGradient>
+<radialGradient id="glowV" cx="0.5" cy="0.5" r="0.5">
+<stop offset="0" stop-color="#7B4DD8" stop-opacity="0.36"></stop>
+<stop offset="1" stop-color="#7B4DD8" stop-opacity="0"></stop>
+</radialGradient>
+<radialGradient id="glowG" cx="0.5" cy="0.5" r="0.5">
+<stop offset="0" stop-color="#D4AF37" stop-opacity="0.16"></stop>
+<stop offset="1" stop-color="#D4AF37" stop-opacity="0"></stop>
+</radialGradient>
+<pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+<circle cx="11" cy="11" r="0.9" fill="#8FD8FF" fill-opacity="0.16"></circle>
+</pattern>
+<radialGradient id="dotmask" cx="0.5" cy="0.5" r="0.5">
+<stop offset="0" stop-color="#fff" stop-opacity="0.15"></stop>
+<stop offset="0.6" stop-color="#fff" stop-opacity="1"></stop>
+<stop offset="1" stop-color="#fff" stop-opacity="0.4"></stop>
+</radialGradient>
+<mask id="m"><rect width="880" height="560" fill="url(#dotmask)"></rect></mask>
+</defs>
+<rect width="880" height="560" fill="url(#bg)"></rect>
+<ellipse class="float1" cx="120" cy="90" rx="340" ry="260" fill="url(#glowC)"></ellipse>
+<ellipse class="float2" cx="780" cy="500" rx="360" ry="270" fill="url(#glowV)"></ellipse>
+<ellipse cx="440" cy="280" rx="300" ry="220" fill="url(#glowG)"></ellipse>
+<rect width="880" height="560" fill="url(#dots)" mask="url(#m)"></rect>
+<g fill="none" stroke-width="1.4">
+<circle class="ring r1" cx="440" cy="280" r="200" stroke="#4DD8FF"></circle>
+<circle class="ring r2" cx="440" cy="280" r="200" stroke="#E2BE4E"></circle>
+<circle class="ring r3" cx="440" cy="280" r="200" stroke="#7B8CFF"></circle>
+<circle class="ring r4" cx="440" cy="280" r="200" stroke="#4DD8FF"></circle>
+</g>
+<g fill="none" stroke-linecap="round">
+<circle cx="440" cy="280" r="250" stroke="#4DD8FF" stroke-opacity="0.18" stroke-width="1" stroke-dasharray="2 10"></circle>
+<g class="spin">
+<circle cx="440" cy="280" r="320" stroke="#4DD8FF" stroke-opacity="0.35" stroke-width="1.5" stroke-dasharray="90 410 30 480"></circle>
+</g>
+<g class="spin-rev">
+<circle cx="440" cy="280" r="285" stroke="#E2BE4E" stroke-opacity="0.45" stroke-width="1.2" stroke-dasharray="60 520 20 300"></circle>
+</g>
+</g>
+<g class="twinkle" fill="#BDF2FF">
+<circle cx="96" cy="210" r="1.6"></circle>
+<circle cx="168" cy="420" r="1.1"></circle>
+<circle cx="760" cy="150" r="1.6"></circle>
+<circle cx="812" cy="330" r="1.1"></circle>
+<circle cx="640" cy="60" r="1.2"></circle>
+</g>
+<g class="twinkle2" fill="#F7E7A1">
+<circle cx="200" cy="110" r="1.3"></circle>
+<circle cx="700" cy="440" r="1.3"></circle>
+<circle cx="80" cy="500" r="1.1"></circle>
+<circle cx="560" cy="520" r="1.1"></circle>
+</g>
+</svg>

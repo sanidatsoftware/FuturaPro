@@ -183,3 +183,25 @@ class LogoBarraTest(Base):
         self.client.patch("/api/piattaforma/aspetto/", {"accesso": {"logo": {"riquadro_barra": True}}}, format="json")
         self.assertContains(self.client.get("/pannello/"), "marchio con-riquadro")
 
+
+
+class StiliAccessoTest(Base):
+    """La pagina di accesso con gli stili «Oro»: titolo dorato, simbolo, sfondo animato, Powered by."""
+
+    def test_stili(self):
+        self.come(self.assoluto)
+        r = self.client.patch("/api/piattaforma/aspetto/", {"accesso": {"stile": "oro_animato", "simbolo": "futurapro",
+                                                                          "powered": {"mostra": True, "testo": "Powered by"}}}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["accesso"]["stile"], "oro_animato")
+        self.client.logout()
+        pagina = self.client.get("/accesso/").content.decode()
+        self.assertIn('class="vetrina oro oro_animato"', pagina)
+        self.assertIn('class="sfondo"', pagina)
+        self.assertIn('class="simbolo"', pagina)
+        self.assertIn("Powered by", pagina)
+        self.assertIn("cinzel-latin.woff2", pagina)
+        self.come(self.assoluto)
+        self.assertEqual(self.client.patch("/api/piattaforma/aspetto/", {"accesso": {"stile": "neon"}}, format="json").json()["accesso"]["stile"], "classico")
+        self.client.logout()
+        self.assertNotIn('class="sfondo"', self.client.get("/accesso/").content.decode())

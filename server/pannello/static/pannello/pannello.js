@@ -926,6 +926,28 @@ async function sezioneMarchio() {
       cornice.src = `/accesso/?anteprima=1&prova=${codice}`;
     }, 350);
   };
+  // Lo stile della vetrina: classico, oppure «Oro» (titolo dorato che scintilla) e «Oro animato».
+  const rigaStile = crea("div", { classe: "riga" }, opzioni);
+  const stile = campo("Stile della pagina", scelta([["classico", "Classico (colore della piattaforma)"], ["oro", "Oro: titolo dorato che scintilla"], ["oro_animato", "Oro con sfondo animato"]], c.stile), rigaStile);
+  const simbolo = campo("Simbolo sopra il titolo", scelta([["futurapro", "Simbolo FuturaPro (animato)"], ["logo", "Il logo caricato"], ["nessuno", "Nessuno"]], c.simbolo), rigaStile);
+  const rigaPowered = crea("div", { classe: "riga" }, opzioni);
+  const lPowered = crea("label", { classe: "spunta" }, rigaPowered);
+  const powered = crea("input", { type: "checkbox", checked: c.powered.mostra }, lPowered);
+  lPowered.append(" Mostra «Powered by»");
+  const testoPowered = campo("Testo", crea("input", { value: c.powered.testo, maxLength: 40, size: 14 }), rigaPowered);
+  if (aspetto.ha_logo_powered) crea("img", { src: `/aspetto/powered/?v=${Date.parse(aspetto.modificato)}`, classe: "anteprima-logo piccola", alt: "Logo «Powered by» attuale" }, rigaPowered);
+  const filePowered = campo("Logo accanto (PNG, JPEG o WebP)", crea("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif" }), rigaPowered);
+  if (aspetto.ha_logo_powered) {
+    crea("button", {
+      type: "button", classe: "pericolo", testo: "Togli il logo «Powered by»",
+      onclick: () => prova(async () => {
+        await api("PATCH", "/api/piattaforma/aspetto/", { logo_powered: null });
+        setTimeout(() => location.reload(), 600);
+      }, "Tolto."),
+    }, rigaPowered);
+  }
+  powered.addEventListener("change", () => { c.powered.mostra = powered.checked; aggiorna(); });
+  testoPowered.addEventListener("input", () => { c.powered.testo = testoPowered.value; aggiorna(); });
   const rigaLogoPos = crea("div", { classe: "riga" }, opzioni);
   const posizione = campo("Posizione del logo", scelta([["in_alto", "In alto, accanto al nome"], ["nel_messaggio", "Sopra le righe di testo"], ["al_centro", "Grande, al centro"]], c.logo.posizione), rigaLogoPos);
   const altezza = campo("Altezza del logo (px)", crea("input", { type: "number", min: 24, max: 360, step: 4, value: c.logo.altezza, classe: "corto" }), rigaLogoPos);
@@ -935,11 +957,37 @@ async function sezioneMarchio() {
     const i = crea("input", { type: "checkbox", checked: valore }, l);
     l.append(` ${testo}`);
     i.addEventListener("change", () => { alCambio(i.checked); aggiorna(); });
+    return i;
   };
-  spunta("Mostra il nome accanto al logo", c.logo.mostra_nome, (v) => (c.logo.mostra_nome = v));
+  const mostraNome = spunta("Mostra il nome (negli stili «Oro»: il titolo dorato)", c.logo.mostra_nome, (v) => (c.logo.mostra_nome = v));
   spunta("Mostra i disegni degli schermi in basso", c.mostra_schermi, (v) => (c.mostra_schermi = v));
   spunta("Riquadro chiaro dietro al logo nella barra del pannello", c.logo.riquadro_barra, (v) => (c.logo.riquadro_barra = v));
   const allineamento = campo("Allineamento", scelta([["sinistra", "A sinistra"], ["centro", "Al centro"]], c.allineamento), rigaLogoPos);
+  // Le opzioni che valgono solo per uno stile si spengono con l'altro.
+  const perStile = () => {
+    const oro = c.stile !== "classico";
+    for (const el of [posizione, allineamento]) el.disabled = oro;
+    simbolo.disabled = !oro;
+    for (const el of [powered, testoPowered, filePowered]) el.disabled = !oro;
+  };
+  stile.addEventListener("change", () => {
+    const daClassico = c.stile === "classico";
+    c.stile = stile.value;
+    // Passando a «Oro», la prima riga diventa la scritta dorata sotto il titolo (se è ancora quella di partenza).
+    const prima = c.righe[0];
+    if (daClassico && c.stile !== "classico" && prima && prima.dimensione >= 30 && prima.colore.toLowerCase() === "#ffffff") {
+      Object.assign(prima, { dimensione: 17, peso: "normale", colore: "#d9c78f" });
+      disegnaRighe();
+    }
+    // Negli stili «Oro» il nome è il titolo dorato: si riaccende.
+    if (c.stile !== "classico" && !c.logo.mostra_nome) {
+      c.logo.mostra_nome = true;
+      mostraNome.checked = true;
+    }
+    perStile();
+    aggiorna();
+  });
+  simbolo.addEventListener("change", () => { c.simbolo = simbolo.value; aggiorna(); });
   posizione.addEventListener("change", () => { c.logo.posizione = posizione.value; aggiorna(); });
   altezza.addEventListener("input", () => { c.logo.altezza = parseInt(altezza.value, 10) || 64; aggiorna(); });
   allineamento.addEventListener("change", () => { c.allineamento = allineamento.value; aggiorna(); });
@@ -969,6 +1017,7 @@ async function sezioneMarchio() {
     }
   };
   disegnaRighe();
+  perStile();
   aggiorna();
 
   const azioni = crea("div", { classe: "riga" }, pagina);
@@ -981,6 +1030,7 @@ async function sezioneMarchio() {
       dati.append("accesso", JSON.stringify(c));
       if (logo.files[0]) dati.append("logo", logo.files[0]);
       if (icona.files[0]) dati.append("icona", icona.files[0]);
+      if (filePowered.files[0]) dati.append("logo_powered", filePowered.files[0]);
       await api("PATCH", "/api/piattaforma/aspetto/", dati);
       setTimeout(() => location.reload(), 600);
     }, "Salvato: la pagina si ricarica con il nuovo aspetto."),

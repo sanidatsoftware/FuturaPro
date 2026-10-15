@@ -16,6 +16,8 @@ class Aspetto(models.Model):
     # L'icona: barra del pannello e scheda del browser (.ico, oppure PNG/WebP quadrato). Il logo
     # resta per la pagina di accesso; senza icona la barra mostra il logo.
     icona = models.FileField(upload_to="piattaforma/", blank=True)
+    # Il logo accanto a «Powered by» nella pagina di accesso (chi fornisce il servizio).
+    logo_powered = models.FileField(upload_to="piattaforma/", blank=True)
     # La pagina di accesso composta (posizione e grandezza del logo, righe di testo): vedi «accesso».
     accesso = models.JSONField(default=dict, blank=True)
     modificato = models.DateTimeField(auto_now=True)

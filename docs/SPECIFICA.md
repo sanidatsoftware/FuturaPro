@@ -286,6 +286,18 @@ al centro) e altezza (24–360 px), con o senza il nome accanto, allineamento a 
 centro, fino a 8 righe di testo ognuna con grandezza, peso e colore propri; l'anteprima nel
 pannello si aggiorna mentre si modifica, senza salvare.
 
+**Stili della pagina di accesso** (`accesso.stile`): *Classico* (sfondo nel colore della
+piattaforma) oppure *Oro* e *Oro con sfondo animato*, ripresi dai bozzetti «Con Powered by»: fondo
+scuro, il nome della piattaforma in grande in lettere dorate con un riflesso che scorre, sopra il
+**simbolo** (quello di FuturaPro, disegnato e con una stellina che brilla, oppure il logo caricato, o
+niente), un separatore, le righe di testo (la prima maiuscola e spaziata) e in basso, facoltativo,
+**«Powered by»** con il logo di chi fornisce il servizio (`Aspetto.logo_powered`, `/aspetto/powered/`).
+Lo sfondo animato ha bagliori che fluttuano, una trama di puntini, onde concentriche, archi che
+ruotano e stelline; anche il modulo di accesso si intona (fondo scuro, pulsante dorato). Tutto è
+CSS e SVG nella pagina (`accesso-sfondo.html`, `accesso-simbolo.html`), senza script; i caratteri
+Cinzel e Montserrat (SIL OFL) sono serviti dal server (`pannello/static/pannello/font/`). Con
+«riduci movimento» del sistema le animazioni si fermano.
+
 ### Schermi: accensione, stato e allarmi
 
 - **Accensione e spegnimento** (facoltativi; `/api/orari/`). Un orario ha fasce per giorno della

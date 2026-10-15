@@ -1,0 +1,7 @@
+Caratteri della pagina di accesso (stili «Oro»), serviti dal nostro server:
+
+- cinzel-latin.woff2      Cinzel (Natanael Gama), sottoinsieme latino, peso 400-900
+- montserrat-latin.woff2  Montserrat (The Montserrat Project Authors), sottoinsieme latino, peso 100-900
+
+Entrambi sono distribuiti con la SIL Open Font License 1.1 (https://openfontlicense.org),
+che ne permette l'uso e la ridistribuzione anche commerciale insieme al software.

@@ -125,6 +125,7 @@ urlpatterns = [
     path("accesso/", pannello_viste.Accesso.as_view(), name="accesso"),
     path("aspetto/logo/", pannello_viste.logo, name="logo"),
     path("aspetto/icona/", pannello_viste.icona, name="icona"),
+    path("aspetto/powered/", pannello_viste.logo_powered, name="logo-powered"),
     path("", RedirectView.as_view(url="/pannello/", permanent=False)),
     path("pannello/", pannello, name="pannello"),
     path("palinsesto/", pannello_viste.palinsesto, name="palinsesto"),
