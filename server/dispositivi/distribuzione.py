@@ -8,6 +8,8 @@ avere adesso: così si vede se una promozione appena salvata è già arrivata ov
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from django.utils import timezone
 
 STATI = ("aggiornato", "pronto", "scaricamento", "fascia", "errore", "in_arrivo", "offline", "mai_collegato")
@@ -125,6 +127,14 @@ def stato_schermo(monitor, adesso=None) -> dict:
     # Le promozioni di questo schermo: i loro file ci sono tutti?
     pubblicazioni = list(palinsesto.pubblicazioni_del_monitor(monitor).select_related("promozione__campagna"))
     ora_in_onda = {p.id for p in palinsesto.in_onda(pubblicazioni, adesso)}
+    # Secondo il server, adesso questo schermo ha qualcosa da mostrare? Una pubblicazione valida,
+    # una playlist fissa del layout, un evento straordinario in corso o il default.
+    playlist_pubblicate = {str(p.playlist_id) for p in pubblicazioni}
+    programmato = bool(
+        ora_in_onda or corpo.get("riserva")
+        or any(v for k, v in corpo["playlist"].items() if k not in playlist_pubblicate)
+        or any(datetime.fromisoformat(e["inizio"]) <= adesso < datetime.fromisoformat(e["fine"]) for e in corpo["eventi"])
+    )
     per_playlist = {}
     promozioni = []
     for p in pubblicazioni:
@@ -165,7 +175,9 @@ def stato_schermo(monitor, adesso=None) -> dict:
         "velocita": riferito.get("velocita", 0) if in_corso else 0, "falliti": riferito.get("falliti", 0) if stesso else 0,
         "fascia": fascia and {"dalle": fascia.get("dalle"), "alle": fascia.get("alle"), "kbps": fascia.get("kbps")},
         "ultimo_contatto": monitor.ultimo_contatto, "riferito": riferito.get("riferito") if stesso else None,
-        "schermata_il": monitor.schermata_il, "in_onda": in_onda, "promozioni": promozioni,
+        "schermata_il": monitor.schermata_il, "in_onda": in_onda, "promozioni": promozioni, "programmato": programmato,
+        # Il player riferisce cosa mostra solo dalla versione con la Distribuzione contenuti.
+        "riferisce_in_onda": "in_onda" in info,
     }
 
 

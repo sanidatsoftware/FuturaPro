@@ -52,7 +52,10 @@ def azienda(sedi=None, con_registro=True, adesso=None) -> dict:
     riepilogo = distribuzione.riepilogo(schermi)
     per_id = {str(m.id): m for m in monitor}
     spenti = sorted((s for s in schermi if not s["online"]), key=lambda s: per_id[s["id"]].ultimo_contatto or adesso)
-    neri = [s for s in schermi if s["online"] and not s["riposo"] and not s["in_onda"] and s["stato"] == "aggiornato"]
+    # Schermo nero: secondo il palinsesto del server non ha nulla da mostrare adesso (né promozioni,
+    # né playlist del layout, né eventi, né default). Non si guarda quello che riferisce il player:
+    # un player di una versione precedente non lo manda, e non vuol dire che non mostri nulla.
+    neri = [s for s in schermi if s["online"] and not s["riposo"] and s["stato"] == "aggiornato" and not s["programmato"]]
     online = sum(1 for s in schermi if s["online"])
     in_allarme = sum(1 for m in monitor if m.allarme_dal)
     for s in spenti[:3]:
