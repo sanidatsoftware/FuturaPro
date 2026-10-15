@@ -78,7 +78,10 @@ done
 # Il numero di build della versione (es. 1.6.072 · 20261015) per il pannello: nel container git non c'è.
 numero=$(git -c safe.directory="$(cd .. && pwd)" -C .. rev-list --count HEAD 2>/dev/null || true)
 data=$(git -c safe.directory="$(cd .. && pwd)" -C .. log -1 --format=%cd --date=format:%Y%m%d 2>/dev/null || true)
-if [ -n "$numero" ]; then echo "FP_BUILD=$numero" >> .env; echo "FP_BUILD_DATA=$data" >> .env; fi
+if [ -n "$numero" ]; then
+    echo "FP_BUILD=$numero" >> .env; echo "FP_BUILD_DATA=$data" >> .env
+    printf 'FP_BUILD=%s\nFP_BUILD_DATA=%s\n' "$numero" "$data" > ../server/futurapro/build.txt
+fi
 umask 022
 
 # --- 4. Caddy (HTTPS) --------------------------------------------------------------

@@ -21,6 +21,7 @@ fi
 # Il numero di build della versione (es. 1.6.072 · 20261015) per il pannello: nel container git non c'è.
 numero=$(git -C .. rev-list --count HEAD 2>/dev/null || true)
 data=$(git -C .. log -1 --format=%cd --date=format:%Y%m%d 2>/dev/null || true)
+if [ -n "$numero" ]; then printf 'FP_BUILD=%s\nFP_BUILD_DATA=%s\n' "$numero" "$data" > ../server/futurapro/build.txt; fi
 if [ -n "$numero" ] && [ -f .env ]; then
     # .env contiene password: anche la copia temporanea è leggibile solo dal proprietario.
     (umask 077; { grep -v '^FP_BUILD=\|^FP_BUILD_DATA=' .env; echo "FP_BUILD=$numero"; echo "FP_BUILD_DATA=$data"; } > .env.nuovo) \

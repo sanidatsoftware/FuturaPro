@@ -21,7 +21,7 @@ input.link { width: 100%; font-size: 12px; margin: 2px 0; }
 /* Il logo direttamente sulla barra, senza riquadro bianco: solo un'ombra leggera per staccarlo. */
 .barra .marchio img { height: 34px; max-width: 160px; object-fit: contain; display: block; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .35)); }
 .barra .marchio img.icona { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; }
-.barra .versione-app { font-size: 11px; font-weight: 400; opacity: .7; align-self: flex-end; margin-bottom: 3px; letter-spacing: .02em; }
+.barra .versione-app { font-size: 11px; font-weight: 500; line-height: 1; padding: 3px 7px; border-radius: 999px; background: rgba(255, 255, 255, .14); color: rgba(255, 255, 255, .85); letter-spacing: .02em; white-space: nowrap; margin-left: -4px; }
 .barra .marchio.con-riquadro img { background: #fff; border-radius: 6px; padding: 2px 6px; filter: none; }
 .barra .spazio { flex: 1; }
 .barra .utente { font-size: 13px; opacity: .9; }

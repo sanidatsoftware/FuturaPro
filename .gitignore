@@ -5,3 +5,5 @@ __pycache__/
 /server/staticfiles/
 /server/media/
 *.log
+# Numero e data della build, scritti da deploy/aggiorna.sh e installa.sh
+/server/futurapro/build.txt

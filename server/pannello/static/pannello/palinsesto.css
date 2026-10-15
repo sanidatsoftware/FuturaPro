@@ -643,4 +643,4 @@ body.trascina-libreria .pista { outline: 2px dashed color-mix(in srgb, var(--acc
 .gruppo-menu .tendina .scheda.attiva { font-weight: 700; }
 .menu .gruppo-menu .tendina { background: var(--fondo); }
 
-.testata .versione-app { font-size: 11px; opacity: .7; align-self: flex-end; margin-bottom: 3px; font-weight: 400; }
+.testata .versione-app { font-size: 11px; font-weight: 500; line-height: 1; padding: 3px 7px; border-radius: 999px; background: var(--fondo); color: var(--tenue); border: 1px solid var(--linea); white-space: nowrap; }
