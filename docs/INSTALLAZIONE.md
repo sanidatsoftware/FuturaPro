@@ -219,6 +219,13 @@ riavvii; ogni giorno le code ripartono da 0. Registro delle operazioni:
 
 La stampante non risponde? Il totem lo dice e mostra comunque il numero al cliente.
 
+> **Plugin Info Prezzo / Info Ingredienti (facoltativi).** Servono il Totem Master con il servizio
+> code 1.4 (reinstalla lo script del totem: scarica anche `FpSqlite.cs`) e, sul PC del negozio,
+> la cartella condivisa con il file `.db` leggibile dall'utente indicato nel pannello. Il lettore
+> di codici a barre USB va impostato come tastiera, con Invio dopo il codice (è l'impostazione di
+> fabbrica di quasi tutti). Configurazione: pannello → **Plugin**; la colonna «Ultima copia»
+> dice se il totem riesce a leggere il file.
+
 > **Dove si configura.** Pannello → **Hardware · Anagrafica Stampanti Ticket**: aggiungi la
 > stampante (nome, sede, tipo, indirizzo della Epson, eventuali intestazione e messaggio). Poi in
 > **Hardware · Anagrafica Dispositivi Video**, colonna *Totem*, scegli la stampante del totem. Il

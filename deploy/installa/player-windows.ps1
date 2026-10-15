@@ -162,7 +162,7 @@ if ($Tipo -eq "totem") {
         if ($risposta) { $IndirizzoTotem = $risposta } else { $IndirizzoTotem = $trovato }
     }
     New-Item -ItemType Directory -Force -Path $CartellaCode | Out-Null
-    foreach ($file in @("code-totem.ps1", "banco.html")) {
+    foreach ($file in @("code-totem.ps1", "banco.html", "FpSqlite.cs")) {
         Invoke-WebRequest -UseBasicParsing -Uri "http://$Server/installa/$file" -OutFile (Join-Path $CartellaCode $file)
     }
 

@@ -1,0 +1,21 @@
+/* Plugin Info Prezzo e Info Ingredienti: il riquadro con la risposta del lettore. */
+.plugin-riquadro { position: absolute; left: 50%; z-index: 5000; box-sizing: border-box; padding: 1.2em 1.4em 1.4em;
+  border-radius: 1em; box-shadow: 0 1.2em 3em rgba(0, 0, 0, .45); text-align: center; overflow: hidden;
+  max-height: 90%; display: flex; flex-direction: column; gap: .45em; animation: plugin-entra .25s ease-out; }
+.plugin-riquadro.posizione-centro { top: 50%; transform: translate(-50%, -50%); }
+.plugin-riquadro.posizione-alto { top: 4%; transform: translateX(-50%); }
+.plugin-riquadro.posizione-basso { bottom: 4%; transform: translateX(-50%); }
+.plugin-banner { margin: -1.2em -1.4em .3em; padding: .35em; font-size: 1.3em; font-weight: 900; letter-spacing: .12em; }
+.plugin-reparto { font-size: .7em; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; opacity: .7; }
+.plugin-titolo { font-size: 1.25em; font-weight: 800; line-height: 1.15; }
+.plugin-prezzi { display: flex; justify-content: center; align-items: baseline; gap: .6em; flex-wrap: wrap; margin-top: .2em; }
+.plugin-prezzo { font-size: 2.6em; font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; }
+.plugin-pieno { font-size: 1.2em; text-decoration: line-through; opacity: .6; }
+.plugin-prezzo.lampeggia { animation: plugin-lampeggia 1s ease-in-out infinite; }
+.plugin-nota { font-size: .65em; opacity: .75; }
+.plugin-ingredienti { text-align: left; overflow: hidden; font-size: .78em; line-height: 1.35; display: flex; flex-direction: column; gap: .2em; }
+.plugin-etichetta { font-weight: 800; text-transform: uppercase; font-size: .8em; letter-spacing: .06em; opacity: .7; margin-top: .4em; }
+.plugin-allergeni { font-weight: 800; }
+.plugin-riquadro.vuoto .plugin-titolo { font-size: 1.1em; }
+@keyframes plugin-lampeggia { 50% { opacity: .25; } }
+@keyframes plugin-entra { from { opacity: 0; } }

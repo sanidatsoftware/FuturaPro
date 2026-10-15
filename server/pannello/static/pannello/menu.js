@@ -6,7 +6,7 @@ const nonTecnico = (io) => io.ruolo !== "tecnico";
 
 // pagina: un'altra pagina, nella stessa finestra; esterna: si apre in una scheda nuova;
 // le altre sono schede del pannello.
-export const GRUPPI = ["Hardware", "Contenuti", "Code", "Report & Log", "Impostazioni"];
+export const GRUPPI = ["Hardware", "Contenuti", "Code", "Plugin", "Report & Log", "Impostazioni"];
 
 export const VOCI = [
   { chiave: "clienti", titolo: "Clienti", visibile: (io) => io.ruolo === "admin_assoluto", serveCliente: false,
@@ -19,6 +19,10 @@ export const VOCI = [
     aiuto: "Carica le immagini, raggruppale in promozioni con le loro date e decidi con le campagne dove vanno in onda. C'è anche il calendario e l'importazione da CSV." },
   { chiave: "listini", gruppo: "Contenuti", titolo: "Listini", visibile: nonTecnico,
     aiuto: "Tabelle di prodotti e prezzi (es. banco salumi, panetteria) da mostrare sugli schermi con la zona «Listino»; si compilano qui, da Excel o dal gestionale." },
+  { chiave: "info_prezzo", gruppo: "Plugin", titolo: "Info Prezzo", visibile: gestione,
+    aiuto: "Facoltativo: passando un prodotto davanti al lettore di codici a barre, lo schermo mostra descrizione e prezzo, con il banner «Offerta» se è in offerta." },
+  { chiave: "info_ingredienti", gruppo: "Plugin", titolo: "Info Ingredienti", visibile: gestione,
+    aiuto: "Facoltativo: passando l'etichetta di un prodotto della bilancia, lo schermo mostra ingredienti, allergeni e (se vuoi) il prezzo." },
   { chiave: "stato", gruppo: "Report & Log", titolo: "Stato e allarmi", visibile: () => true,
     aiuto: "Quali schermi sono in linea, da quanto sono spenti o scollegati, la disponibilità degli ultimi giorni e gli avvisi via email." },
   { chiave: "messa_in_onda", gruppo: "Report & Log", titolo: "Messa in onda", visibile: nonTecnico,

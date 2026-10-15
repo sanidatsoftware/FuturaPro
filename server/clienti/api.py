@@ -45,7 +45,7 @@ class ClientiViewSet(
 class AbilitazioniSerializer(serializers.ModelSerializer):
     class Meta:
         model = Abilitazioni
-        fields = ["max_monitor", "max_utenti", "spazio_mb", "admin_gestisce_utenti", "admin_gestisce_dispositivi", "admin_gestisce_layout"]
+        fields = ["max_monitor", "max_utenti", "spazio_mb", "admin_gestisce_utenti", "admin_gestisce_dispositivi", "admin_gestisce_layout", "plugin_prezzo", "plugin_ingredienti"]
 
 
 class AbilitazioniView(VistaConContesto, generics.RetrieveUpdateAPIView):

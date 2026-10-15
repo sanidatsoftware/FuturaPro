@@ -12,12 +12,19 @@
   Lavora sul Totem Master (server code) della sede, scelto nel pannello: è lui a detenere i
   turni. Gli eventuali altri totem del negozio chiedono a lui i numeri dei biglietti.
 
+  Plugin (facoltativi): Info Prezzo e Info Ingredienti. Il file SQLite sta su un PC del
+  negozio (cartella condivisa con utente e password): il servizio lo ricopia qui ogni tot
+  minuti, solo se è cambiato, e risponde alle ricerche dei dispositivi del negozio
+  (/plugin/prezzo, /plugin/ingredienti). La copia gira in un processo a parte: le code non
+  aspettano. La password arriva con la configurazione e su disco resta cifrata (DPAPI).
+
   Lo installa e lo avvia player-windows.ps1 (tipo totem) come attività di sistema.
   Porte: 8443 HTTPS (monitor e totem), 8090 HTTP (bilance e banchi in rete locale).
 
   Chi può fare cosa:
     - leggere i numeri (/stato): chiunque in rete; sono gli stessi mostrati a schermo;
     - leggere i file degli annunci (/annunci/<impronta>): chiunque in rete;
+    - cercare un articolo (/plugin/…): chiunque in rete; sono i prezzi esposti in negozio;
     - ricevere la configurazione e i file: solo il totem stesso (127.0.0.1);
     - emettere biglietti: il totem stesso e i totem secondari della sede, con la chiave
       «Authorization: Totem <chiave>» (qui ne arriva solo l'impronta, con la configurazione);
@@ -35,7 +42,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.3"
+$Versione = "1.4"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -281,6 +288,206 @@ function Reparto-Della-Chiave($richiesta) {
     return $null
 }
 
+# --- Plugin: Info Prezzo e Info Ingredienti --------------------------------------
+
+$cartellaPlugin = Join-Path $Cartella "plugin"
+$filePlugin = Join-Path $cartellaPlugin "plugin.json"
+New-Item -ItemType Directory -Force -Path $cartellaPlugin | Out-Null
+$script:plugin = @{}        # tipo -> configurazione (condivisione, file, utente, password, minuti, query)
+$script:statoPlugin = @{}   # tipo -> copiato, errore, dimensione, controllato, firma, prossimo, lavoro
+$sqliteCaricato = $false
+try {
+    Add-Type -Path (Join-Path $PSScriptRoot "FpSqlite.cs")
+    $sqliteCaricato = $true
+} catch {
+    # Senza FpSqlite.cs (installazione vecchia) le code funzionano lo stesso.
+}
+Add-Type -AssemblyName System.Security
+
+function Proteggi([string]$testo) {
+    if (-not $testo) { return "" }
+    $byte = [System.Security.Cryptography.ProtectedData]::Protect([System.Text.Encoding]::UTF8.GetBytes($testo), $null, "LocalMachine")
+    return [Convert]::ToBase64String($byte)
+}
+
+function Sproteggi([string]$testo) {
+    if (-not $testo) { return "" }
+    try {
+        $byte = [System.Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String($testo), $null, "LocalMachine")
+        return [System.Text.Encoding]::UTF8.GetString($byte)
+    } catch { return "" }
+}
+
+function Imposta-Plugin($configurazione) {
+    $nuovo = @{}
+    foreach ($tipo in @("prezzo", "ingredienti")) {
+        $c = $null
+        if ($configurazione) { $c = $configurazione.$tipo }
+        if (-not $c) { continue }
+        $nuovo[$tipo] = @{
+            condivisione = [string]$c.condivisione; file = [string]$c.file; utente = [string]$c.utente
+            password = [string]$c.password; minuti = [Math]::Max(1, [int]$c.minuti); query = [string]$c.query
+        }
+        if (-not $script:statoPlugin.ContainsKey($tipo)) {
+            $script:statoPlugin[$tipo] = @{ copiato = ""; errore = ""; dimensione = 0; controllato = ""; firma = ""; prossimo = (Get-Date); lavoro = $null }
+        }
+        $vecchio = $script:plugin[$tipo]
+        # Cambiata la fonte: si ricopia subito.
+        if (-not $vecchio -or $vecchio.condivisione -ne $nuovo[$tipo].condivisione -or $vecchio.file -ne $nuovo[$tipo].file -or $vecchio.utente -ne $nuovo[$tipo].utente -or $vecchio.password -ne $nuovo[$tipo].password) {
+            $script:statoPlugin[$tipo].firma = ""
+            $script:statoPlugin[$tipo].prossimo = (Get-Date)
+        }
+    }
+    $script:plugin = $nuovo
+    $salvato = @{}
+    foreach ($tipo in $nuovo.Keys) {
+        $c = $nuovo[$tipo]
+        $salvato[$tipo] = @{ condivisione = $c.condivisione; file = $c.file; utente = $c.utente; password = (Proteggi $c.password); minuti = $c.minuti; query = $c.query }
+    }
+    [System.IO.File]::WriteAllText($filePlugin, ($salvato | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Carica-Plugin {
+    if (-not (Test-Path $filePlugin)) { return }
+    try {
+        $dati = Get-Content -Raw -Encoding UTF8 $filePlugin | ConvertFrom-Json
+        foreach ($tipo in @("prezzo", "ingredienti")) {
+            if ($dati.$tipo) { $dati.$tipo.password = Sproteggi ([string]$dati.$tipo.password) }
+        }
+        Imposta-Plugin $dati
+    } catch {
+        Registra "plugin: configurazione illeggibile ($($_.Exception.Message))"
+    }
+}
+
+# La copia dal PC del negozio, in un processo a parte: una rete lenta non ferma le code.
+$copiaFonte = {
+    param($condivisione, $file, $utente, $password, $destinazione, $firmaPrecedente)
+    $esito = @{ cambiato = $false; firma = $firmaPrecedente; dimensione = 0; errore = "" }
+    $nome = "FP" + [guid]::NewGuid().ToString("N").Substring(0, 8)
+    try {
+        $parametri = @{ Name = $nome; PSProvider = "FileSystem"; Root = $condivisione; ErrorAction = "Stop" }
+        if ($utente) {
+            $segreta = ConvertTo-SecureString $password -AsPlainText -Force
+            $parametri.Credential = New-Object System.Management.Automation.PSCredential($utente, $segreta)
+        }
+        New-PSDrive @parametri | Out-Null
+        $sorgente = "$($nome):\$file"
+        $info = Get-Item -LiteralPath $sorgente -ErrorAction Stop
+        $firma = "$($info.Length)|$($info.LastWriteTimeUtc.Ticks)"
+        $wal = "$sorgente-wal"
+        $conWal = Test-Path -LiteralPath $wal
+        if ($conWal) { $w = Get-Item -LiteralPath $wal; $firma += "|$($w.Length)|$($w.LastWriteTimeUtc.Ticks)" }
+        $esito.dimensione = $info.Length
+        if ($firma -ne $firmaPrecedente -or -not (Test-Path "$destinazione")) {
+            Remove-Item -Force -ErrorAction SilentlyContinue "$destinazione.tmp", "$destinazione.tmp-wal"
+            Copy-Item -LiteralPath $sorgente -Destination "$destinazione.tmp" -Force
+            if ($conWal) { Copy-Item -LiteralPath $wal -Destination "$destinazione.tmp-wal" -Force }
+            $esito.cambiato = $true
+            $esito.firma = $firma
+        }
+    } catch {
+        $esito.errore = $_.Exception.Message
+    } finally {
+        Remove-PSDrive -Name $nome -Force -ErrorAction SilentlyContinue
+    }
+    return $esito
+}
+
+# A ogni giro del servizio: parte la copia che è ora di fare, si raccoglie quella finita.
+function Aggiorna-Plugin {
+    foreach ($tipo in @($script:plugin.Keys)) {
+        $c = $script:plugin[$tipo]
+        $s = $script:statoPlugin[$tipo]
+        $destinazione = Join-Path $cartellaPlugin "$tipo.db"
+        if ($s.lavoro) {
+            if ($s.lavoro.State -eq "Running") { continue }
+            $esito = $null
+            try { $esito = Receive-Job $s.lavoro -ErrorAction Stop | Select-Object -Last 1 } catch { $esito = @{ errore = $_.Exception.Message } }
+            Remove-Job $s.lavoro -Force -ErrorAction SilentlyContinue
+            $s.lavoro = $null
+            $s.controllato = Adesso
+            if (-not $esito) { $esito = @{ errore = "copia interrotta" } }
+            if ($esito.errore) {
+                $s.errore = [string]$esito.errore
+                Registra "plugin $($tipo): $($s.errore)"
+            } else {
+                $s.errore = ""
+                $s.dimensione = [long]$esito.dimensione
+                if ($esito.cambiato) {
+                    try {
+                        # Le modifiche ancora nel «-wal» entrano nel file: poi lo si apre in sola lettura.
+                        if ($sqliteCaricato) { [FpSqlite]::SenzaWal("$destinazione.tmp") }
+                        Remove-Item -Force -ErrorAction SilentlyContinue $destinazione, "$destinazione-wal", "$destinazione-shm"
+                        Move-Item -Force "$destinazione.tmp" $destinazione
+                        Remove-Item -Force -ErrorAction SilentlyContinue "$destinazione.tmp-wal", "$destinazione.tmp-shm"
+                        $s.firma = [string]$esito.firma
+                        $s.copiato = Adesso
+                        Registra "plugin $($tipo): file aggiornato ($($s.dimensione) byte)"
+                    } catch {
+                        $s.errore = "copia locale: $($_.Exception.Message)"
+                    }
+                }
+            }
+            $s.prossimo = (Get-Date).AddMinutes($c.minuti)
+            if ($s.errore) { $s.prossimo = (Get-Date).AddMinutes([Math]::Min(2, $c.minuti)) }
+            continue
+        }
+        if ((Get-Date) -ge $s.prossimo) {
+            $s.lavoro = Start-Job -ScriptBlock $copiaFonte -ArgumentList $c.condivisione, $c.file, $c.utente, $c.password, $destinazione, $s.firma
+            $s.prossimo = (Get-Date).AddMinutes($c.minuti)
+        }
+    }
+}
+
+function Cerca-Articolo([string]$tipo, [string]$codice, [string]$plu, [string]$reparto) {
+    $c = $script:plugin[$tipo]
+    $file = Join-Path $cartellaPlugin "$tipo.db"
+    if (-not $c -or -not $sqliteCaricato -or -not (Test-Path $file)) { return $null }
+    $parametri = @{ codice = $codice; codice_corto = $codice.TrimStart("0"); plu = $plu; reparto = $reparto }
+    return [FpSqlite]::Cerca($file, $c.query, $parametri)
+}
+
+function Gestisci-Plugin($contesto, [string]$tipo) {
+    $richiesta = $contesto.Request
+    if (-not $script:plugin.ContainsKey($tipo)) { Rispondi $contesto 404 @{ errore = "Plugin non attivo." }; return }
+    $file = Join-Path $cartellaPlugin "$tipo.db"
+    if (-not $sqliteCaricato) { Rispondi $contesto 503 @{ errore = "Lettura SQLite non disponibile su questo totem." }; return }
+    if (-not (Test-Path $file)) {
+        $errore = $script:statoPlugin[$tipo].errore
+        if (-not $errore) { $errore = "File non ancora copiato dal PC del negozio." }
+        Rispondi $contesto 503 @{ errore = $errore }; return
+    }
+    # Solo cifre (il codice letto), il reparto come lo scrive il pannello: niente altro arriva alla query.
+    $codice = ([string]$richiesta.QueryString["codice"]) -replace "[^0-9]", ""
+    $plu = ([string]$richiesta.QueryString["plu"]) -replace "[^0-9]", ""
+    $reparto = ([string]$richiesta.QueryString["reparto"]) -replace "[^A-Za-z0-9_-]", ""
+    if ($codice.Length -gt 20 -or $plu.Length -gt 7 -or $reparto.Length -gt 20 -or (-not $codice -and -not $plu)) {
+        Rispondi $contesto 400 @{ errore = "Codice non valido." }; return
+    }
+    try {
+        $articolo = Cerca-Articolo $tipo $codice $plu $reparto
+        $risposta = [ordered]@{ trovato = ($null -ne $articolo); articolo = $articolo; aggiornato = $script:statoPlugin[$tipo].copiato }
+        # Info Ingredienti con il prezzo: la stessa ricerca nel file di Info Prezzo.
+        if ($tipo -eq "ingredienti" -and $richiesta.QueryString["prezzo"] -eq "1" -and $script:plugin.ContainsKey("prezzo")) {
+            try { $risposta.prezzo = Cerca-Articolo "prezzo" $codice $plu $reparto } catch { $risposta.prezzo = $null }
+        }
+        Rispondi $contesto 200 $risposta
+    } catch {
+        Registra "plugin $($tipo): $($_.Exception.Message)"
+        Rispondi $contesto 500 @{ errore = $_.Exception.Message }
+    }
+}
+
+function Stato-Plugin {
+    $stato = @{}
+    foreach ($tipo in $script:plugin.Keys) {
+        $s = $script:statoPlugin[$tipo]
+        $stato[$tipo] = @{ copiato = $s.copiato; errore = $s.errore; dimensione = $s.dimensione; controllato = $s.controllato }
+    }
+    return $stato
+}
+
 function Gestisci($contesto) {
     $richiesta = $contesto.Request
     $percorso = $richiesta.Url.AbsolutePath
@@ -304,6 +511,12 @@ function Gestisci($contesto) {
         else { Rispondi $contesto 404 @{ errore = "Annuncio non presente." } }
         return
     }
+    if ($metodo -eq "GET" -and $percorso -match "^/plugin/(prezzo|ingredienti)/?$") {
+        Gestisci-Plugin $contesto $Matches[1]; return
+    }
+    if ($metodo -eq "GET" -and $percorso -eq "/plugin/stato") {
+        Rispondi $contesto 200 (Stato-Plugin); return
+    }
     if ($metodo -eq "GET" -and $percorso -eq "/certificato.cer") {
         $file = Join-Path $Cartella "certificato.cer"
         if (Test-Path $file) { Rispondi $contesto 200 ([System.IO.File]::ReadAllBytes($file)) "application/x-x509-ca-cert" }
@@ -318,6 +531,7 @@ function Gestisci($contesto) {
         $script:reparti = @($dati.reparti)
         $script:totem = @($dati.totem | Where-Object { $_ })
         Salva-Stato
+        Imposta-Plugin $dati.plugin
         if ($null -ne $dati.annunci) { Pulisci-Annunci $dati.annunci }
         Registra "configurazione: $(@($script:reparti).Count) reparti"
         Rispondi $contesto 204 $null; return
@@ -379,6 +593,7 @@ function Gestisci($contesto) {
 
 Carica-Stato
 Carica-Eventi
+Carica-Plugin
 $ascoltatore = New-Object System.Net.HttpListener
 $ascoltatore.Prefixes.Add("http://+:$PortaHttp/")
 if (-not $SoloHttp) { $ascoltatore.Prefixes.Add("https://+:$PortaHttps/") }
@@ -386,7 +601,13 @@ $ascoltatore.Start()
 Registra "servizio code avviato (versione $Versione, porte $PortaHttp/$PortaHttps)"
 
 while ($ascoltatore.IsListening) {
-    $contesto = $ascoltatore.GetContext()
+    # Si aspetta una richiesta, ma ogni pochi secondi si guarda se c'è da copiare un file dei plugin.
+    $attesa = $ascoltatore.BeginGetContext($null, $null)
+    while (-not $attesa.AsyncWaitHandle.WaitOne(5000)) {
+        try { Aggiorna-Plugin } catch { Registra "plugin: $($_.Exception.Message)" }
+    }
+    $contesto = $ascoltatore.EndGetContext($attesa)
+    try { Aggiorna-Plugin } catch { Registra "plugin: $($_.Exception.Message)" }
     try {
         Gestisci $contesto
     } catch {

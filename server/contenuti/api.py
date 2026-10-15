@@ -842,7 +842,11 @@ class AnteprimaManifestView(VistaConContesto, APIView):
         monitor = monitor.first()
         if monitor is None:
             raise exceptions.NotFound()
-        return Response(palinsesto.manifest(monitor))
+        corpo = palinsesto.manifest(monitor)
+        # I segreti del negozio restano ai dispositivi: password dei plugin, chiave dei totem.
+        for segreto in ("plugin", "chiave", "totem"):
+            corpo["code"].pop(segreto, None)
+        return Response(corpo)
 
 
 # --- Player -------------------------------------------------------------------

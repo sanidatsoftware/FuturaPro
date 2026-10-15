@@ -705,6 +705,15 @@ class HeartbeatView(VistaPlayer):
             info["riposo"] = request.data.get("riposo") is True
             # Un palinsesto nuovo che aspetta la fascia di download per i suoi file.
             info["attesa_download"] = request.data.get("attesa_download") is True
+            # Il servizio code del Totem Master riferisce come vanno i file dei plugin.
+            plugin = request.data.get("plugin")
+            if isinstance(plugin, dict):
+                info["plugin"] = {
+                    tipo: {k: str(v)[:300] for k, v in stato.items() if k in ("copiato", "errore", "dimensione", "controllato")}
+                    for tipo, stato in plugin.items() if tipo in ("prezzo", "ingredienti") and isinstance(stato, dict)
+                }
+            else:
+                info.pop("plugin", None)
             monitor.info_dispositivo = info
             monitor.save(update_fields=["ultimo_contatto", "versione_player", "manifest_ricevuto", "info_dispositivo"])
         return Response(status=status.HTTP_204_NO_CONTENT)

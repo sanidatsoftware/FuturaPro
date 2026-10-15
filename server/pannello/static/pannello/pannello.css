@@ -224,3 +224,10 @@ input.corto { width: 90px; }
 .cella-totem { min-width: 190px; }
 .cella-totem label.master { font-weight: 700; color: var(--primario); }
 .cella-totem select { margin-top: 4px; max-width: 220px; }
+.file-plugin { white-space: nowrap; }
+.file-plugin input { margin: 0 2px; }
+.query-plugin { white-space: pre-wrap; font-size: 12px; background: var(--fondo); padding: 8px 10px; border-radius: 6px; max-width: 100%; overflow-x: auto; }
+.anteprima-plugin { position: relative; width: min(100%, 760px); aspect-ratio: 16 / 9; overflow: hidden; border-radius: 10px; margin-top: 12px;
+  background: linear-gradient(135deg, #2b4c7e, #1b2a44); }
+.palco-plugin { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
+td.attenzione, div.attenzione { color: var(--errore); }

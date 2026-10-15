@@ -54,6 +54,9 @@ class Abilitazioni(ModelloCliente):
     admin_gestisce_layout = models.BooleanField(
         default=True, help_text="L'Administrator può creare e modificare i layout grafici."
     )
+    # I servizi plugin facoltativi (vedi l'app «plugin»): li concede il SystemAdministrator.
+    plugin_prezzo = models.BooleanField(default=False, help_text="Plugin Info Prezzo.")
+    plugin_ingredienti = models.BooleanField(default=False, help_text="Plugin Info Ingredienti.")
 
     class Meta:
         verbose_name_plural = "abilitazioni"

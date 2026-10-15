@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "player",
     "eliminacode",
     "pannello",
+    "plugin",
 ]
 
 MIDDLEWARE = [

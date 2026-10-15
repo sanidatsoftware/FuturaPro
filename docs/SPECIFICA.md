@@ -322,6 +322,7 @@ il periodo appena concluso.
   schermo, riserva, Totem Master, stampante abbinata), Anagrafica Stampanti Ticket.
 - **Contenuti**: Creazione palinsesto, Listini.
 - **Code**: Reparti ed eliminacode, Coda sul telefono.
+- **Plugin** (facoltativi): Info Prezzo, Info Ingredienti.
 - **Report & Log**: Stato e allarmi, Messa in onda, Tempi d'attesa, Registro operazioni,
   Storico allarmi.
 - **Impostazioni**: Layout, Sedi e gruppi, Utenti, Email, Accensione e spegnimento, Fasce di
@@ -523,6 +524,42 @@ offerte e reparti; totem eliminacode.
 **Dal sistema attuale.** Due problemi da non riportare: il server WebSocket accetta comandi da
 chiunque sia in rete (avanti, azzera, imposta), e `php/salvadati.php` scrive un file il cui nome
 arriva dalla richiesta, quindi chi è in rete può scrivere file arbitrari sul server.
+
+## 7bis. Plugin: Info Prezzo e Info Ingredienti (facoltativi)
+
+Li abilita il SystemAdministrator per l'azienda (`Abilitazioni.plugin_prezzo`,
+`plugin_ingredienti`); l'Administrator li attiva e li configura (menu **Plugin**,
+`/api/plugin/<tipo>/`, `/api/fonti-plugin/`). Senza abilitazione e attivazione non cambia nulla.
+
+- **Info Prezzo**: un lettore di codici a barre USB (che scrive come una tastiera) collegato a un
+  totem o a un monitor; letto il codice, lo schermo mostra descrizione e prezzo. In offerta
+  (prezzo offerta più basso, nel periodo dal/al se indicato) compare il banner «Offerta» con il
+  prezzo pieno barrato e il prezzo in offerta colorato e lampeggiante.
+- **Info Ingredienti**: per i codici bilancia, riconosciuti dal **prefisso** (es. 20, 21, 22:
+  ogni prefisso è un banco, perché lo stesso PLU può esistere in banchi diversi). Il PLU sta in
+  una posizione configurabile (predefinita: dalla 3ª cifra, 5 cifre). Mostra ingredienti,
+  allergeni e conservazione e, se richiesto e se Info Prezzo è attivo, anche il prezzo.
+- Il riquadro resta per un tempo configurabile; una nuova lettura chiude quello aperto e mostra
+  la nuova risposta. Carattere, grandezza, larghezza, posizione, colori, testo e colori del banner
+  e lampeggio sono configurabili, con l'anteprima nel pannello.
+
+**Dove stanno i dati.** In un file SQLite su un PC del negozio, in una cartella condivisa
+(`\\indirizzo\condivisione\…\file.db`, con utente e password). Il server centrale non lo vede:
+lo copia il **servizio code del Totem Master** (`code-totem.ps1` 1.4), ogni N minuti e solo se è
+cambiato (dimensione e data, anche del `-wal`), in un processo a parte per non fermare le code;
+la copia locale è letta in sola lettura con `winsqlite3.dll` (presente in Windows 10/11,
+`FpSqlite.cs`). I dispositivi del negozio interrogano `GET /plugin/prezzo` e
+`GET /plugin/ingredienti` del master (`codice`, `plu`, `reparto`, `prezzo=1`), senza
+internet. La password arriva solo al master (nel suo manifest, mai nell'anteprima del pannello) e
+sul totem resta cifrata con DPAPI. Il master riferisce nel segnale di vita quando ha copiato il
+file e gli eventuali errori, che il pannello mostra per negozio.
+
+**Dove sono i dati nel file.** Mappatura di tabella e colonne (il server genera la SELECT con
+parametri `:codice`, `:codice_corto`, `:plu`, `:reparto`) oppure una query scritta a mano (solo
+SELECT, una sola istruzione). Le colonne del risultato hanno nomi fissi: `descrizione`, `prezzo`,
+`prezzo_offerta`, `offerta_dal`, `offerta_al`, `unita` per Info Prezzo; `descrizione`,
+`ingredienti`, `allergeni`, `conservazione` per Info Ingredienti. La mappatura predefinita
+andrà adattata ai file campione del gestionale.
 
 ## 8. Player
 

@@ -4,6 +4,7 @@
 import { attivaAiuti } from "./aiuto.js";
 import { VOCI, clienteRicordato, disegnaMenu, ricordaCliente } from "./menu.js";
 import { preparaSchedeImpostazioni, schedaEmail } from "./schede-impostazioni.js";
+import { preparaSchedePlugin, schedaInfoIngredienti, schedaInfoPrezzo } from "./schede-plugin.js";
 import { preparaSchedeReport, schedaRegistro, schedaStoricoAllarmi } from "./schede-report.js";
 import { preparaSchedeCode, schedaAttese, schedaTelefono } from "./schede-code.js";
 import { preparaSchedeContenuti, schedaListini, schedaMessaInOnda } from "./schede-contenuti.js";
@@ -139,6 +140,8 @@ const SCHEDE = {
   stato: schedaStato,
   download: schedaDownload,
   stampanti: schedaStampanti,
+  info_prezzo: schedaInfoPrezzo,
+  info_ingredienti: schedaInfoIngredienti,
   listini: schedaListini,
   messa_in_onda: schedaMessaInOnda,
   email: schedaEmail,
@@ -226,7 +229,7 @@ async function abilitazioni(cliente, cella) {
       [["max_monitor", "Monitor max"], ["max_utenti", "Utenti max"], ["spazio_mb", "Spazio (MB)"]].map(([k, t]) => [k, campo(t, crea("input", { type: "number", value: a[k] }), box)]),
     );
     const flag = Object.fromEntries(
-      [["admin_gestisce_utenti", "L'Administrator gestisce gli utenti"], ["admin_gestisce_dispositivi", "…i monitor"], ["admin_gestisce_layout", "…i layout"]]
+      [["admin_gestisce_utenti", "L'Administrator gestisce gli utenti"], ["admin_gestisce_dispositivi", "…i monitor"], ["admin_gestisce_layout", "…i layout"], ["plugin_prezzo", "Plugin Info Prezzo"], ["plugin_ingredienti", "Plugin Info Ingredienti"]]
         .map(([k, t]) => {
           const l = crea("label", { classe: "spunta" }, box);
           const c = crea("input", { type: "checkbox", checked: a[k] }, l);
@@ -979,6 +982,7 @@ async function avvia() {
   preparaSchedeCode(strumenti);
   preparaSchedeImpostazioni(strumenti);
   preparaSchedeReport(strumenti);
+  preparaSchedePlugin(strumenti);
   const richiesta = location.hash.slice(1);
   const visibile = VOCI.some((v) => v.chiave === richiesta && SCHEDE[richiesta] && v.visibile(stato.io));
   await mostra(visibile ? richiesta : stato.io.ruolo === "admin_assoluto" && !stato.cliente ? "clienti" : "monitor");

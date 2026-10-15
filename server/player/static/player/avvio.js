@@ -2,6 +2,7 @@
 // come anteprima nel pannello (dati letti con la sessione dell'utente).
 
 import { Motore } from "./motore.js";
+import { preparaLettore } from "./plugin.js";
 import { istanteNelFuso } from "./regole.js";
 
 const VERSIONE = "web-0.2";
@@ -234,12 +235,12 @@ async function inviaConfigCode(manifest, scarica) {
   if (!reparti) return;
   // Con la configurazione va l'elenco degli annunci da tenere: gli altri il servizio li cancella.
   const annunci = fileAnnunci(manifest);
-  const firma = JSON.stringify([reparti, manifest.code.totem || [], annunci.map((v) => v.sha256)]);
+  const firma = JSON.stringify([reparti, manifest.code.totem || [], manifest.code.plugin || null, annunci.map((v) => v.sha256)]);
   if (firma !== configInviata) {
     try {
       const risposta = await conLimite(`${SERVIZIO_LOCALE}/config`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reparti, totem: manifest.code.totem || [], annunci: annunci.map((v) => v.sha256) }),
+        body: JSON.stringify({ reparti, totem: manifest.code.totem || [], plugin: manifest.code.plugin || null, annunci: annunci.map((v) => v.sha256) }),
       });
       if (risposta.ok) configInviata = firma;
     } catch {
@@ -433,6 +434,8 @@ async function avviaPlayer() {
       return risposta.json();
     },
   });
+  // Plugin Info Prezzo e Info Ingredienti: il lettore di codici a barre collegato a questo schermo.
+  preparaLettore({ motore, indirizzo: () => serviziCode(motore.manifest) });
 
   // All'avvio, l'ultimo manifest ricevuto: lo schermo riparte anche senza rete.
   let mostrato = null;
@@ -496,12 +499,23 @@ async function avviaPlayer() {
   };
 
   // Il segnale periodico dice anche quale versione del palinsesto è in onda.
-  const battito = () =>
+  const battito = async () => {
+    // Il Totem Master riferisce anche come vanno le copie dei file dei plugin.
+    let plugin = null;
+    if (mostrato?.code?.plugin) {
+      try {
+        const risposta = await conLimite(`${SERVIZIO_LOCALE}/plugin/stato`, {}, 3000);
+        if (risposta.ok) plugin = await risposta.json();
+      } catch {
+        plugin = null;
+      }
+    }
     fetch("/api/player/heartbeat/", {
       method: "POST",
       headers: { ...intestazioni, "Content-Type": "application/json" },
-      body: JSON.stringify({ versione: VERSIONE, manifest: mostrato?.versione || "", problema: motore.problema || null, riposo: motore.inRiposo, attesa_download: Boolean(inAttesa?.fascia) }),
+      body: JSON.stringify({ versione: VERSIONE, manifest: mostrato?.versione || "", problema: motore.problema || null, riposo: motore.inRiposo, attesa_download: Boolean(inAttesa?.fascia), plugin }),
     }).catch(() => {});
+  };
   await aggiorna();
   setInterval(aggiorna, OGNI_MANIFEST);
   battito();

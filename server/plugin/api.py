@@ -1,0 +1,228 @@
+"""API dei plugin: impostazioni per azienda (/api/plugin/<tipo>/) e file di ogni negozio
+(/api/fonti-plugin/). Le usa chi gestisce il cliente, se il SystemAdministrator ha abilitato il plugin."""
+
+import re
+
+from rest_framework import exceptions, serializers
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from audit.models import registra
+from clienti.models import Abilitazioni, Sede
+from core.api import GESTIONE, RiferimentoCliente, VistaConContesto, ViewSetCliente
+from core.email import cifra
+from dispositivi.models import Monitor
+
+from . import query as q
+from .models import FontePlugin, ImpostazioniPlugin, TipoPlugin
+
+COLORE = re.compile(r"^#[0-9a-fA-F]{6}$")
+CARATTERI = ["sans-serif", "serif", "Arial", "Verdana", "Tahoma", "Georgia", "Roboto", "Montserrat", "Oswald"]
+
+# Il popup: valori predefiniti e controlli (tipo, minimo, massimo o scelte).
+ASPETTO = {
+    "carattere": ("sans-serif", CARATTERI),
+    "dimensione": (100, (50, 250)),       # percentuale sulla grandezza automatica
+    "larghezza": (70, (30, 100)),         # percentuale dello schermo
+    "posizione": ("centro", ["centro", "alto", "basso"]),
+    "sfondo": ("#ffffff", "colore"),
+    "testo": ("#1d2330", "colore"),
+    "colore_prezzo": ("#1f4e79", "colore"),
+    "colore_offerta": ("#d32f2f", "colore"),
+    "banner_testo": ("OFFERTA", 30),
+    "banner_sfondo": ("#d32f2f", "colore"),
+    "banner_colore": ("#ffffff", "colore"),
+    "lampeggia": (True, bool),
+    "mostra_prezzo_pieno": (True, bool),
+    "colore_allergeni": ("#b71c1c", "colore"),
+}
+
+
+def aspetto_pulito(dati) -> dict:
+    dati = dati if isinstance(dati, dict) else {}
+    pulito = {}
+    for chiave, (predefinito, regola) in ASPETTO.items():
+        valore = dati.get(chiave, predefinito)
+        if regola == "colore":
+            valore = valore if isinstance(valore, str) and COLORE.match(valore) else predefinito
+        elif regola is bool:
+            valore = bool(valore)
+        elif isinstance(regola, tuple):
+            try:
+                valore = max(regola[0], min(regola[1], int(valore)))
+            except (TypeError, ValueError):
+                valore = predefinito
+        elif isinstance(regola, list):
+            valore = valore if valore in regola else predefinito
+        else:  # testo con lunghezza massima
+            valore = str(valore or "")[:regola]
+        pulito[chiave] = valore
+    return pulito
+
+
+def abilitato(tipo: str) -> bool:
+    abilitazioni = Abilitazioni.objects.first()
+    return bool(abilitazioni and getattr(abilitazioni, f"plugin_{tipo}", False))
+
+
+class ImpostazioniPluginSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ImpostazioniPlugin
+        fields = ["tipo", "attivo", "mappatura", "query", "aspetto", "timeout", "prefissi", "plu_inizio", "plu_lunghezza", "mostra_prezzo"]
+        read_only_fields = ["tipo"]
+        extra_kwargs = {"timeout": {"min_value": 2, "max_value": 120}, "plu_inizio": {"min_value": 1, "max_value": 12},
+                        "plu_lunghezza": {"min_value": 1, "max_value": 7}}
+
+    def validate_aspetto(self, valore):
+        return aspetto_pulito(valore)
+
+    def validate_query(self, valore):
+        try:
+            return q.valida_query(valore)
+        except ValueError as errore:
+            raise serializers.ValidationError(str(errore))
+
+    def validate_prefissi(self, valore):
+        if not isinstance(valore, list) or len(valore) > 30:
+            raise serializers.ValidationError("Al massimo 30 prefissi.")
+        puliti, visti = [], set()
+        for p in valore:
+            prefisso = str((p or {}).get("prefisso", "")).strip()
+            if not re.fullmatch(r"\d{1,3}", prefisso):
+                raise serializers.ValidationError(f"Prefisso non valido: «{prefisso}» (1-3 cifre, es. 20).")
+            if prefisso in visti:
+                raise serializers.ValidationError(f"Il prefisso {prefisso} è ripetuto.")
+            visti.add(prefisso)
+            puliti.append({"prefisso": prefisso, "reparto": str(p.get("reparto", ""))[:40], "codice": str(p.get("codice", "")).strip()[:20]})
+        return puliti
+
+    def validate(self, dati):
+        tipo = self.instance.tipo
+        attivo = dati.get("attivo", self.instance.attivo)
+        query = dati.get("query", self.instance.query)
+        try:
+            dati["mappatura"] = q.valida_mappatura(tipo, dati.get("mappatura", self.instance.mappatura), obbligatoria=attivo and not query)
+        except ValueError as errore:
+            raise serializers.ValidationError({"mappatura": errore.args[0]})
+        if tipo == TipoPlugin.INGREDIENTI:
+            inizio = dati.get("plu_inizio", self.instance.plu_inizio)
+            lunghezza = dati.get("plu_lunghezza", self.instance.plu_lunghezza)
+            if inizio + lunghezza - 1 > 12:
+                raise serializers.ValidationError({"plu_lunghezza": "Il PLU deve stare nelle prime 12 cifre del codice."})
+            if attivo and not dati.get("prefissi", self.instance.prefissi):
+                raise serializers.ValidationError({"prefissi": "Indica almeno un prefisso (es. 20 = Salumeria)."})
+        return dati
+
+
+class FontePluginSerializer(serializers.ModelSerializer):
+    sede = RiferimentoCliente(Sede)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=200)
+    ha_password = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FontePlugin
+        fields = ["id", "tipo", "sede", "indirizzo", "percorso", "utente", "password", "ha_password", "aggiorna_minuti"]
+        extra_kwargs = {"aggiorna_minuti": {"min_value": 1, "max_value": 1440}}
+
+    def get_ha_password(self, fonte):
+        return bool(fonte.password_cifrata)
+
+    def validate_indirizzo(self, valore):
+        valore = valore.strip().strip("\\/")
+        if not re.fullmatch(r"[A-Za-z0-9.-]{1,100}", valore):
+            raise serializers.ValidationError("Indirizzo IP o nome del PC, es. 192.168.1.20")
+        return valore
+
+    def validate_percorso(self, valore):
+        valore = valore.strip().replace("/", "\\").strip("\\")
+        parti = [p for p in valore.split("\\") if p]
+        if len(parti) < 2 or any(p in (".", "..") for p in parti) or any(c in valore for c in '<>:"|?*'):
+            raise serializers.ValidationError("Cartella condivisa e file, es. Dati\\Prezzi\\articoli.db")
+        return "\\".join(parti)
+
+    def create(self, dati):
+        password = dati.pop("password", "")
+        return super().create({**dati, "password_cifrata": cifra(password)})
+
+    def update(self, fonte, dati):
+        password = dati.pop("password", None)
+        if password is not None and password != "":
+            fonte.password_cifrata = cifra(password)
+        return super().update(fonte, dati)
+
+
+class PluginView(VistaConContesto, APIView):
+    """GET/PUT le impostazioni di un plugin, con i negozi (totem, file, stato della copia)."""
+
+    ruoli_lettura = GESTIONE
+    ruoli_scrittura = GESTIONE
+
+    def _impostazioni(self, tipo):
+        if tipo not in TipoPlugin.values:
+            raise exceptions.NotFound()
+        if not abilitato(tipo):
+            raise exceptions.PermissionDenied("Plugin non abilitato per questa azienda: lo attiva Sanidat (SystemAdministrator).")
+        return ImpostazioniPlugin.objects.filter(tipo=tipo).first() or ImpostazioniPlugin.objects.create(tipo=tipo)
+
+    def _risposta(self, impostazioni):
+        dati = ImpostazioniPluginSerializer(impostazioni).data
+        dati["aspetto"] = aspetto_pulito(impostazioni.aspetto)
+        dati["campi"] = [{"chiave": c, "obbligatoria": o, "etichetta": e} for c, o, e in q.CAMPI[impostazioni.tipo]]
+        dati["uscite"] = q.USCITE[impostazioni.tipo]
+        dati["query_generata"] = q.query_di(impostazioni) if not impostazioni.query else None
+        dati["prezzo_attivo"] = bool(
+            abilitato("prezzo") and ImpostazioniPlugin.objects.filter(tipo="prezzo", attivo=True).exists()
+        )
+        negozi = []
+        fonti = {f.sede_id: f for f in FontePlugin.objects.filter(tipo=impostazioni.tipo)}
+        for sede in Sede.objects.order_by("nome"):
+            master = Monitor.objects.filter(sede=sede, totem_master=True).first()
+            stato = ((master.info_dispositivo or {}).get("plugin") or {}).get(impostazioni.tipo) if master else None
+            fonte = fonti.get(sede.id)
+            negozi.append({
+                "sede": str(sede.id), "nome": sede.nome, "indirizzo_totem": sede.indirizzo_totem,
+                "master": master.nome if master else None, "master_online": bool(master and master.online),
+                "fonte": FontePluginSerializer(fonte).data if fonte else None, "stato": stato,
+            })
+        dati["negozi"] = negozi
+        return dati
+
+    def get(self, request, tipo):
+        return Response(self._risposta(self._impostazioni(tipo)))
+
+    def put(self, request, tipo):
+        impostazioni = self._impostazioni(tipo)
+        dati = ImpostazioniPluginSerializer(impostazioni, data=request.data, partial=True)
+        dati.is_valid(raise_exception=True)
+        salvate = dati.save()
+        registra(request.user, "plugin_modificato", None, plugin=tipo, attivo=salvate.attivo)
+        return Response(self._risposta(salvate))
+
+
+class FontiPluginViewSet(ViewSetCliente):
+    """Il file SQLite di ogni negozio per un plugin (?tipo=)."""
+
+    ruoli_lettura = GESTIONE
+    ruoli_scrittura = GESTIONE
+    serializer_class = FontePluginSerializer
+
+    def get_queryset(self):
+        fonti = FontePlugin.objects.select_related("sede")
+        tipo = self.request.query_params.get("tipo")
+        return fonti.filter(tipo=tipo) if tipo else fonti
+
+    def _verifica(self, tipo):
+        if not abilitato(tipo):
+            raise exceptions.PermissionDenied("Plugin non abilitato per questa azienda.")
+
+    def perform_create(self, serializer):
+        self._verifica(serializer.validated_data["tipo"])
+        registra(self.request.user, "fonte_plugin_creata", serializer.save())
+
+    def perform_update(self, serializer):
+        self._verifica(serializer.validated_data.get("tipo", serializer.instance.tipo))
+        registra(self.request.user, "fonte_plugin_modificata", serializer.save())
+
+    def perform_destroy(self, fonte):
+        registra(self.request.user, "fonte_plugin_eliminata", fonte)
+        fonte.delete()

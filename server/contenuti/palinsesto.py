@@ -23,6 +23,7 @@ from django.urls import reverse
 
 from dispositivi.stampanti import applica as applica_stampante
 from dispositivi.stampanti import per_il_player as per_il_player_stampante
+from plugin.manifest import per_il_monitor as plugin_del_monitor
 from layout.manifest import descrivi, layout_del_monitor, riferimenti
 
 from .models import DURATA_IMMAGINE, Contenuto, ElementoPlaylist, EventoStraordinario, Pubblicazione, Tipo
@@ -261,6 +262,10 @@ def manifest(monitor) -> dict:
         # La stampante dei biglietti abbinata (per la stampa di prova); null: quella del layout.
         "stampante": per_il_player_stampante(monitor.stampante if monitor.stampante_id else None),
     }
+    # I plugin (Info Prezzo, Info Ingredienti): come mostrarli e, al Totem Master, dove cercare.
+    corpo["plugin"], servizio_plugin = plugin_del_monitor(monitor, corpo["code"])
+    if servizio_plugin:
+        corpo["code"]["plugin"] = servizio_plugin
     # La versione dipende solo dal contenuto: se nulla cambia, il player non riscarica.
     corpo["versione"] = sha256(json.dumps(corpo, sort_keys=True).encode()).hexdigest()
     return corpo
