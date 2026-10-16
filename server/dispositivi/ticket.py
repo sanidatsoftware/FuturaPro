@@ -39,7 +39,7 @@ PUNTI = {80: 576, 58: 384}
 MODELLI = {
     "TM-T20IV": {
         "nome": "Epson TM-T20IV", "carte": {80: 576, 58: 420}, "collegamenti": ["epson", "browser"],
-        "note": "203 dpi, taglierina. Ethernet: «Epson di rete» (ePOS-Print, IP fisso). USB: «Stampante di sistema» con il driver Epson APD come predefinita.",
+        "note": "203 dpi, taglierina. Ethernet: «Di rete senza driver» (IP fisso, porta 9100) o «Stampante di Windows» con il driver Epson APD; USB: «Stampante di Windows».",
     },
     "generica": {
         "nome": "Altra stampante termica (203 dpi)", "carte": {80: 576, 58: 384}, "collegamenti": ["epson", "browser"],
@@ -139,6 +139,15 @@ def prepara_logo(file, carta: int) -> str:
     uscita = io.BytesIO()
     immagine.save(uscita, "PNG", optimize=True)
     return base64.b64encode(uscita.getvalue()).decode()
+
+
+def semplice(punti: int, carta: int) -> dict:
+    """Il biglietto semplice come layout, per le stampanti che ricevono un'immagine."""
+    elementi = [e for e in predefiniti() if e["campo"] != "logo"]
+    for e in elementi:
+        if e["campo"] == "messaggio":
+            e["testo"] = ""
+    return {"id": "", "nome": "Biglietto semplice", "punti": punti, "carta": carta, "disposizione": "guidata", "elementi": elementi, "logo": ""}
 
 
 def per_il_player(layout, punti: int | None = None) -> dict | None:

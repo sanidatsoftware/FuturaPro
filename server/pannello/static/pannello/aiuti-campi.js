@@ -50,7 +50,9 @@ const PLUGIN = {
 const STAMPANTI = {
   "Nome": "Un nome per riconoscere la stampante (es. «Epson banco salumi»).",
   "Sede": "Il negozio dove si trova: si potrà abbinare solo ai totem di quel negozio.",
-  "Tipo": "Epson di rete: il totem stampa direttamente all'indirizzo IP (ePOS-Print). Stampante di sistema: quella predefinita di Windows sul PC del totem (es. USB con driver Epson).",
+  "Tipo": "Stampante di Windows: il driver installato sul totem, scelto per nome. Di rete senza driver: il totem manda il biglietto all'IP della stampante sulla porta 9100. Epson di rete: ePOS-Print. Predefinita di Windows: la stampa del browser.",
+  "Nome della stampante in Windows": "Il nome esatto che compare in Windows, in «Stampanti e scanner» (es. EPSON TM-T20IV Receipt). I totem riferiscono le loro stampanti: le trovi nell'elenco del campo.",
+  "Indirizzo IP (porta 9100)": "L'indirizzo IP fisso della stampante in rete; la porta 9100 è quella standard (per un'altra porta: 192.168.1.84:9101).",
   "Indirizzo IP": "L'indirizzo fisso della stampante in rete (si legge sullo scontrino di prova della stampante).",
   "Modello": "Il modello decide la larghezza stampabile del biglietto (es. TM-T20IV: 72 mm su carta da 80).",
   "Carta": "La larghezza del rotolo montato: 80 o 58 mm.",

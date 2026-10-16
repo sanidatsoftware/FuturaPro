@@ -449,21 +449,29 @@ class StampanteTicketSerializer(serializers.ModelSerializer):
         model = StampanteTicket
         fields = ["id", "nome", "sede", "tipo", "indirizzo", "modello", "carta", "punti", "layout", "intestazione", "messaggio", "note", "abbinata_a", "prova"]
 
-    def validate_indirizzo(self, valore):
-        valore = valore.strip()
-        for prefisso in ("https://", "http://"):
-            if valore.lower().startswith(prefisso):
-                valore = valore[len(prefisso):]
-        valore = valore.rstrip("/")
-        if valore and not all(c.isalnum() or c in ".-:[]" for c in valore):
-            raise serializers.ValidationError("Indirizzo non valido: es. 192.168.1.50 oppure stampante.negozio.lan")
-        return valore
-
     def validate(self, dati):
-        tipo = dati.get("tipo", getattr(self.instance, "tipo", StampanteTicket.Tipo.EPSON))
-        indirizzo = dati.get("indirizzo", getattr(self.instance, "indirizzo", ""))
-        if tipo == StampanteTicket.Tipo.EPSON and not indirizzo:
-            raise serializers.ValidationError({"indirizzo": "Indica l'indirizzo della stampante Epson."})
+        Tipo = StampanteTicket.Tipo
+        tipo = dati.get("tipo", getattr(self.instance, "tipo", Tipo.EPSON))
+        indirizzo = str(dati.get("indirizzo", getattr(self.instance, "indirizzo", "")) or "").strip()
+        if tipo == Tipo.WINDOWS:
+            # Il nome come lo mostra Windows: qualunque carattere stampabile.
+            if not indirizzo:
+                raise serializers.ValidationError({"indirizzo": "Indica il nome della stampante in Windows (es. EPSON TM-T20IV Receipt)."})
+            if any(not c.isprintable() for c in indirizzo):
+                raise serializers.ValidationError({"indirizzo": "Nome della stampante non valido."})
+        elif tipo in (Tipo.EPSON, Tipo.RETE):
+            for prefisso in ("https://", "http://"):
+                if indirizzo.lower().startswith(prefisso):
+                    indirizzo = indirizzo[len(prefisso):]
+            indirizzo = indirizzo.rstrip("/")
+            if not indirizzo:
+                raise serializers.ValidationError({"indirizzo": "Indica l'indirizzo IP della stampante."})
+            if not all(c.isalnum() or c in ".-:[]" for c in indirizzo):
+                raise serializers.ValidationError({"indirizzo": "Indirizzo non valido: es. 192.168.1.50 oppure stampante.negozio.lan"})
+        else:
+            indirizzo = ""
+        if "indirizzo" in dati or "tipo" in dati:
+            dati["indirizzo"] = indirizzo
         sede = dati.get("sede")
         if self.instance is not None and sede is not None and sede != self.instance.sede:
             if self.instance.monitor.exclude(sede=sede).exists():
@@ -505,6 +513,21 @@ class StampantiViewSet(ViewSetCliente):
             {"chiave": k, "nome": v["nome"], "carte": {str(c): p for c, p in v["carte"].items()}, "collegamenti": v["collegamenti"], "note": v["note"]}
             for k, v in ticket.MODELLI.items()
         ])
+
+    @action(detail=False, methods=["get"])
+    def windows(self, request):
+        """Le stampanti installate in Windows sui totem, per sede (le riferiscono i totem stessi)."""
+        monitor = Monitor.objects.all()
+        limitate = sedi_visibili(request.user)
+        if limitate is not None:
+            monitor = monitor.filter(sede_id__in=limitate)
+        per_sede = {}
+        for m in monitor.only("sede_id", "info_dispositivo"):
+            for nome in (m.info_dispositivo or {}).get("stampanti_windows") or []:
+                elenco = per_sede.setdefault(str(m.sede_id), [])
+                if nome not in elenco:
+                    elenco.append(nome)
+        return Response(per_sede)
 
     @action(detail=True, methods=["post"])
     def prova(self, request, pk=None):
@@ -914,6 +937,10 @@ class HeartbeatView(VistaPlayer):
                 info["distribuzione"] = {**avanzamento, "riferito": adesso.isoformat()}
             # Il Totem Master riferisce l'impronta del certificato del suo servizio code: va nel
             # comando di installazione dei monitor del negozio, che così la controllano da soli.
+            # Il totem riferisce le stampanti installate in Windows: il pannello le propone per nome.
+            elenco = request.data.get("stampanti_windows")
+            if isinstance(elenco, list):
+                info["stampanti_windows"] = [str(n)[:100] for n in elenco if isinstance(n, str) and n.strip()][:30]
             impronta_totem = str(request.data.get("impronta_totem") or "").upper()
             if re.fullmatch(r"[0-9A-F]{64}", impronta_totem):
                 info["impronta_totem"] = impronta_totem

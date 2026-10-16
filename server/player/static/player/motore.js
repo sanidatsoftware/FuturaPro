@@ -7,7 +7,7 @@
 // Ogni testo che arriva da fuori (titoli, nomi) passa da textContent, mai da innerHTML.
 
 import { acceso, inOnda, istanteNelFuso } from "./regole.js";
-import { disegnaTicket, immagineEpson } from "./ticket.js";
+import { comandiEscPos, disegnaTicket, immagineEpson } from "./ticket.js";
 
 const RISOLUZIONE = { orizzontale: [1920, 1080], verticale: [1080, 1920] };
 const ATTESA_SE_VUOTO = 5000;
@@ -48,7 +48,12 @@ export class Motore {
     if (telefono) Object.assign(dati, { qr: `${telefono.url}prova`, testo_qr: telefono.testo });
     try {
       await stampaBiglietto(config, dati);
-      return { ok: true, messaggio: config.stampa === "epson" ? `Inviato alla stampante ${config.stampante}.` : "Inviato alla stampante di sistema del totem." };
+      const dove = {
+        epson: `Inviato alla stampante ${config.stampante}.`,
+        rete: `Inviato alla stampante ${config.stampante} (porta 9100).`,
+        windows: `Inviato alla stampante di Windows «${config.stampante}».`,
+      };
+      return { ok: true, messaggio: dove[config.stampa] || "Inviato alla stampante predefinita di Windows." };
     } catch (e) {
       return { ok: false, messaggio: erroreStampa(e) };
     }
@@ -1120,8 +1125,48 @@ async function stampaConLayout(config, dati) {
   window.print();
 }
 
+// Windows (driver) e rete (porta 9100) passano dal servizio code del totem: il browser non sa
+// scegliere una stampante di Windows né aprire una connessione sulla porta 9100.
+async function alServizio(percorso, corpo, tipo) {
+  const controllo = new AbortController();
+  const limite = setTimeout(() => controllo.abort(), 20000);
+  let risposta;
+  try {
+    risposta = await fetch(`https://127.0.0.1:8443${percorso}`, {
+      method: "POST", headers: { "Content-Type": tipo }, body: corpo, signal: controllo.signal,
+    });
+  } catch (e) {
+    if (e.name === "AbortError") throw e;
+    throw new TypeError("servizio code del totem non raggiungibile");
+  } finally {
+    clearTimeout(limite);
+  }
+  if (risposta.status === 404) throw new Error("servizio code del totem da aggiornare: rilancia sul totem il comando di installazione");
+  if (!risposta.ok) {
+    const dati = await risposta.json().catch(() => ({}));
+    throw new Error(dati.errore || `servizio HTTP ${risposta.status}`);
+  }
+}
+
+async function stampaDalServizio(config, dati) {
+  // Il biglietto semplice (senza Layout Ticket) prende intestazione e messaggio dalla zona.
+  const layout = config.ticket.id ? config.ticket : {
+    ...config.ticket, intestazione: config.ticket.intestazione || config.intestazione || "", messaggio: config.ticket.messaggio || config.messaggio || "",
+  };
+  const tela = await disegnaTicket(layout, dati);
+  if (config.stampa === "rete") {
+    return alServizio(`/stampa/rete?indirizzo=${encodeURIComponent(config.stampante)}`, comandiEscPos(tela), "application/octet-stream");
+  }
+  const png = await new Promise((ok) => tela.toBlob(ok, "image/png"));
+  return alServizio(`/stampa/windows?stampante=${encodeURIComponent(config.stampante)}`, png, "image/png");
+}
+
 // La stampa di un biglietto: con il Layout Ticket della stampante, o quella semplice.
 async function stampaBiglietto(config, dati) {
+  if (config.stampa === "windows" || config.stampa === "rete") {
+    if (!config.ticket || !config.stampante) throw new Error("stampante senza nome o indirizzo: completala in Anagrafica Stampanti");
+    return stampaDalServizio(config, dati);
+  }
   if (config.stampa !== "epson" && config.stampa !== "browser") return;
   if (config.ticket) return stampaConLayout(config, dati);
   if (config.stampa === "epson") return stampaEpson(config.stampante, dati);

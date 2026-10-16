@@ -632,9 +632,25 @@ async function avviaPlayer() {
     }
   };
 
+  // Sul totem il servizio code dice quali stampanti sono installate in Windows (una volta l'ora):
+  // il pannello le propone per nome in Anagrafica Stampanti. Sui monitor il servizio non c'è.
+  let stampantiWindows = null;
+  let stampantiLette = 0;
+  const leggiStampantiWindows = async () => {
+    if (Date.now() - stampantiLette < 3600_000) return;
+    stampantiLette = Date.now();
+    try {
+      const risposta = await conLimite(`${SERVIZIO_LOCALE}/stampanti`, {}, 3000);
+      if (risposta.ok) stampantiWindows = (await risposta.json()).stampanti || null;
+    } catch {
+      stampantiWindows = null;
+    }
+  };
+
   // Il segnale periodico dice anche quale versione del palinsesto è in onda.
   const battito = async () => {
     await leggiImprontaTotem();
+    await leggiStampantiWindows();
     // Il Totem Master riferisce anche come vanno le copie dei file dei plugin.
     let plugin = null;
     if (mostrato?.code?.plugin) {
@@ -648,7 +664,7 @@ async function avviaPlayer() {
     fetch("/api/player/heartbeat/", {
       method: "POST",
       headers: { ...intestazioni, "Content-Type": "application/json" },
-      body: JSON.stringify({ versione: VERSIONE, postazione: POSTAZIONE, impronta_totem: improntaTotem, manifest: mostrato?.versione || "", problema: motore.problema || null, riposo: motore.inRiposo, attesa_download: Boolean(inAttesa?.fascia), plugin,
+      body: JSON.stringify({ versione: VERSIONE, postazione: POSTAZIONE, impronta_totem: improntaTotem, stampanti_windows: stampantiWindows, manifest: mostrato?.versione || "", problema: motore.problema || null, riposo: motore.inRiposo, attesa_download: Boolean(inAttesa?.fascia), plugin,
         distribuzione: riassuntoAvanzamento(), in_onda: Object.entries(motore.inOnda).map(([zona, voce]) => ({ zona, ...voce })) }),
     })
       .then((risposta) => (risposta.ok && risposta.status !== 204 ? risposta.json() : null))

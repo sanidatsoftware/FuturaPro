@@ -64,13 +64,18 @@ class StampanteTicket(ModelloCliente):
     """Una stampante dei biglietti di un negozio. Si abbina ai totem dall'anagrafica degli schermi."""
 
     class Tipo(models.TextChoices):
-        SISTEMA = "browser", "Stampante di sistema del PC del totem"
+        # Il driver installato in Windows sul totem, scelta per nome (la stampa la fa il servizio code).
+        WINDOWS = "windows", "Stampante di Windows sul totem (driver)"
+        # Comandi ESC/POS diretti sulla porta 9100: nessun driver, nessun ePOS.
+        RETE = "rete", "Stampante di rete senza driver (porta 9100)"
         EPSON = "epson", "Stampante di rete Epson TM (ePOS-Print)"
+        SISTEMA = "browser", "Stampante predefinita di Windows (stampa del browser)"
 
     nome = models.CharField(max_length=100)
     sede = models.ForeignKey("clienti.Sede", on_delete=models.PROTECT, related_name="stampanti")
     tipo = models.CharField(max_length=10, choices=Tipo.choices, default=Tipo.EPSON)
-    # Epson: indirizzo IP o nome in rete, eventualmente con la porta.
+    # Epson e rete: indirizzo IP o nome in rete (rete: eventualmente con la porta, es. 192.168.1.84:9100).
+    # Windows: il nome della stampante come compare in Windows (es. «EPSON TM-T20IV Receipt»).
     indirizzo = models.CharField(max_length=100, blank=True)
     # Il modello (vedi ticket.MODELLI) e la carta montata: decidono la larghezza stampabile.
     modello = models.CharField(max_length=60, default="generica")

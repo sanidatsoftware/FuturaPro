@@ -409,8 +409,9 @@ if ($Tipo -eq "totem") {
 Write-Host "  2. Accesso automatico di Windows (dopo un riavvio il player riparte da solo): lancia anche"
 Write-Host "     irm http://$Server/installa/accesso-automatico.ps1 -OutFile `$env:TEMP\accesso.ps1; powershell -ExecutionPolicy Bypass -File `$env:TEMP\accesso.ps1"
 if ($Tipo -eq "totem") {
-    Write-Host "  3. Stampante dei biglietti: installa il driver della stampante (per Epson TM: 'Advanced Printer Driver')"
-    Write-Host "     e impostala come predefinita; in Hardware -> Anagrafica Stampanti Ticket aggiungila e abbinala al totem."
-    Write-Host "     Per una Epson di rete con ePOS in HTTPS rilancia lo script con -Configura per accettarne il certificato."
+    Write-Host "  3. Stampante dei biglietti, in Hardware -> Anagrafica Stampanti Ticket (poi abbinala al totem):"
+    Write-Host "     - 'Stampante di Windows': con il driver installato qui (per Epson TM: 'Advanced Printer Driver'),"
+    Write-Host "       scelta per nome; non serve che sia la predefinita."
+    Write-Host "     - 'Di rete senza driver': solo l'IP della stampante (porta 9100), nulla da installare in Windows."
 }
 Write-Host "  Per uscire dal player: Ctrl+Alt+Canc -> Esci (o Gestione attività). Per toglierlo: -Rimuovi."

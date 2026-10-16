@@ -207,6 +207,53 @@ class StampanteTest(Base):
         self.assertEqual(self.client.delete(f"/api/stampanti/{stampante['id']}/").status_code, 204)
         self.assertEqual(self.manifest(self.mon_a_milano)["layout"]["zone"][0]["configurazione"]["stampa"], "browser")
 
+    def test_stampante_di_windows_e_di_rete(self):
+        import secrets
+
+        from layout.models import Layout, Zona
+
+        from .models import CredenzialeDispositivo, impronta
+
+        with contesto_cliente(self.a.id):
+            layout = Layout.objects.create(cliente=self.a, nome="Totem", orientamento="orizzontale")
+            Zona.objects.create(cliente=self.a, layout=layout, tipo="prendi_numero", x=0, y=0, larghezza=100, altezza=100,
+                                configurazione={"stampa": "browser", "messaggio": "Grazie"})
+            Monitor.objects.filter(id=self.mon_a_milano.id).update(layout=layout)
+            token = secrets.token_urlsafe(32)
+            CredenzialeDispositivo.objects.create(impronta_token=impronta(token), monitor=self.mon_a_milano, cliente_id=self.a.id)
+        # Il totem riferisce le stampanti installate in Windows: il pannello le propone per sede.
+        intestazione = {"HTTP_AUTHORIZATION": f"Device {token}"}
+        self.client.post("/api/player/heartbeat/", {"versione": "web-1", "stampanti_windows": ["EPSON TM-T20IV Receipt", "Microsoft Print to PDF", 7]},
+                         format="json", **intestazione)
+        self.come(self.admin_a)
+        self.assertEqual(self.client.get("/api/stampanti/windows/").json(),
+                         {str(self.a_milano.id): ["EPSON TM-T20IV Receipt", "Microsoft Print to PDF"]})
+        self.come(self.admin_b)
+        self.assertEqual(self.client.get("/api/stampanti/windows/").json(), {})
+
+        self.come(self.admin_a)
+        base = {"nome": "Banco salumi", "sede": str(self.a_milano.id), "tipo": "windows", "indirizzo": " "}
+        self.assertEqual(self.client.post("/api/stampanti/", base, format="json").status_code, 400)
+        r = self.client.post("/api/stampanti/", {**base, "indirizzo": "EPSON TM-T20IV Receipt (copia 1)"}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        windows = r.json()
+        self.assertEqual(windows["indirizzo"], "EPSON TM-T20IV Receipt (copia 1)")
+        rete = {**base, "nome": "Rete", "tipo": "rete"}
+        self.assertEqual(self.client.post("/api/stampanti/", {**rete, "indirizzo": "EPSON TM"}, format="json").status_code, 400)
+        self.assertEqual(self.client.post("/api/stampanti/", {**rete, "indirizzo": "192.168.1.84:9100"}, format="json").status_code, 201)
+        # Il tipo predefinito di Windows non ha indirizzo.
+        r = self.client.patch(f"/api/stampanti/{windows['id']}/", {"tipo": "browser"}, format="json")
+        self.assertEqual(r.json()["indirizzo"], "")
+        self.client.patch(f"/api/stampanti/{windows['id']}/", {"tipo": "windows", "indirizzo": "EPSON TM-T20IV Receipt"}, format="json")
+
+        # Senza Layout Ticket il totem riceve il biglietto semplice da disegnare, con i testi della zona.
+        self.client.patch(f"/api/monitor/{self.mon_a_milano.id}/", {"stampante": windows["id"]}, format="json")
+        zona = self.manifest(self.mon_a_milano)["layout"]["zone"][0]["configurazione"]
+        self.assertEqual((zona["stampa"], zona["stampante"], zona["messaggio"]), ("windows", "EPSON TM-T20IV Receipt", "Grazie"))
+        self.assertEqual(zona["ticket"]["disposizione"], "guidata")
+        self.assertEqual(zona["ticket"]["punti"], 576)
+        self.assertNotIn("logo", [e["campo"] for e in zona["ticket"]["elementi"]])
+
     def test_un_solo_totem_master_per_sede(self):
         from hashlib import sha256
 

@@ -212,6 +212,21 @@ export async function disegnaTicket(layout, dati) {
   return tela;
 }
 
+// I punti neri di una striscia del canvas, 1 bit per punto (riga per riga, da sinistra).
+function bitDellaStriscia(ctx, W, inizio, h) {
+  const pixel = ctx.getImageData(0, inizio, W, h).data;
+  const perRiga = Math.ceil(W / 8);
+  const byte = new Uint8Array(perRiga * h);
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < W; c++) {
+      const i = (r * W + c) * 4;
+      const luce = pixel[i] * 0.299 + pixel[i + 1] * 0.587 + pixel[i + 2] * 0.114;
+      if (luce < 128) byte[r * perRiga + (c >> 3)] |= 0x80 >> (c & 7);
+    }
+  }
+  return { byte, perRiga };
+}
+
 // Il canvas come immagine ePOS-Print (1 bit per punto, a strisce): da mettere in <epos-print>.
 export function immagineEpson(tela) {
   const W = tela.width;
@@ -220,19 +235,33 @@ export function immagineEpson(tela) {
   const STRISCIA = 240;
   for (let inizio = 0; inizio < tela.height; inizio += STRISCIA) {
     const h = Math.min(STRISCIA, tela.height - inizio);
-    const pixel = ctx.getImageData(0, inizio, W, h).data;
-    const perRiga = Math.ceil(W / 8);
-    const byte = new Uint8Array(perRiga * h);
-    for (let r = 0; r < h; r++) {
-      for (let c = 0; c < W; c++) {
-        const i = (r * W + c) * 4;
-        const luce = pixel[i] * 0.299 + pixel[i + 1] * 0.587 + pixel[i + 2] * 0.114;
-        if (luce < 128) byte[r * perRiga + (c >> 3)] |= 0x80 >> (c & 7);
-      }
-    }
+    const { byte, perRiga } = bitDellaStriscia(ctx, W, inizio, h);
     let binario = "";
     for (let k = 0; k < byte.length; k += 0x8000) binario += String.fromCharCode.apply(null, byte.subarray(k, k + 0x8000));
     parti.push(`<image width="${perRiga * 8}" height="${h}" color="color_1" mode="mono">${btoa(binario)}</image>`);
   }
   return `${parti.join("")}<feed line="1"/><cut type="feed"/>`;
+}
+
+// Il canvas come comandi ESC/POS (immagine raster «GS v 0» a strisce, avanzamento e taglio):
+// li capisce qualunque stampante termica Epson TM, e compatibile, sulla porta 9100.
+export function comandiEscPos(tela) {
+  const W = tela.width;
+  const ctx = tela.getContext("2d");
+  const parti = [Uint8Array.of(0x1b, 0x40)]; // ESC @: stampante come all'accensione
+  const STRISCIA = 128;
+  for (let inizio = 0; inizio < tela.height; inizio += STRISCIA) {
+    const h = Math.min(STRISCIA, tela.height - inizio);
+    const { byte, perRiga } = bitDellaStriscia(ctx, W, inizio, h);
+    parti.push(Uint8Array.of(0x1d, 0x76, 0x30, 0x00, perRiga & 0xff, perRiga >> 8, h & 0xff, h >> 8), byte);
+  }
+  parti.push(Uint8Array.of(0x1b, 0x64, 0x04)); // ESC d 4: avanti di 4 righe, oltre la taglierina
+  parti.push(Uint8Array.of(0x1d, 0x56, 0x42, 0x00)); // GS V B 0: taglio parziale
+  const totale = new Uint8Array(parti.reduce((n, p) => n + p.length, 0));
+  let posizione = 0;
+  for (const p of parti) {
+    totale.set(p, posizione);
+    posizione += p.length;
+  }
+  return totale;
 }

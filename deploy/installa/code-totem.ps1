@@ -43,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.6.5"
+$Versione = "1.7"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -614,12 +614,16 @@ function Stato-Plugin {
 # HTTP; se la stampante rimanda all'HTTPS (le Epson recenti lo fanno di fabbrica) la chiama in
 # HTTPS accettandone il certificato, solo per indirizzi della rete locale.
 
+try {
 Add-Type -TypeDefinition @"
 using System.Net.Security;
 public static class FpStampante {
     public static RemoteCertificateValidationCallback Accetta = delegate { return true; };
 }
 "@
+} catch {
+    Registra "stampa Epson in HTTPS non disponibile: $($_.Exception.Message)"
+}
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 # Niente «Expect: 100-continue» (.NET lo manda di suo con i POST): il server web delle Epson non lo
 # gestisce e chiude la connessione («Connessione sottostante chiusa»).
@@ -672,6 +676,112 @@ function Invia-Epson([string]$protocollo, [string]$indirizzo, [byte[]]$corpo) {
         $risposta.Close()
     }
     return @{ stato = $stato; testo = $testo; rimando = ($stato -ge 300 -and $stato -lt 400 -and $verso -like "https:*") }
+}
+
+# --- Stampante di Windows (driver) e stampante di rete senza driver (porta 9100) -------
+# Il player manda l'immagine del biglietto (PNG) o i comandi ESC/POS già pronti: qui si
+# stampa con il driver di Windows scelto per nome, oppure si inviano i comandi alla porta 9100.
+
+# Se la compilazione non riesce il servizio code resta in piedi: manca solo questa stampa.
+$script:stampaWindows = $true
+try {
+Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
+using System;
+using System.Drawing;
+using System.Drawing.Printing;
+using System.IO;
+public static class FpStampaWindows {
+    public static string[] Elenco() {
+        var installate = PrinterSettings.InstalledPrinters;
+        var elenco = new string[installate.Count];
+        installate.CopyTo(elenco, 0);
+        return elenco;
+    }
+    // L'immagine larga quanto l'area stampabile, in alto a sinistra, senza finestre.
+    public static void Stampa(string nome, byte[] png) {
+        using (var flusso = new MemoryStream(png))
+        using (var immagine = Image.FromStream(flusso))
+        using (var documento = new PrintDocument()) {
+            documento.PrinterSettings.PrinterName = nome;
+            if (!documento.PrinterSettings.IsValid) throw new Exception("stampante «" + nome + "» non installata in Windows");
+            documento.DocumentName = "FuturaPro - biglietto";
+            documento.PrintController = new StandardPrintController();
+            documento.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
+            documento.PrintPage += (mittente, pagina) => {
+                float larghezza = pagina.PageSettings.PrintableArea.Width;
+                float altezza = larghezza * immagine.Height / immagine.Width;
+                pagina.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                pagina.Graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                pagina.Graphics.DrawImage(immagine, 0, 0, larghezza, altezza);
+                pagina.HasMorePages = false;
+            };
+            documento.Print();
+        }
+    }
+}
+"@
+} catch {
+    $script:stampaWindows = $false
+    Registra "stampa con i driver di Windows non disponibile: $($_.Exception.Message)"
+}
+
+function Stampanti-Windows {
+    if (-not $script:stampaWindows) { return @() }
+    try { return @([FpStampaWindows]::Elenco()) } catch { return @() }
+}
+
+function Gestisci-Stampa-Windows($contesto) {
+    $richiesta = $contesto.Request
+    $nome = [string]$richiesta.QueryString["stampante"]
+    if (-not $nome) { Rispondi $contesto 400 @{ errore = "manca il nome della stampante di Windows" }; return }
+    if (-not $script:stampaWindows) { Rispondi $contesto 502 @{ errore = "stampa con i driver di Windows non disponibile su questo totem (vedi registro del servizio)" }; return }
+    if (@(Stampanti-Windows) -notcontains $nome) {
+        Rispondi $contesto 502 @{ errore = "stampante «$nome» non installata in Windows su questo totem" }; return
+    }
+    $png = Leggi-Byte $richiesta (8MB)
+    if ($null -eq $png) { Rispondi $contesto 413 @{ errore = "biglietto troppo grande" }; return }
+    try {
+        [FpStampaWindows]::Stampa($nome, $png)
+    } catch {
+        $e = $_.Exception
+        while ($e.InnerException) { $e = $e.InnerException }
+        Registra "stampa su «$nome»: $($e.Message)"
+        Rispondi $contesto 502 @{ errore = "stampa su «$nome» non riuscita ($($e.Message))" }; return
+    }
+    Rispondi $contesto 204 $null
+}
+
+function Gestisci-Stampa-Rete($contesto) {
+    $richiesta = $contesto.Request
+    $indirizzo = [string]$richiesta.QueryString["indirizzo"]
+    $porta = 9100
+    if ($indirizzo -match '^(.+):(\d+)$') { $indirizzo = $Matches[1]; $porta = [int]$Matches[2] }
+    if (-not (Indirizzo-Rete-Locale $indirizzo)) {
+        Rispondi $contesto 400 @{ errore = "indirizzo della stampante non valido (serve un IP della rete locale)" }; return
+    }
+    if ($porta -lt 9100 -or $porta -gt 9109) { Rispondi $contesto 400 @{ errore = "porta non valida (da 9100 a 9109)" }; return }
+    $comandi = Leggi-Byte $richiesta (8MB)
+    if ($null -eq $comandi) { Rispondi $contesto 413 @{ errore = "biglietto troppo grande" }; return }
+    $cliente = New-Object System.Net.Sockets.TcpClient
+    try {
+        $collegamento = $cliente.BeginConnect($indirizzo, $porta, $null, $null)
+        if (-not $collegamento.AsyncWaitHandle.WaitOne(5000)) { throw "nessuna risposta sulla porta $porta" }
+        $cliente.EndConnect($collegamento)
+        $flusso = $cliente.GetStream()
+        $flusso.WriteTimeout = 15000
+        $flusso.Write($comandi, 0, $comandi.Length)
+        $flusso.Flush()
+        Start-Sleep -Milliseconds 300   # la stampante legge tutto prima della chiusura
+    } catch {
+        $motivo = "$_"
+        $e = $_.Exception
+        while ($e.InnerException) { $e = $e.InnerException; $motivo = $e.Message }
+        Registra "stampa su $($indirizzo):$($porta): $motivo"
+        Rispondi $contesto 502 @{ errore = "stampante $($indirizzo):$porta non raggiungibile dal totem ($motivo)" }; return
+    } finally {
+        $cliente.Close()
+    }
+    Rispondi $contesto 204 $null
 }
 
 function Gestisci-Stampa($contesto) {
@@ -747,6 +857,18 @@ function Gestisci($contesto) {
     if ($percorso -match "^/plugin/prova/(prezzo|ingredienti)$" -and ($metodo -eq "POST" -or $metodo -eq "GET")) {
         if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }
         Gestisci-Prova $contesto $metodo $Matches[1]; return
+    }
+    if ($metodo -eq "GET" -and $percorso -eq "/stampanti") {
+        if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }
+        Rispondi $contesto 200 @{ stampanti = @(Stampanti-Windows) }; return
+    }
+    if ($metodo -eq "POST" -and $percorso -eq "/stampa/windows") {
+        if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }
+        Gestisci-Stampa-Windows $contesto; return
+    }
+    if ($metodo -eq "POST" -and $percorso -eq "/stampa/rete") {
+        if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }
+        Gestisci-Stampa-Rete $contesto; return
     }
     if ($metodo -eq "POST" -and $percorso -eq "/stampa/epson") {
         if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }

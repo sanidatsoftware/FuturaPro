@@ -380,9 +380,18 @@ export async function schedaDownload() {
 // Dispositivi Video». La stampa di prova la esegue un totem abbinato e in linea.
 
 export const TIPI_STAMPANTE = [
+  ["windows", "Stampante di Windows sul totem (driver)"],
+  ["rete", "Di rete senza driver (porta 9100)"],
   ["epson", "Epson di rete (ePOS-Print)"],
-  ["browser", "Stampante di sistema del PC del totem"],
+  ["browser", "Predefinita di Windows (stampa del browser)"],
 ];
+
+// Cosa va scritto nel campo «indirizzo», secondo il tipo.
+const CAMPO_INDIRIZZO = {
+  windows: ["Nome della stampante in Windows", "es. EPSON TM-T20IV Receipt"],
+  rete: ["Indirizzo IP (porta 9100)", "es. 192.168.1.84"],
+  epson: ["Indirizzo IP (Epson di rete)", "es. 192.168.1.50"],
+};
 
 function esitoProva(p) {
   const ora = (iso) => new Date(iso).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
@@ -399,8 +408,9 @@ let attesaProva = null;
 export async function schedaStampanti() {
   const { crea, sezione, api, prova, campo, scelta, tabella, avvisa } = H;
   clearTimeout(attesaProva);
-  const [stampanti, sedi, layoutTicket, modelli] = await Promise.all([
+  const [stampanti, sedi, layoutTicket, modelli, windows] = await Promise.all([
     H.elenco("/api/stampanti/"), H.elenco("/api/sedi/"), H.elenco("/api/layout-ticket/").catch(() => []), api("GET", "/api/stampanti/modelli/"),
+    api("GET", "/api/stampanti/windows/").catch(() => ({})),
   ]);
   const nomeModello = (k) => modelli.find((m) => m.chiave === k)?.nome || "Altra stampante";
   const modifica = H.ruoloGestione() || H.stato.io.ruolo === "tecnico";
@@ -411,8 +421,12 @@ export async function schedaStampanti() {
     const riga = crea("div", { classe: "riga" }, box);
     const nome = campo("Nome", crea("input", { value: st?.nome || "", placeholder: "es. Epson banco salumi", maxLength: 100 }), riga);
     const sede = campo("Sede", scelta(sedi.map((x) => [x.id, x.nome]), st?.sede), riga);
-    const tipo = campo("Tipo", scelta(TIPI_STAMPANTE, st?.tipo || "epson"), riga);
-    const indirizzo = campo("Indirizzo IP (Epson di rete)", crea("input", { value: st?.indirizzo || "", placeholder: "es. 192.168.1.50", maxLength: 100 }), riga);
+    const tipo = campo("Tipo", scelta(TIPI_STAMPANTE, st?.tipo || "windows"), riga);
+    // Per le stampanti di Windows, i nomi che riferiscono i totem della sede (si può anche scrivere).
+    const elencoWindows = crea("datalist", { id: `stampanti-windows-${Math.random().toString(36).slice(2)}` }, box);
+    const indirizzo = campo("Indirizzo", crea("input", { value: st?.indirizzo || "", maxLength: 100, size: 30 }), riga);
+    indirizzo.setAttribute("list", elencoWindows.id);
+    const etichetta = indirizzo.closest("label");
     const modello = campo("Modello", scelta(modelli.map((m) => [m.chiave, m.nome]), modelli.some((m) => m.chiave === st?.modello) ? st.modello : "TM-T20IV"), riga);
     const carta = campo("Carta", scelta([[80, "80 mm"], [58, "58 mm"]], st?.carta || 80), riga);
     const larghezza = crea("p", { classe: "tenue" }, box);
@@ -429,11 +443,25 @@ export async function schedaStampanti() {
     const intestazione = campo("Intestazione (vuoto = dal layout)", crea("input", { value: st?.intestazione || "", maxLength: 60, size: 28 }), riga2);
     const messaggio = campo("Messaggio in fondo (vuoto = dal layout)", crea("input", { value: st?.messaggio || "", maxLength: 120, size: 34 }), riga2);
     const note = campo("Note", crea("input", { value: st?.note || "", maxLength: 200, size: 28 }), riga2);
-    const aggiorna = () => (indirizzo.closest("label").hidden = tipo.value !== "epson");
+    const suggerimento = crea("p", { classe: "tenue" }, box);
+    const aggiorna = () => {
+      const voce = CAMPO_INDIRIZZO[tipo.value];
+      etichetta.hidden = !voce;
+      if (voce) {
+        etichetta.firstChild.textContent = voce[0];
+        indirizzo.placeholder = voce[1];
+      }
+      const nomi = windows[sede.value] || [];
+      elencoWindows.replaceChildren(...(tipo.value === "windows" ? nomi : []).map((n) => crea("option", { value: n })));
+      suggerimento.textContent = tipo.value !== "windows" ? ""
+        : nomi.length ? `Stampanti installate sui totem della sede: ${nomi.join(" · ")}. Scegline una dall'elenco del campo.`
+          : "Nessun totem della sede ha ancora riferito le sue stampanti di Windows (lo fa entro un'ora dall'aggiornamento del servizio code): scrivi il nome esatto come compare in «Stampanti e scanner».";
+    };
     tipo.addEventListener("change", aggiorna);
+    sede.addEventListener("change", aggiorna);
     aggiorna();
     return () => ({
-      nome: nome.value.trim(), sede: sede.value, tipo: tipo.value, indirizzo: tipo.value === "epson" ? indirizzo.value : "",
+      nome: nome.value.trim(), sede: sede.value, tipo: tipo.value, indirizzo: CAMPO_INDIRIZZO[tipo.value] ? indirizzo.value.trim() : "",
       modello: modello.value, carta: parseInt(carta.value, 10), layout: layout.value || null, intestazione: intestazione.value, messaggio: messaggio.value, note: note.value,
     });
   };
@@ -446,8 +474,10 @@ export async function schedaStampanti() {
   }, intro);
   crea("p", {
     classe: "tenue",
-    testo: "Epson di rete (es. TM-T20IV con scheda Ethernet): indirizzo IP fisso e ePOS-Print attivo; se il totem usa il player in HTTPS, il certificato della stampante va accettato una volta dal browser del totem. "
-      + "Stampante di sistema: quella predefinita di Windows sul PC del totem (Chrome con --kiosk-printing).",
+    testo: "Stampante di Windows: il driver installato sul totem (es. «EPSON TM-T20IV Receipt»), scelta per nome; non serve che sia la predefinita. "
+      + "Di rete senza driver: il totem manda il biglietto direttamente all'IP della stampante sulla porta 9100 (Epson TM e compatibili ESC/POS), senza installare nulla in Windows. "
+      + "Epson di rete (ePOS-Print): il servizio web della stampante, da attivare nelle sue impostazioni. "
+      + "Predefinita di Windows: la stampa del browser verso la stampante predefinita del PC del totem.",
   }, intro);
   if (modifica) {
     if (!sedi.length) crea("p", { classe: "nota", testo: "Prima crea una sede, in «Sedi e gruppi»." }, intro);

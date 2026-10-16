@@ -18,13 +18,17 @@ def per_il_player(stampante) -> dict | None:
     if stampante is None:
         return None
     from .ticket import per_il_player as ticket
-    from .ticket import punti_stampante
+    from .ticket import punti_stampante, semplice
 
+    punti = punti_stampante(stampante.modello, stampante.carta)
+    disegno = ticket(stampante.layout, punti)
+    # Windows e rete stampano sempre un'immagine: senza layout, quella del biglietto semplice.
+    if disegno is None and stampante.tipo in ("windows", "rete"):
+        disegno = semplice(punti, stampante.carta)
     return {
         "id": str(stampante.id), "nome": stampante.nome, "stampa": stampante.tipo,
         "stampante": stampante.indirizzo, "intestazione": stampante.intestazione, "messaggio": stampante.messaggio,
-        "punti": punti_stampante(stampante.modello, stampante.carta),
-        "ticket": ticket_con_testi(ticket(stampante.layout, punti_stampante(stampante.modello, stampante.carta)), stampante),
+        "punti": punti, "ticket": ticket_con_testi(disegno, stampante),
     }
 
 
