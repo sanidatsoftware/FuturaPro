@@ -1113,6 +1113,10 @@ async function sezioneInstallazione() {
     const s = dati.sedi.find((x) => x.id === sceltaSede.value) || dati.sedi[0];
     blocco("Totem (Totem Master del negozio)", s.comando_totem, "Copia il comando per il PC del totem.");
     blocco("Monitor", s.comando_monitor, "Copia il comando per il PC di un monitor del negozio.");
+    if (dati.comando_accesso) {
+      blocco("Accesso automatico di Windows (totem e monitor, dopo l'installazione)", dati.comando_accesso,
+        "Copia il comando: dopo un riavvio Windows entra da solo con l'utente del player e il player riparte. Chiede la password dell'utente e la salva cifrata.");
+    }
     const note = [];
     if (!dati.impronta_server) note.push("Il server non ha un certificato interno da controllare (usa un certificato pubblico): nessuna impronta da confrontare.");
     if (!s.totem) note.push("Per i monitor manca l'IP del Totem Master: scrivilo in Impostazioni → Sedi e gruppi, poi ricarica questa pagina (lo script lo chiederà).");

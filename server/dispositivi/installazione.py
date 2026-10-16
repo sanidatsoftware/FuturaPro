@@ -91,4 +91,6 @@ def comandi(request, sedi, monitor) -> dict:
                 monitor_cmd += f" -ImprontaTotem {impronta_totem}"
         voce["comando_monitor"] = monitor_cmd
         risultato.append(voce)
-    return {"server": server, "impronta_server": impronta, "sedi": risultato}
+    accesso = (f"irm http://{server}/installa/accesso-automatico.ps1 -OutFile $env:TEMP\\accesso.ps1; "
+               f"powershell -ExecutionPolicy Bypass -File $env:TEMP\\accesso.ps1")
+    return {"server": server, "impronta_server": impronta, "sedi": risultato, "comando_accesso": accesso}

@@ -208,9 +208,21 @@ Video → Abbina uno schermo** → codice, nome, sede, tipo *Monitor orizzontale
 **Abbina**. In pochi secondi il
 monitor mostra il layout.
 
-**Accesso automatico** (così dopo un'interruzione di corrente riparte da solo): `Win+R` →
-`netplwiz` → togli la spunta a *«Per utilizzare questo computer è necessario che l'utente immetta il
-nome utente e la password»* → inserisci la password dell'utente. Nel BIOS del PC imposta anche
+**Accesso automatico** (così dopo un riavvio, per aggiornamenti di Windows o un'interruzione di
+corrente, Windows entra da solo e il player riparte): in PowerShell come amministratore
+
+```powershell
+irm http://SERVER/installa/accesso-automatico.ps1 -OutFile $env:TEMP\accesso.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\accesso.ps1
+```
+
+(il comando pronto è anche nel pannello, in «Installare un nuovo totem o monitor»). Chiede la
+password dell'utente del player e la controlla; la salva **cifrata** tra i segreti di sistema di
+Windows (LSA, come lo strumento «Autologon» di Microsoft), mai in chiaro nel registro; riattiva
+l'accesso con password se Windows Hello lo nasconde; imposta l'orario di attività di Windows
+Update (opzioni `-Apertura 7 -Chiusura 22`) perché i riavvii avvengano a negozio chiuso. Con
+`-Disattiva` toglie tutto. In alternativa, a mano: `Win+R` → `netplwiz` → togli la spunta a
+*«Per utilizzare questo computer è necessario che l'utente immetta il nome utente e la
+password»*. Nel BIOS del PC imposta anche
 l'accensione automatica al ritorno della corrente (*Restore on AC power loss: Power On*).
 
 Monitor montato in verticale? Nel pannello, in **Hardware → Anagrafica Dispositivi Video**, nella

@@ -306,7 +306,7 @@ if ($browser -like "*msedge.exe") { $argomenti += "--edge-kiosk-type=fullscreen"
 # Sul totem i biglietti escono senza finestra di stampa, sulla stampante predefinita di Windows.
 if ($Tipo -eq "totem") { $argomenti += "--kiosk-printing" }
 
-@{ server = $Server; tipo = $Tipo; browser = $browser; argomenti = $argomenti; postazione = $postazione } |
+@{ server = $Server; tipo = $Tipo; browser = $browser; argomenti = $argomenti; postazione = $postazione; utente = $Utente } |
     ConvertTo-Json | Set-Content -Path $Impostazioni -Encoding UTF8
 
 # Il "guardiano": avvia il browser, lo riapre se si chiude, e lo riavvia se la pagina del player
@@ -406,8 +406,8 @@ if ($Tipo -eq "totem") {
     Write-Host "     Poi in Impostazioni -> Sedi e gruppi scrivi $IndirizzoTotem come IP del Totem Master della sede,"
     Write-Host "     e nella riga del totem (Anagrafica Dispositivi Video) spunta 'Totem Master (server code)' e scegli la stampante."
 }
-Write-Host "  2. Accesso automatico di Windows: premi Win+R, scrivi netplwiz, togli la spunta"
-Write-Host "     'Per utilizzare questo computer è necessario che l'utente immetta il nome utente e la password'."
+Write-Host "  2. Accesso automatico di Windows (dopo un riavvio il player riparte da solo): lancia anche"
+Write-Host "     irm http://$Server/installa/accesso-automatico.ps1 -OutFile `$env:TEMP\accesso.ps1; powershell -ExecutionPolicy Bypass -File `$env:TEMP\accesso.ps1"
 if ($Tipo -eq "totem") {
     Write-Host "  3. Stampante dei biglietti: installa il driver della stampante (per Epson TM: 'Advanced Printer Driver')"
     Write-Host "     e impostala come predefinita; in Hardware -> Anagrafica Stampanti Ticket aggiungila e abbinala al totem."
