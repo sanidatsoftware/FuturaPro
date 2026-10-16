@@ -10,6 +10,24 @@
 <body data-modo="{{ modo }}" data-monitor="{{ monitor|default:'' }}" data-versione="{{ versione }}">
   <div id="schermo"></div>
   <div id="avviso"><h1>FuturaPro</h1><p>Avvio…</p></div>
+  <script>
+    // Rete di sicurezza: se il motore non parte (es. dopo un aggiornamento la copia salvata ha
+    // mescolato file vecchi e nuovi), si buttano le copie dell'app e si ricarica, al massimo
+    // una volta ogni 10 minuti. avvio.js segna la partenza in window.futuraproAvviato.
+    if (document.body.dataset.modo === "player") {
+      setTimeout(function () {
+        if (window.futuraproAvviato) return;
+        var chiave = "futurapro.ripristino", ultimo = 0;
+        try { ultimo = Number(localStorage.getItem(chiave)) || 0; localStorage.setItem(chiave, String(Date.now())); } catch (e) {}
+        if (Date.now() - ultimo < 600000) return;
+        var ricarica = function () { location.reload(); };
+        if (!window.caches) return ricarica();
+        caches.keys().then(function (nomi) {
+          return Promise.all(nomi.filter(function (n) { return n.indexOf("futurapro-app-") === 0; }).map(function (n) { return caches.delete(n); }));
+        }).then(ricarica, ricarica);
+      }, 45000);
+    }
+  </script>
   <script type="module" src="{% static 'player/avvio.js' %}"></script>
 </body>
 </html>

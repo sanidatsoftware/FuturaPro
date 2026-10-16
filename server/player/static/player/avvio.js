@@ -13,6 +13,9 @@ const OGNI_SCHERMATA = 8_000;
 const LARGHEZZA_SCHERMATA = 960;
 const CACHE_FILE = "futurapro-file";
 
+// Il modulo e tutto quello che importa sono stati caricati (vedi la rete di sicurezza in schermo.html).
+window.futuraproAvviato = true;
+
 const radice = document.getElementById("schermo");
 const avviso = document.getElementById("avviso");
 const impostazioni = document.body.dataset;
