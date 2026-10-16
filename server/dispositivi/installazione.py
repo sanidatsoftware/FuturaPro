@@ -41,7 +41,8 @@ def impronta_certificato(percorso: str) -> str:
         return ""
 
 
-_letta = {"quando": 0.0, "impronta": ""}
+# «quando» None: mai letta (time.monotonic() parte dall'accensione: 0 non vuol dire «molto tempo fa»).
+_letta = {"quando": None, "impronta": ""}
 
 
 def impronta_server() -> str:
@@ -50,14 +51,16 @@ def impronta_server() -> str:
     impronta = impronta_certificato(settings.FUTURAPRO_CA_CERT)
     if impronta or not settings.FUTURAPRO_CA_URL:
         return impronta
-    if time.monotonic() - _letta["quando"] < 600:
+    if _letta["quando"] is not None and time.monotonic() - _letta["quando"] < 600:
         return _letta["impronta"]
     impronta = ""
     try:
         richiesta = urllib.request.Request(settings.FUTURAPRO_CA_URL)
         if settings.FUTURAPRO_INDIRIZZO:
             richiesta.add_header("Host", settings.FUTURAPRO_INDIRIZZO)
-        with urllib.request.urlopen(richiesta, timeout=3) as risposta:
+        # Caddy è nella stessa rete interna: niente proxy, anche se l'ambiente ne indica uno.
+        apri = urllib.request.build_opener(urllib.request.ProxyHandler({})).open
+        with apri(richiesta, timeout=3) as risposta:
             impronta = impronta_pem(risposta.read(100_000).decode("ascii", "ignore"))
     except (OSError, ValueError):
         impronta = ""

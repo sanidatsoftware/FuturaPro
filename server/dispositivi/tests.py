@@ -504,11 +504,11 @@ class ImprontaDaCaddyTest(Base):
         server = http.server.HTTPServer(("127.0.0.1", 0), Gestore)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         try:
-            installazione._letta.update(quando=0.0, impronta="")
+            installazione._letta.update(quando=None, impronta="")
             with override_settings(FUTURAPRO_CA_CERT="", FUTURAPRO_CA_URL=f"http://127.0.0.1:{server.server_port}/futurapro-ca.crt",
                                    FUTURAPRO_INDIRIZZO="192.168.1.67"):
                 self.assertEqual(installazione.impronta_server(), attesa)
             self.assertEqual(host_ricevuti, ["192.168.1.67"])
         finally:
             server.shutdown()
-            installazione._letta.update(quando=0.0, impronta="")
+            installazione._letta.update(quando=None, impronta="")
