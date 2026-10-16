@@ -14,6 +14,24 @@
     // Rete di sicurezza: se il motore non parte (es. dopo un aggiornamento la copia salvata ha
     // mescolato file vecchi e nuovi), si buttano le copie dell'app e si ricarica, al massimo
     // una volta ogni 10 minuti. avvio.js segna la partenza in window.futuraproAvviato.
+    // Gli errori dell'avvio (file non caricato, errore nel codice): se lo schermo resta su «Avvio…»
+    // si scrivono sotto, così si legge la causa senza aprire gli strumenti del browser.
+    window.futuraproErrori = [];
+    window.addEventListener("error", function (e) {
+      var file = e.target && (e.target.src || e.target.href);
+      window.futuraproErrori.push(e.message ? e.message + (e.filename ? " (" + e.filename.split("/").pop() + ":" + e.lineno + ")" : "") : "file non caricato: " + file);
+    }, true);
+    window.addEventListener("unhandledrejection", function (e) {
+      window.futuraproErrori.push("errore: " + (e.reason && e.reason.message ? e.reason.message : String(e.reason)));
+    });
+    setTimeout(function () {
+      var avviso = document.getElementById("avviso");
+      if (avviso.hidden || !window.futuraproErrori.length) return;
+      var p = document.createElement("p");
+      p.style.cssText = "font-size:1.8vmin;color:#fca5a5;max-width:90vw;white-space:pre-wrap;margin-top:2vmin";
+      p.textContent = "Versione " + document.body.dataset.versione + "\n" + window.futuraproErrori.slice(0, 6).join("\n");
+      avviso.appendChild(p);
+    }, 15000);
     if (document.body.dataset.modo === "player") {
       setTimeout(function () {
         if (window.futuraproAvviato) return;
