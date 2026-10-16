@@ -247,8 +247,10 @@ export function preparaLettore({ motore, indirizzo }) {
     if (bilancia) {
       parametri.set("plu", bilancia.plu);
       parametri.set("reparto", bilancia.reparto);
-      if (config.mostra_prezzo) parametri.set("prezzo", "1");
     }
+    // Il prezzo (con l'eventuale offerta) da Info Prezzo, per qualunque codice: non solo per le
+    // etichette riconosciute dai prefissi.
+    if (tipo === "ingredienti" && config.mostra_prezzo) parametri.set("prezzo", "1");
     const esito = await chiedi(tipo, parametri);
     if (questa !== richiesta) return; // nel frattempo è arrivata un'altra lettura
     mostraArticolo(tipo, { ...esito, codice }, bilancia);
@@ -310,6 +312,13 @@ export function preparaLettore({ motore, indirizzo }) {
       testo = testo.slice(0, -1);
       aggiornaCampo();
     };
+    // Un prodotto trovato per nome. Per gli ingredienti con il prezzo si richiede per codice, così
+    // arriva anche il prezzo di Info Prezzo con l'eventuale offerta (la bilancia ha solo il pieno).
+    const scegli = (articolo) => {
+      chiudiRicerca();
+      if (tipo === "ingredienti" && config.mostra_prezzo && /^\d{7,}$/.test(String(articolo.codice || ""))) cerca(String(articolo.codice), tipo);
+      else mostraArticolo(tipo, { trovato: true, articolo });
+    };
     const mostraElenco = (articoli) => {
       elenco.replaceChildren();
       elenco.classList.remove("vuoto");
@@ -320,10 +329,7 @@ export function preparaLettore({ motore, indirizzo }) {
         const valore = prezzo ? (prezzo.offerta ?? prezzo.pieno) : null;
         if (valore !== null && valore !== undefined) crea("span", "plugin-ricerca-prezzo", voce).textContent = euro(valore);
         else if (articolo.reparto) crea("span", "plugin-ricerca-prezzo", voce).textContent = articolo.reparto;
-        voce.addEventListener("click", () => {
-          chiudiRicerca();
-          mostraArticolo(tipo, { trovato: true, articolo });
-        });
+        voce.addEventListener("click", () => scegli(articolo));
       }
     };
     const avvia = async () => {
@@ -353,8 +359,7 @@ export function preparaLettore({ motore, indirizzo }) {
       else if (esito.errore) nota.textContent = esito.messaggio || "Servizio non disponibile, riprova tra poco.";
       else if (!trovati.length) nota.textContent = `Nessun prodotto trovato per «${cercato}».`;
       else if (trovati.length === 1) {
-        chiudiRicerca();
-        mostraArticolo(tipo, { trovato: true, articolo: trovati[0] });
+        scegli(trovati[0]);
         return;
       } else nota.textContent = `${trovati.length === 30 ? "Primi 30 prodotti" : `${trovati.length} prodotti`}: tocca quello che cerchi.`;
       if (trovati.length > 1) mostraElenco(trovati);

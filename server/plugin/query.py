@@ -232,6 +232,7 @@ LIMIT 300
 
 DIGI_RICERCA = """
 SELECT p.Label AS descrizione,
+       substr(p.BarCode1, 1, 7) AS codice,
        max(d.Name) AS reparto,
        trim(coalesce(i.Description, CASE WHEN t5.Message LIKE 'INGR%' THEN t5.Message END)) AS ingredienti,
        '' AS allergeni,
