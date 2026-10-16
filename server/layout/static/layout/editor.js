@@ -91,6 +91,20 @@ const TIPI = {
   pulsante_plugin: { nome: "Pulsante Info", colore: "#1e88e5", dimensioni: [24, 9] },
 };
 
+// Perché il pulsante non si vedrà sul totem (null: tutto a posto, o stato non ancora letto).
+function statoPlugin(tipo) {
+  const p = stato.archivi.plugin?.[tipo];
+  const nome = tipo === "ingredienti" ? "Info Ingredienti" : "Info Prezzo";
+  if (!p || p.errore === "sconosciuto") return null;
+  if (p.errore === "non_abilitato") return `⚠️ ${nome} non è abilitato per questa azienda (lo abilita il SystemAdministrator): il pulsante non comparirà sul totem.`;
+  if (!p.attivo) return `⚠️ ${nome} non è attivo (pannello: Plugin → ${nome} → «Attivo»): il pulsante non comparirà sul totem.`;
+  if (!p.formato && !p.query && !p.query_generata) return `⚠️ ${nome}: manca come leggere il file (Plugin → ${nome}: scegli il gestionale o indica le colonne): il pulsante non comparirà sul totem.`;
+  const senza = (p.negozi || []).filter((n) => !n.fonte).map((n) => n.nome);
+  if (senza.length && senza.length === (p.negozi || []).length) return `⚠️ ${nome}: nessun negozio ha il file indicato (Plugin → ${nome} → negozi): il pulsante non comparirà sul totem.`;
+  if (senza.length) return `ℹ️ ${nome}: nei negozi ${senza.join(", ")} manca il file, lì il pulsante non comparirà.`;
+  return null;
+}
+
 function nomeTipo(zona) {
   if (zona.tipo === "pulsante_plugin") return zona.configurazione?.plugin === "ingredienti" ? "Pulsante Info Ingredienti" : "Pulsante Info Prezzo";
   return TIPI[zona.tipo].nome;
@@ -664,6 +678,10 @@ function mostraProprieta() {
     return;
   }
   crea("h2", { testo: nomeTipo(zona) }, pannello);
+  if (zona.tipo === "pulsante_plugin") {
+    const avviso = statoPlugin(zona.configurazione?.plugin || "prezzo");
+    if (avviso) crea("p", { classe: "avviso-plugin", testo: avviso }, pannello);
+  }
   for (const messaggio of stato.errori.get(zona._chiave) || []) crea("p", { classe: "errore-campo", testo: messaggio }, pannello);
 
   const nome = crea("label", { classe: "campo" }, pannello);
@@ -947,7 +965,13 @@ async function avviaEditor(id) {
     const [layout, playlist, contenuti, reparti, listini] = await Promise.all([
       api("GET", `/api/layout/${id}/`), tutti("/api/playlist/"), tutti("/api/contenuti/?uso=libreria"), tutti("/api/reparti/"), tutti("/api/listini/"),
     ]);
-    stato.archivi = { playlist, immagini: contenuti.filter((c) => c.tipo === "immagine"), reparti, listini };
+    stato.archivi = { playlist, immagini: contenuti.filter((c) => c.tipo === "immagine"), reparti, listini, plugin: {} };
+    // Lo stato dei plugin: un pulsante Info Prezzo / Ingredienti sul totem si vede solo se il suo è attivo.
+    for (const tipo of ["prezzo", "ingredienti"]) {
+      api("GET", `/api/plugin/${tipo}/`)
+        .then((dati) => { stato.archivi.plugin[tipo] = dati; })
+        .catch((errore) => { stato.archivi.plugin[tipo] = { errore: errore.stato === 403 ? "non_abilitato" : "sconosciuto" }; });
+    }
     caricaLayout(layout);
   } catch (errore) {
     avvisa(errore.stato === 403 ? "Accedi al pannello per modificare i layout." : errore.message);
