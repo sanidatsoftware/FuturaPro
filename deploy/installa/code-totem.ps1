@@ -43,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.6"
+$Versione = "1.6.1"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -608,6 +608,59 @@ function Stato-Plugin {
     return $stato
 }
 
+# --- Stampante Epson di rete ----------------------------------------------------------
+# Il player stampa da qui: dalla pagina in HTTPS il browser dovrebbe chiamare la stampante in
+# HTTPS, e il suo certificato autofirmato lo rifiuta («Failed to fetch»). Il servizio la chiama in
+# HTTP sulla rete locale e restituisce la risposta della stampante.
+
+function Indirizzo-Rete-Locale([string]$testo) {
+    $ip = $null
+    if (-not [System.Net.IPAddress]::TryParse($testo, [ref]$ip) -or $ip.AddressFamily -ne "InterNetwork") { return $false }
+    $b = $ip.GetAddressBytes()
+    return ($b[0] -eq 10) -or ($b[0] -eq 172 -and $b[1] -ge 16 -and $b[1] -le 31) -or ($b[0] -eq 192 -and $b[1] -eq 168) -or ($b[0] -eq 169 -and $b[1] -eq 254)
+}
+
+function Gestisci-Stampa($contesto) {
+    $richiesta = $contesto.Request
+    $indirizzo = [string]$richiesta.QueryString["indirizzo"]
+    if (-not (Indirizzo-Rete-Locale $indirizzo)) {
+        Rispondi $contesto 400 @{ errore = "indirizzo della stampante non valido (serve un IP della rete locale)" }; return
+    }
+    $corpo = Leggi-Byte $richiesta (4MB)
+    if ($null -eq $corpo) { Rispondi $contesto 413 @{ errore = "biglietto troppo grande" }; return }
+    $risposta = $null
+    try {
+        $invio = [System.Net.HttpWebRequest]::Create("http://$indirizzo/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000")
+        $invio.Method = "POST"
+        $invio.ContentType = "text/xml; charset=utf-8"
+        $invio.Proxy = $null
+        $invio.Timeout = 12000
+        $invio.ReadWriteTimeout = 12000
+        $invio.ContentLength = $corpo.Length
+        $flusso = $invio.GetRequestStream()
+        $flusso.Write($corpo, 0, $corpo.Length)
+        $flusso.Close()
+        $risposta = $invio.GetResponse()
+    } catch {
+        $e = $_.Exception
+        while ($e -and -not ($e -is [System.Net.WebException])) { $e = $e.InnerException }
+        if ($e -and $e.Response) { $risposta = $e.Response }
+        else {
+            $motivo = if ($e) { $e.Message } else { $_.Exception.Message }
+            Registra "stampa su $($indirizzo): $motivo"
+            Rispondi $contesto 502 @{ errore = "stampante $indirizzo non raggiungibile dal totem ($motivo)" }; return
+        }
+    }
+    try {
+        $lettore = New-Object System.IO.StreamReader($risposta.GetResponseStream(), [System.Text.Encoding]::UTF8)
+        $testo = $lettore.ReadToEnd()
+        $stato = [int]$risposta.StatusCode
+    } finally {
+        $risposta.Close()
+    }
+    Rispondi $contesto 200 @{ stato = $stato; risposta = $testo }
+}
+
 function Gestisci($contesto) {
     $richiesta = $contesto.Request
     $percorso = $richiesta.Url.AbsolutePath
@@ -648,6 +701,10 @@ function Gestisci($contesto) {
     if ($percorso -match "^/plugin/prova/(prezzo|ingredienti)$" -and ($metodo -eq "POST" -or $metodo -eq "GET")) {
         if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }
         Gestisci-Prova $contesto $metodo $Matches[1]; return
+    }
+    if ($metodo -eq "POST" -and $percorso -eq "/stampa/epson") {
+        if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }
+        Gestisci-Stampa $contesto; return
     }
     if ($metodo -eq "POST" -and $percorso -eq "/config") {
         if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }

@@ -31,6 +31,16 @@ layout video, eliminacode, player per monitor e totem, teleassistenza, registro)
 - **Installazione** dei PC con i comandi pronti nel pannello: le impronte dei certificati le
   controlla lo script.
 
+### Dopo la 1.6
+
+- **Stampanti Epson di rete** (servizio code `1.6.1`): il totem stampa passando dal suo servizio
+  code, che chiama la stampante in HTTP sulla rete locale. Dal browser in HTTPS la stampante
+  rifiutava la chiamata per il suo certificato autofirmato («Failed to fetch»). Serve rilanciare
+  sul totem il comando di installazione del pannello; i messaggi distinguono «non raggiungibile»
+  da «ePOS-Print non attivo».
+- **Accesso automatico di Windows** (`accesso-automatico.ps1`): password nei segreti di sistema,
+  orario di attività di Windows Update sull'apertura del negozio.
+
 ### Come ci si è arrivati: le tappe della 1.6 (ricostruite dallo storico)
 
 Prima della 1.6 non c'erano numeri di versione: le tappe sono indicate con i numeri di build

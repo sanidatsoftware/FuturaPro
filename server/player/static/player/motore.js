@@ -19,6 +19,13 @@ function crea(tag, classe, genitore) {
   return el;
 }
 
+// Il messaggio di una stampa non riuscita: rete (o tempo scaduto) oppure risposta della stampante.
+function erroreStampa(e) {
+  if (e.name === "AbortError") return "Stampante non raggiungibile o spenta (tempo scaduto).";
+  if (e instanceof TypeError) return `Stampante non raggiungibile o spenta (${e.message}).`;
+  return `Stampa non riuscita: ${e.message}.`;
+}
+
 const attendi = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
 export class Motore {
@@ -43,7 +50,7 @@ export class Motore {
       await stampaBiglietto(config, dati);
       return { ok: true, messaggio: config.stampa === "epson" ? `Inviato alla stampante ${config.stampante}.` : "Inviato alla stampante di sistema del totem." };
     } catch (e) {
-      return { ok: false, messaggio: `Stampante non raggiungibile o spenta (${e.name === "AbortError" ? "tempo scaduto" : e.message}).` };
+      return { ok: false, messaggio: erroreStampa(e) };
     }
   }
 
@@ -1041,23 +1048,49 @@ async function stampaEpson(indirizzo, biglietto) {
     '<cut type="feed"/>');
 }
 
+// Sui totem la stampante passa dal servizio code (127.0.0.1:8443), che la chiama in HTTP sulla
+// rete locale: dalla pagina in HTTPS il browser la dovrebbe chiamare in HTTPS, e il certificato
+// autofirmato della stampante lo rifiuta («Failed to fetch»). Senza servizio (o con uno di una
+// versione precedente) si prova direttamente.
+const SERVIZIO_STAMPA = "https://127.0.0.1:8443/stampa/epson";
+
+async function epsonDalServizio(indirizzo, corpo, segnale) {
+  let risposta;
+  try {
+    risposta = await fetch(`${SERVIZIO_STAMPA}?indirizzo=${encodeURIComponent(indirizzo)}`, {
+      method: "POST", headers: { "Content-Type": "text/xml; charset=utf-8" }, body: corpo, signal: segnale,
+    });
+  } catch (e) {
+    if (e.name === "AbortError") throw e;
+    return null; // servizio non installato su questo PC
+  }
+  if (risposta.status === 404) return null; // servizio di una versione precedente
+  const dati = await risposta.json().catch(() => ({}));
+  if (!risposta.ok) throw new Error(dati.errore || `servizio HTTP ${risposta.status}`);
+  return { stato: dati.stato, testo: dati.risposta || "" };
+}
+
 async function inviaEpson(indirizzo, contenuto) {
   const corpo =
     '<?xml version="1.0" encoding="utf-8"?>' +
     '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>' +
     `<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">${contenuto}</epos-print></s:Body></s:Envelope>`;
-  // Stesso protocollo della pagina: su HTTPS la stampante va usata in HTTPS
-  // (il suo certificato va accettato una volta sul totem).
-  const url = `${location.protocol}//${indirizzo}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
   const controllo = new AbortController();
-  const limite = setTimeout(() => controllo.abort(), 12000);
+  const limite = setTimeout(() => controllo.abort(), 15000);
   try {
-    const risposta = await fetch(url, {
-      method: "POST", headers: { "Content-Type": "text/xml; charset=utf-8" }, body: corpo, signal: controllo.signal,
-    });
-    const testo = await risposta.text();
-    const esito = new DOMParser().parseFromString(testo, "text/xml").querySelector("response");
-    if (esito?.getAttribute("success") !== "true") throw new Error(esito?.getAttribute("code") || `HTTP ${risposta.status}`);
+    let esito = await epsonDalServizio(indirizzo, corpo, controllo.signal);
+    if (!esito) {
+      // Stesso protocollo della pagina: su HTTPS la stampante va usata in HTTPS
+      // (il suo certificato va accettato una volta sul totem).
+      const url = `${location.protocol}//${indirizzo}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
+      const risposta = await fetch(url, {
+        method: "POST", headers: { "Content-Type": "text/xml; charset=utf-8" }, body: corpo, signal: controllo.signal,
+      });
+      esito = { stato: risposta.status, testo: await risposta.text() };
+    }
+    if (esito.stato === 404) throw new Error("ePOS-Print non attivo sulla stampante: attivalo dalla sua pagina web");
+    const risposta = new DOMParser().parseFromString(esito.testo, "text/xml").querySelector("response");
+    if (risposta?.getAttribute("success") !== "true") throw new Error(risposta?.getAttribute("code") || `HTTP ${esito.stato}`);
   } finally {
     clearTimeout(limite);
   }
@@ -1219,7 +1252,7 @@ class ZonaPrendiNumero {
       try {
         await stampaBiglietto(this.config, dati);
       } catch (e) {
-        errore = `Stampante non raggiungibile o spenta (${e.name === "AbortError" ? "tempo scaduto" : e.message}). Ricorda il tuo numero.`;
+        errore = `${erroreStampa(e)} Ricorda il tuo numero.`;
       }
       this.mostraEsito(dati, errore);
     } catch {
