@@ -634,6 +634,7 @@ function Gestisci-Stampa($contesto) {
         $invio.Method = "POST"
         $invio.ContentType = "text/xml; charset=utf-8"
         $invio.Proxy = $null
+        $invio.AllowAutoRedirect = $false
         $invio.Timeout = 12000
         $invio.ReadWriteTimeout = 12000
         $invio.ContentLength = $corpo.Length
@@ -657,6 +658,10 @@ function Gestisci-Stampa($contesto) {
         $stato = [int]$risposta.StatusCode
     } finally {
         $risposta.Close()
+    }
+    # Stampante impostata per rimandare l'HTTP all'HTTPS: lo si dice chiaro invece di inseguirla.
+    if ($stato -ge 300 -and $stato -lt 400) {
+        Rispondi $contesto 502 @{ errore = "la stampante $indirizzo accetta solo HTTPS: nella sua pagina web (SSL/TLS) togli il reindirizzamento da HTTP a HTTPS" }; return
     }
     Rispondi $contesto 200 @{ stato = $stato; risposta = $testo }
 }
