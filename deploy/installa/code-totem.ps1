@@ -43,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.6.2"
+$Versione = "1.6.3"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -621,6 +621,8 @@ public static class FpStampante {
 }
 "@
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+# TLS 1.3 (12288), dove Windows e .NET lo conoscono.
+try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]12288 } catch { }
 
 function Indirizzo-Rete-Locale([string]$testo) {
     $ip = $null
@@ -672,12 +674,27 @@ function Gestisci-Stampa($contesto) {
     }
     $corpo = Leggi-Byte $richiesta (4MB)
     if ($null -eq $corpo) { Rispondi $contesto 413 @{ errore = "biglietto troppo grande" }; return }
+    # Prima in HTTP; in HTTPS se la stampante rimanda lì o chiude la connessione HTTP (alcune,
+    # con il rimando attivo, la chiudono appena ricevono un POST).
+    $esito = $null
+    $problemi = @()
     try {
         $esito = Invia-Epson "http" $indirizzo $corpo
-        if ($esito.rimando) { $esito = Invia-Epson "https" $indirizzo $corpo }
     } catch {
-        Registra "stampa su $($indirizzo): $_"
-        Rispondi $contesto 502 @{ errore = "stampante $indirizzo non raggiungibile dal totem ($_)" }; return
+        $problemi += "HTTP: $_"
+    }
+    if ($null -eq $esito -or $esito.rimando) {
+        try {
+            $esito = Invia-Epson "https" $indirizzo $corpo
+        } catch {
+            $problemi += "HTTPS: $_"
+            $esito = $null
+        }
+    }
+    if ($null -eq $esito) {
+        $motivo = $problemi -join "; "
+        Registra "stampa su $($indirizzo): $motivo"
+        Rispondi $contesto 502 @{ errore = "stampante $indirizzo non raggiungibile dal totem ($motivo)" }; return
     }
     Rispondi $contesto 200 @{ stato = $esito.stato; risposta = $esito.testo }
 }
