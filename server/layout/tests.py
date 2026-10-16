@@ -57,6 +57,8 @@ class LayoutTest(ConFile):
         self.assertEqual(r.status_code, 201, r.content)
         self.assertEqual(self.crea(zone=[zona("pulsante_plugin", plugin="sconti")]).status_code, 400)
         self.assertEqual(self.crea(zone=[zona("pulsante_plugin", forma="stella")]).status_code, 400)
+        self.assertEqual(self.crea(zone=[zona("pulsante_plugin", carattere="Comic Sans")]).status_code, 400)
+        self.assertEqual(self.crea(zone=[zona("pulsante_plugin", carattere="Georgia", dimensione_testo=48, corsivo=True)]).status_code, 201)
         predefinita = valida_configurazione("pulsante_plugin", {})
         self.assertEqual((predefinita["plugin"], predefinita["forma"], predefinita["testo"]), ("prezzo", "arrotondato", ""))
 

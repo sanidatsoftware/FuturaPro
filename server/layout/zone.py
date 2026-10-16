@@ -218,6 +218,9 @@ class PrendiNumero(serializers.Serializer):
 
 
 FORME = ["rettangolo", "arrotondato", "pillola", "cerchio"]
+# Gli stessi caratteri del Layout Ticket: installati in Windows (o generici del browser).
+CARATTERI_PULSANTE = ["sans-serif", "serif", "monospace", "Arial", "Arial Black", "Verdana", "Tahoma", "Trebuchet MS",
+                      "Georgia", "Times New Roman", "Courier New", "Impact", "Segoe UI", "Roboto"]
 
 
 class PulsantePlugin(serializers.Serializer):
@@ -234,6 +237,12 @@ class PulsantePlugin(serializers.Serializer):
     contorno = Colore("#ffffff")
     spessore_contorno = serializers.IntegerField(min_value=0, max_value=30, required=False, default=0)
     grandezza_testo = serializers.IntegerField(min_value=10, max_value=80, required=False, default=34)  # % dell'altezza
+    # La scritta: carattere, grandezza in pixel dello schermo (0 = automatica, con grandezza_testo), stile.
+    carattere = serializers.ChoiceField(CARATTERI_PULSANTE, required=False, default="sans-serif")
+    dimensione_testo = serializers.IntegerField(min_value=0, max_value=400, required=False, default=0)
+    grassetto = serializers.BooleanField(required=False, default=True)
+    corsivo = serializers.BooleanField(required=False, default=False)
+    maiuscolo = serializers.BooleanField(required=False, default=False)
     ombra = serializers.BooleanField(required=False, default=True)
 
 

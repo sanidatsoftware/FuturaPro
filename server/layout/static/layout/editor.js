@@ -268,7 +268,12 @@ const CAMPI = {
     { nome: "forma", etichetta: "Forma", tipo: "scelta", valori: [["rettangolo", "Rettangolo"], ["arrotondato", "Angoli arrotondati"], ["pillola", "Pillola"], ["cerchio", "Cerchio / ovale"]], predefinito: "arrotondato" },
     { nome: "spessore_contorno", etichetta: "Spessore del contorno (px, 0 = senza)", tipo: "numero", min: 0, max: 30, passo: 1, predefinito: 0 },
     { nome: "contorno", etichetta: "Colore del contorno", tipo: "colore", predefinito: "#ffffff" },
-    { nome: "grandezza_testo", etichetta: "Grandezza della scritta (% dell'altezza)", tipo: "numero", min: 10, max: 80, passo: 2, predefinito: 34 },
+    { nome: "carattere", etichetta: "Carattere della scritta", tipo: "scelta", valori: ["sans-serif", "serif", "monospace", "Arial", "Arial Black", "Verdana", "Tahoma", "Trebuchet MS", "Georgia", "Times New Roman", "Courier New", "Impact", "Segoe UI", "Roboto"].map((c) => [c, c]), predefinito: "sans-serif" },
+    { nome: "dimensione_testo", etichetta: "Grandezza della scritta (px sullo schermo; 0 = automatica)", tipo: "numero", min: 0, max: 400, passo: 2, predefinito: 0 },
+    { nome: "grandezza_testo", etichetta: "Grandezza automatica (% dell'altezza del pulsante)", tipo: "numero", min: 10, max: 80, passo: 2, predefinito: 34 },
+    { nome: "grassetto", etichetta: "Grassetto", tipo: "si_no", predefinito: true },
+    { nome: "corsivo", etichetta: "Corsivo", tipo: "si_no", predefinito: false },
+    { nome: "maiuscolo", etichetta: "Tutto maiuscolo", tipo: "si_no", predefinito: false },
     { nome: "ombra", etichetta: "Ombra", tipo: "si_no", predefinito: true },
   ],
   prendi_numero: [
@@ -388,6 +393,15 @@ function anteprimaZona(el, zona) {
       });
       const icona = c.icona === false ? "" : (c.plugin === "ingredienti" ? "🥗 " : "🏷️ ");
       pulsante.textContent = icona + (c.testo || (c.plugin === "ingredienti" ? "Info Ingredienti" : "Info Prezzo"));
+      // La scritta in scala con lo schermo vero (pixel del totem → pixel del palco dell'editor).
+      const [larghezzaSchermo, altezzaSchermo] = RISOLUZIONE[stato.layout.orientamento];
+      const scala = (palco.getBoundingClientRect().width || 1) / larghezzaSchermo;
+      const px = c.dimensione_testo ? c.dimensione_testo : (altezzaSchermo * zona.altezza / 100) * (c.grandezza_testo ?? 34) / 100;
+      Object.assign(pulsante.style, {
+        fontFamily: c.carattere || "sans-serif", fontSize: `${Math.max(6, px * scala)}px`,
+        fontWeight: c.grassetto === false ? "400" : "800", fontStyle: c.corsivo ? "italic" : "normal",
+        textTransform: c.maiuscolo ? "uppercase" : "none",
+      });
       break;
     }
     case "coda":

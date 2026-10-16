@@ -1382,14 +1382,17 @@ class ZonaPulsantePlugin {
     Object.assign(pulsante.style, {
       background: c.sfondo || "transparent", color: c.colore || "#ffffff", borderRadius: raggio,
       border: c.spessore_contorno ? `${c.spessore_contorno}px solid ${c.contorno || "#ffffff"}` : "0",
-      fontSize: `${Math.round(this.px.altezza * (c.grandezza_testo || 34) / 100)}px`,
+      fontSize: `${c.dimensione_testo || Math.round(this.px.altezza * (c.grandezza_testo || 34) / 100)}px`,
+      fontFamily: c.carattere || "sans-serif", fontWeight: c.grassetto === false ? "400" : "800",
+      fontStyle: c.corsivo ? "italic" : "normal", textTransform: c.maiuscolo ? "uppercase" : "none",
       boxShadow: c.ombra === false ? "none" : `0 ${Math.round(lato * 0.04)}px ${Math.round(lato * 0.12)}px rgba(0, 0, 0, .35)`,
     });
     if (c.icona !== false) crea("span", "icona", pulsante).textContent = tipo === "prezzo" ? "🏷️" : "🥗";
     crea("span", "testo", pulsante).textContent = c.testo || (tipo === "prezzo" ? "Info Prezzo" : "Info Ingredienti");
     pulsante.addEventListener("click", () => this.motore.lettore?.apriRicerca(tipo));
-    // La scritta si rimpicciolisce finché sta nel pulsante (su due righe al massimo).
-    requestAnimationFrame(() => {
+    // Con la grandezza automatica la scritta si rimpicciolisce finché sta nel pulsante;
+    // con una grandezza scelta in pixel resta quella.
+    if (!c.dimensione_testo) requestAnimationFrame(() => {
       let grandezza = parseFloat(pulsante.style.fontSize);
       for (let i = 0; i < 30 && grandezza > 8 && (pulsante.scrollWidth > pulsante.clientWidth + 1 || pulsante.scrollHeight > pulsante.clientHeight + 1); i++) {
         grandezza *= 0.92;
