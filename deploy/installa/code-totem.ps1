@@ -43,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.6.3"
+$Versione = "1.6.4"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -621,6 +621,9 @@ public static class FpStampante {
 }
 "@
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+# Niente «Expect: 100-continue» (.NET lo manda di suo con i POST): il server web delle Epson non lo
+# gestisce e chiude la connessione («Connessione sottostante chiusa»).
+[System.Net.ServicePointManager]::Expect100Continue = $false
 # TLS 1.3 (12288), dove Windows e .NET lo conoscono.
 try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]12288 } catch { }
 
@@ -639,6 +642,7 @@ function Invia-Epson([string]$protocollo, [string]$indirizzo, [byte[]]$corpo) {
     $invio.Proxy = $null
     $invio.AllowAutoRedirect = $false
     $invio.KeepAlive = $false
+    $invio.ServicePoint.Expect100Continue = $false
     $invio.Timeout = 12000
     $invio.ReadWriteTimeout = 12000
     if ($protocollo -eq "https") { $invio.ServerCertificateValidationCallback = [FpStampante]::Accetta }
