@@ -215,7 +215,7 @@ async function schedaPlugin(tipo) {
   crea("p", {
     classe: "tenue",
     testo: `Una SELECT che restituisca al massimo una riga, con le colonne chiamate ${p.uscite.join(", ")}. `
-      + "Parametri: :codice (il codice letto), :codice_corto (senza zeri iniziali), :plu e :reparto (codici bilancia). Il file è aperto in sola lettura.",
+      + "Parametri: :codice (il codice letto), :codice_corto (senza zeri iniziali), :plu e :reparto (codici bilancia), :adesso (data e ora del totem, «AAAA-MM-GG hh:mm:ss»: usala al posto di datetime('now','localtime'), che sui totem Windows non funziona). Il file è aperto in sola lettura.",
   }, avanzata);
   const query = crea("textarea", { rows: 4, cols: 90, value: p.query, placeholder: "SELECT descr AS descrizione, prezzo FROM articoli WHERE ean = :codice" }, avanzata);
   if (p.query_generata) {

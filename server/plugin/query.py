@@ -2,7 +2,8 @@
 
 La esegue il servizio code del Totem Master sulla sua copia del file, aperta in sola lettura,
 con questi parametri: ``:codice`` (il codice letto), ``:codice_corto`` (senza zeri iniziali),
-``:plu`` e ``:reparto`` (per i codici bilancia; vuoti per gli altri). Le colonne del risultato
+``:plu`` e ``:reparto`` (per i codici bilancia; vuoti per gli altri), ``:adesso`` (data e ora
+locali del totem, «AAAA-MM-GG hh:mm:ss»: la SQLite di Windows non sa calcolare l'ora locale). Le colonne del risultato
 hanno nomi fissi (``descrizione``, ``prezzo``…): il player sa così cosa mostrare.
 """
 
@@ -152,7 +153,7 @@ JOIN Articoli a ON a.Codice = e.CodiceArticolo
 JOIN PrezziDiVendita p ON p.CodiceArticolo = a.Codice AND p.numeroPrezzo = 1
 LEFT JOIN LinkArticoliLegacypromo k ON k.CodiceArticolo = a.Codice
 LEFT JOIN LegacyPromo l ON l.CodiceOfferta = k.CodiceOfferta AND l.Attivo = 1 AND l.CodiceEffetto = 11
-     AND datetime('now', 'localtime') BETWEEN l.DataInizio AND l.DataFine
+     AND coalesce(:adesso, datetime('now', 'localtime')) BETWEEN l.DataInizio AND l.DataFine
 WHERE a.Stato = 1 AND (
       e.Ean IN (:codice, :codice_corto, substr('0000000000000' || :codice_corto, -13), substr('00000000000000' || :codice_corto, -14))
    OR (length(:codice) = 13 AND substr(:codice, 1, 1) = '2' AND e.Ean = substr(:codice, 1, 7)))
@@ -207,19 +208,19 @@ SELECT a.Descrizione AS descrizione,
        (SELECT round(p.Valore - l.ValoreEffetto1, 2) FROM LinkArticoliLegacypromo k
           JOIN LegacyPromo l ON l.CodiceOfferta = k.CodiceOfferta
          WHERE k.CodiceArticolo = a.Codice AND l.Attivo = 1 AND l.CodiceEffetto = 11
-           AND datetime('now', 'localtime') BETWEEN l.DataInizio AND l.DataFine
+           AND coalesce(:adesso, datetime('now', 'localtime')) BETWEEN l.DataInizio AND l.DataFine
            AND l.ValoreEffetto1 > 0 AND l.ValoreEffetto1 < p.Valore
          ORDER BY l.ValoreEffetto1 DESC LIMIT 1) AS prezzo_offerta,
        (SELECT l.DataInizio FROM LinkArticoliLegacypromo k
           JOIN LegacyPromo l ON l.CodiceOfferta = k.CodiceOfferta
          WHERE k.CodiceArticolo = a.Codice AND l.Attivo = 1 AND l.CodiceEffetto = 11
-           AND datetime('now', 'localtime') BETWEEN l.DataInizio AND l.DataFine
+           AND coalesce(:adesso, datetime('now', 'localtime')) BETWEEN l.DataInizio AND l.DataFine
            AND l.ValoreEffetto1 > 0 AND l.ValoreEffetto1 < p.Valore
          ORDER BY l.ValoreEffetto1 DESC LIMIT 1) AS offerta_dal,
        (SELECT l.DataFine FROM LinkArticoliLegacypromo k
           JOIN LegacyPromo l ON l.CodiceOfferta = k.CodiceOfferta
          WHERE k.CodiceArticolo = a.Codice AND l.Attivo = 1 AND l.CodiceEffetto = 11
-           AND datetime('now', 'localtime') BETWEEN l.DataInizio AND l.DataFine
+           AND coalesce(:adesso, datetime('now', 'localtime')) BETWEEN l.DataInizio AND l.DataFine
            AND l.ValoreEffetto1 > 0 AND l.ValoreEffetto1 < p.Valore
          ORDER BY l.ValoreEffetto1 DESC LIMIT 1) AS offerta_al,
        CASE WHEN a.Tipo = 'KG' THEN 'kg' ELSE '' END AS unita

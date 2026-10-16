@@ -48,7 +48,7 @@ layout video, eliminacode, player per monitor e totem, teleassistenza, registro)
   - *Predefinita di Windows*: sul totem la stampa ora il servizio code sulla predefinita
     dell'utente collegato, senza l'anteprima che il browser mostra per un istante; senza
     servizio si usa la stampa del browser come prima.
-- **Pulsanti «Info Prezzo» e «Info Ingredienti» sul totem** (servizio code `1.9.1`): due zone
+- **Pulsanti «Info Prezzo» e «Info Ingredienti» sul totem** (servizio code `1.9.2`): due zone
   facoltative del layout, da mettere dove si vuole, anche sopra altre zone, con colori, forma
   (rettangolo, angoli arrotondati, pillola, cerchio), contorno, ombra e scritta personalizzabili.
   Al tocco si apre una casella di 13 caratteri con la tastiera sullo schermo: un codice EAN

@@ -43,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.9.1"
+$Versione = "1.9.2"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -510,7 +510,8 @@ function Cerca-Articolo([string]$tipo, [string]$codice, [string]$plu, [string]$r
     $c = $script:plugin[$tipo]
     $file = Join-Path $cartellaPlugin "$tipo.db"
     if (-not $c -or -not $sqliteCaricato -or -not (Test-Path $file)) { return $null }
-    $parametri = @{ codice = $codice; codice_corto = $codice.TrimStart("0"); plu = $plu; reparto = $reparto }
+    # L'ora locale la passa il servizio: la SQLite di Windows non sa calcolarla (le offerte di oggi).
+    $parametri = @{ codice = $codice; codice_corto = $codice.TrimStart("0"); plu = $plu; reparto = $reparto; adesso = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") }
     return [FpSqlite]::Cerca($file, $c.query, $parametri)
 }
 
@@ -537,7 +538,7 @@ function Gestisci-Plugin($contesto, [string]$tipo) {
             # interroga con la più lunga, poi si tengono le righe che le contengono tutte.
             $parole = @($testo -split "\s+" | Where-Object { $_ })
             $lunga = @($parole | Sort-Object Length -Descending)[0]
-            $righe = @([FpSqlite]::CercaTutti($file, $c.ricerca, @{ testo = "%$lunga%" }, 300))
+            $righe = @([FpSqlite]::CercaTutti($file, $c.ricerca, @{ testo = "%$lunga%"; adesso = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") }, 300))
             if ($parole.Count -gt 1) {
                 # Ogni parola come inizio di una parola della descrizione: «AL» non vale dentro «SALSICCIA».
                 $inizi = @($parole | ForEach-Object { "(?i)(^|[^\p{L}\p{Nd}])" + [regex]::Escape($_) })

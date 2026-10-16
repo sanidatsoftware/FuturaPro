@@ -22,7 +22,7 @@ def esegui(sql, **parametri):
         INSERT INTO bilancia VALUES (123, '20', 'Prosciutto crudo', 'Coscia di suino, sale');
         INSERT INTO bilancia VALUES (123, '21', 'Pane casereccio', 'Farina, acqua, lievito');
     """)
-    valori = {"codice": "", "codice_corto": "", "plu": "", "reparto": "", **parametri}
+    valori = {"codice": "", "codice_corto": "", "plu": "", "reparto": "", "adesso": None, **parametri}
     riga = db.execute(sql, valori).fetchone()
     return dict(riga) if riga else None
 
@@ -139,12 +139,16 @@ class EvoPosTest(Base):
         db.execute("INSERT INTO LegacyPromo VALUES ('A', 1, 11, 0.3, ?, ?)", ((adesso - timedelta(days=1)).strftime(fmt), (adesso + timedelta(days=3)).strftime(fmt)))
         db.execute("INSERT INTO LegacyPromo VALUES ('B', 1, 11, 0.5, ?, ?)", ((adesso - timedelta(days=9)).strftime(fmt), (adesso - timedelta(days=2)).strftime(fmt)))
 
+        # L'ora la passa il servizio del totem (la SQLite di Windows non calcola l'ora locale);
+        # senza, la query usa quella di SQLite.
+        adesso_totem = adesso.strftime(fmt)
+
         def cerca(codice):
-            riga = db.execute(q.EVOPOS, {"codice": codice, "codice_corto": codice.lstrip("0"), "plu": "", "reparto": ""}).fetchone()
+            riga = db.execute(q.EVOPOS, {"codice": codice, "codice_corto": codice.lstrip("0"), "plu": "", "reparto": "", "adesso": adesso_totem}).fetchone()
             return dict(riga) if riga else None
 
         # Ricerca per descrizione (pulsante sul totem): solo articoli attivi, con l'offerta in corso.
-        trovati = [dict(r) for r in db.execute(q.EVOPOS_RICERCA, {"testo": "%i%"}).fetchall()]
+        trovati = [dict(r) for r in db.execute(q.EVOPOS_RICERCA, {"testo": "%i%", "adesso": adesso_totem}).fetchall()]
         self.assertEqual([t["descrizione"] for t in trovati], ["BISCOTTI", "PIATTI"])
         self.assertEqual(trovati[1]["prezzo_offerta"], 0.89)
         self.assertIsNone(trovati[0]["prezzo_offerta"])
@@ -157,6 +161,10 @@ class EvoPosTest(Base):
         self.assertIsNone(cerca("8000000000035"))  # articolo non attivo
         self.assertIsNone(cerca("1234567890123"))
         self.assertIsNone(piatti["prezzo_etichetta"])
+        # Con un'ora passata dal totem fuori dal periodo dell'offerta, niente offerta.
+        fuori = db.execute(q.EVOPOS, {"codice": "0800000000011", "codice_corto": "800000000011", "plu": "", "reparto": "",
+                                      "adesso": (adesso + timedelta(days=10)).strftime(fmt)}).fetchone()
+        self.assertIsNone(fuori["prezzo_offerta"])
         self.assertEqual(mortadella["prezzo_etichetta"], 12.34)  # cifre 8-12 dell'etichetta
 
 
@@ -183,10 +191,10 @@ class DigiTest(Base):
         """)
 
         def cerca(codice):
-            riga = db.execute(q.DIGI, {"codice": codice, "codice_corto": codice.lstrip("0"), "plu": "", "reparto": ""}).fetchone()
+            riga = db.execute(q.DIGI, {"codice": codice, "codice_corto": codice.lstrip("0"), "plu": "", "reparto": "", "adesso": None}).fetchone()
             return dict(riga) if riga else None
 
-        trovati = [dict(r) for r in db.execute(q.DIGI_RICERCA, {"testo": "%s%"}).fetchall()]
+        trovati = [dict(r) for r in db.execute(q.DIGI_RICERCA, {"testo": "%s%", "adesso": None}).fetchall()]
         self.assertEqual([(t["descrizione"], t["reparto"]) for t in trovati], [("SALSICCIA FINA", "Macelleria")])
 
         salsiccia = cerca("2110162005664")
@@ -196,7 +204,7 @@ class DigiTest(Base):
         self.assertEqual(cerca("2120254002242")["ingredienti"], "INGREDIENTI: coscia di suino, sale")  # dal testo 5
         self.assertIsNone(cerca("2110099001000"))  # PLU disattivato
         # Il PLU scritto a mano sul totem (Info Ingredienti, poche cifre).
-        riga = db.execute(q.DIGI, {"codice": "162", "codice_corto": "162", "plu": "162", "reparto": ""}).fetchone()
+        riga = db.execute(q.DIGI, {"codice": "162", "codice_corto": "162", "plu": "162", "reparto": "", "adesso": None}).fetchone()
         self.assertEqual(riga["descrizione"], "SALSICCIA FINA")
         self.assertIsNone(cerca("8001234567890"))
 
