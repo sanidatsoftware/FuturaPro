@@ -102,10 +102,11 @@ def genera(tipo: str, m: dict) -> str:
 
 
 def genera_ricerca(tipo: str, m: dict) -> str:
-    """La ricerca per descrizione (parametro ``:testo``, già con i «%»): più righe, in ordine."""
+    """La ricerca per descrizione (parametro ``:testo``, già con i «%»): più righe, in ordine.
+    Il servizio code cerca la parola più lunga e tiene le righe che contengono tutte le parole."""
     uscite = [f"{colonna(m[c])} AS {c}" for c in USCITE[tipo] if m.get(c)]
     descrizione = colonna(m["descrizione"])
-    return f"SELECT {', '.join(uscite)} FROM {colonna(m['tabella'])} WHERE {descrizione} LIKE :testo ORDER BY {descrizione} LIMIT 30"
+    return f"SELECT {', '.join(uscite)} FROM {colonna(m['tabella'])} WHERE {descrizione} LIKE :testo ORDER BY {descrizione} LIMIT 300"
 
 
 def ricerca_di(impostazioni) -> str | None:
@@ -226,7 +227,7 @@ FROM Articoli a
 JOIN PrezziDiVendita p ON p.CodiceArticolo = a.Codice AND p.numeroPrezzo = 1
 WHERE a.Stato = 1 AND a.Descrizione LIKE :testo
 ORDER BY a.Descrizione
-LIMIT 30
+LIMIT 300
 """.strip()
 
 DIGI_RICERCA = """
@@ -244,9 +245,9 @@ LEFT JOIN Texts t5 ON t5.Id = p.Text5Id
 LEFT JOIN PluDepartments pd ON pd.PluId = p.Id
 LEFT JOIN Departments d ON d.Id = pd.DepartmentId
 WHERE p.IsEnabled = 1 AND p.Label LIKE :testo
-GROUP BY p.Id
+GROUP BY p.Label
 ORDER BY p.Label
-LIMIT 30
+LIMIT 300
 """.strip()
 
 RICERCHE = {"prezzo": {"evopos": EVOPOS_RICERCA}, "ingredienti": {"digi": DIGI_RICERCA}}

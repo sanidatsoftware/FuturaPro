@@ -43,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.9"
+$Versione = "1.9.1"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -528,13 +528,25 @@ function Gestisci-Plugin($contesto, [string]$tipo) {
     # spazi e pochi segni; gli spazi diventano «%» (MOZZ BUF trova «Mozzarella di bufala»).
     $testo = [string]$richiesta.QueryString["testo"]
     if ($testo) {
-        $testo = ($testo -replace "[^\p{L}\p{Nd} .'-]", "").Trim()
+        $testo = (($testo -replace "\+", " ") -replace "[^\p{L}\p{Nd} .'-]", "").Trim()
         if ($testo.Length -lt 2 -or $testo.Length -gt 13) { Rispondi $contesto 400 @{ errore = "Scrivi da 2 a 13 caratteri." }; return }
         $c = $script:plugin[$tipo]
         if (-not $c.ricerca) { Rispondi $contesto 404 @{ errore = "Ricerca per descrizione non disponibile per questo file." }; return }
         try {
-            $parametri = @{ testo = "%" + ($testo -replace "\s+", "%") + "%" }
-            $righe = @([FpSqlite]::CercaTutti($file, $c.ricerca, $parametri, 30))
+            # Le parole valgono in qualunque ordine («TA SALSICCIA» e «SALSICCIA TA»): il file si
+            # interroga con la più lunga, poi si tengono le righe che le contengono tutte.
+            $parole = @($testo -split "\s+" | Where-Object { $_ })
+            $lunga = @($parole | Sort-Object Length -Descending)[0]
+            $righe = @([FpSqlite]::CercaTutti($file, $c.ricerca, @{ testo = "%$lunga%" }, 300))
+            if ($parole.Count -gt 1) {
+                # Ogni parola come inizio di una parola della descrizione: «AL» non vale dentro «SALSICCIA».
+                $inizi = @($parole | ForEach-Object { "(?i)(^|[^\p{L}\p{Nd}])" + [regex]::Escape($_) })
+                $righe = @($righe | Where-Object {
+                    $descrizione = [string]$_["descrizione"]
+                    @($inizi | Where-Object { $descrizione -notmatch $_ }).Count -eq 0
+                })
+            }
+            $righe = @($righe | Select-Object -First 30)
             Rispondi $contesto 200 ([ordered]@{ trovati = $righe; aggiornato = $script:statoPlugin[$tipo].copiato })
         } catch {
             Registra "plugin $($tipo) (ricerca): $($_.Exception.Message)"

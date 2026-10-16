@@ -204,8 +204,10 @@ export function preparaLettore({ motore, indirizzo }) {
   async function chiedi(tipo, parametri) {
     const controllo = new AbortController();
     const limite = setTimeout(() => controllo.abort(), 5000);
+    // Spazi come %20 (non «+»): il servizio del totem li legge sempre come spazi.
+    const query = [...parametri].map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
     try {
-      const risposta = await fetch(`${indirizzo()}/plugin/${tipo}?${parametri}`, { signal: controllo.signal, cache: "no-store" });
+      const risposta = await fetch(`${indirizzo()}/plugin/${tipo}?${query}`, { signal: controllo.signal, cache: "no-store" });
       if (risposta.ok) return await risposta.json();
       const dati = await risposta.json().catch(() => ({}));
       return { errore: true, messaggio: dati.errore || "" };
@@ -278,8 +280,8 @@ export function preparaLettore({ motore, indirizzo }) {
       ? "Scrivi il codice a barre (EAN) oppure parte del nome, poi tocca CERCA. Puoi anche passare il prodotto sul lettore."
       : "Scrivi il codice a barre (EAN), poi tocca CERCA. Puoi anche passare il prodotto sul lettore.";
     nota.textContent = suggerimento;
-    const elenco = crea("div", "plugin-ricerca-elenco", pannello);
-    elenco.hidden = true;
+    // L'elenco ha sempre il suo spazio: quando compare la tastiera non si sposta sotto il dito.
+    const elenco = crea("div", "plugin-ricerca-elenco vuoto", pannello);
     const tastiera = crea("div", "plugin-ricerca-tastiera", pannello);
 
     const aggiornaCampo = () => {
@@ -310,7 +312,7 @@ export function preparaLettore({ motore, indirizzo }) {
     };
     const mostraElenco = (articoli) => {
       elenco.replaceChildren();
-      elenco.hidden = false;
+      elenco.classList.remove("vuoto");
       for (const articolo of articoli) {
         const voce = crea("button", "plugin-ricerca-voce", elenco);
         crea("span", "plugin-ricerca-nome", voce).textContent = articolo.descrizione || "";
@@ -356,7 +358,10 @@ export function preparaLettore({ motore, indirizzo }) {
         return;
       } else nota.textContent = `${trovati.length === 30 ? "Primi 30 prodotti" : `${trovati.length} prodotti`}: tocca quello che cerchi.`;
       if (trovati.length > 1) mostraElenco(trovati);
-      else elenco.hidden = true;
+      else {
+        elenco.replaceChildren();
+        elenco.classList.add("vuoto");
+      }
     };
 
     const tasto = (riga, etichetta, azione, classe = "") => {
