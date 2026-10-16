@@ -43,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.7.3"
+$Versione = "1.8"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -189,6 +189,7 @@ function Esegui([string]$operazione, $r, $numero) {
 }
 
 function Emetti($r) {
+    $script:ultimoBiglietto = Get-Date
     $c = Coda ([string]$r.id)
     # Se il banco è andato avanti senza biglietti, il primo biglietto parte da lì.
     $c.emessi = [Math]::Max($c.emessi, $c.chiamati) + 1
@@ -725,9 +726,16 @@ public static class FpStampaWindows {
     Registra "stampa con i driver di Windows non disponibile: $($_.Exception.Message)"
 }
 
+# L'elenco delle stampanti di Windows si tiene un minuto: chiederlo a ogni biglietto costa tempo.
+$script:elencoStampanti = @()
+$script:elencoLetto = [datetime]::MinValue
 function Stampanti-Windows {
     if (-not $script:stampaWindows) { return @() }
-    try { return @([FpStampaWindows]::Elenco()) } catch { return @() }
+    if (((Get-Date) - $script:elencoLetto).TotalSeconds -gt 60) {
+        try { $script:elencoStampanti = @([FpStampaWindows]::Elenco()) } catch { $script:elencoStampanti = @() }
+        $script:elencoLetto = Get-Date
+    }
+    return $script:elencoStampanti
 }
 
 # La stampante predefinita dell'utente collegato al totem (quello del player): il servizio gira
@@ -761,6 +769,7 @@ function Gestisci-Stampa-Windows($contesto) {
     if (-not $nome) { $nome = Predefinita-Utente }
     if (-not $nome) { Rispondi $contesto 502 @{ errore = "nessuna stampante predefinita in Windows per l'utente del totem" }; return }
     if (-not $script:stampaWindows) { Rispondi $contesto 502 @{ errore = "stampa con i driver di Windows non disponibile su questo totem (vedi registro del servizio)" }; return }
+    if (@(Stampanti-Windows) -notcontains $nome) { $script:elencoLetto = [datetime]::MinValue }   # appena installata?
     if (@(Stampanti-Windows) -notcontains $nome) {
         Rispondi $contesto 502 @{ errore = "stampante «$nome» non installata in Windows su questo totem" }; return
     }
@@ -970,6 +979,88 @@ function Gestisci($contesto) {
     Rispondi $contesto 404 @{ errore = "Non trovato." }
 }
 
+# --- Aggiornamento automatico -----------------------------------------------------------
+# Ogni 10 minuti il servizio guarda se sul server c'è una versione nuova dei suoi file (in
+# HTTPS: il certificato del server è tra quelli fidati del totem). Se c'è, e da due minuti
+# nessuno prende un biglietto, la installa e si riavvia; un processo a parte controlla che la
+# nuova versione risponda e, se non parte, rimette quella di prima (e non la riprova più).
+
+$FileDelServizio = @("code-totem.ps1", "banco.html", "FpSqlite.cs")
+$script:ultimoBiglietto = [datetime]::MinValue
+$script:prossimoControllo = (Get-Date).AddMinutes(2)
+$script:esci = $false
+$fileScartata = Join-Path $Cartella "aggiornamento-scartato.txt"
+
+function Impronta-File([string]$percorso) {
+    if (-not (Test-Path $percorso)) { return "" }
+    return Impronta-Byte ([System.IO.File]::ReadAllBytes($percorso))
+}
+
+function Controlla-Aggiornamento {
+    if ((Get-Date) -lt $script:prossimoControllo) { return }
+    $script:prossimoControllo = (Get-Date).AddMinutes(10)
+    try { $server = (Get-Content (Join-Path (Split-Path $Cartella -Parent) "impostazioni.json") -Raw | ConvertFrom-Json).server } catch { return }
+    if (-not $server) { return }
+    $nuovi = @{}
+    foreach ($nome in $FileDelServizio) {
+        try {
+            $risposta = Invoke-WebRequest -UseBasicParsing -Uri "https://$server/installa/$nome" -TimeoutSec 20
+            if ($risposta.StatusCode -ne 200) { return }
+            $nuovi[$nome] = $risposta.RawContentStream.ToArray()
+        } catch {
+            return   # server non raggiungibile (o non ancora aggiornato): si riprova più tardi
+        }
+    }
+    $cambiati = @($FileDelServizio | Where-Object { (Impronta-Byte $nuovi[$_]) -ne (Impronta-File (Join-Path $PSScriptRoot $_)) })
+    if ($cambiati.Count -eq 0) { return }
+    $impronta = Impronta-Byte $nuovi["code-totem.ps1"]
+    if ((Test-Path $fileScartata) -and (Get-Content $fileScartata -Raw).Trim() -eq $impronta) { return }
+    # Non mentre il negozio dà biglietti: si aspetta un momento tranquillo.
+    if (((Get-Date) - $script:ultimoBiglietto).TotalMinutes -lt 2) { $script:prossimoControllo = (Get-Date).AddMinutes(1); return }
+    # Lo script nuovo deve essere PowerShell valido e un servizio code.
+    $testo = [System.Text.Encoding]::UTF8.GetString($nuovi["code-totem.ps1"]).TrimStart([char]0xFEFF)
+    $errori = $null
+    [System.Management.Automation.Language.Parser]::ParseInput($testo, [ref]$null, [ref]$errori) | Out-Null
+    if (@($errori).Count -gt 0 -or $testo -notmatch '\$Versione = "([^"]+)"') {
+        Registra "aggiornamento scartato: il file scaricato non è valido"
+        Set-Content -Path $fileScartata -Value $impronta
+        return
+    }
+    $versioneNuova = $Matches[1]
+    $precedente = Join-Path $Cartella "precedente"
+    New-Item -ItemType Directory -Force -Path $precedente | Out-Null
+    foreach ($nome in $FileDelServizio) {
+        $file = Join-Path $PSScriptRoot $nome
+        if (Test-Path $file) { Copy-Item $file $precedente -Force }
+    }
+    foreach ($nome in $cambiati) { [System.IO.File]::WriteAllBytes((Join-Path $PSScriptRoot $nome), $nuovi[$nome]) }
+    Registra "aggiornamento $Versione -> $($versioneNuova): $($cambiati -join ', '); riavvio"
+    # Il riavvio lo fa un processo a parte: aspetta che questo finisca, riavvia l'attività e
+    # controlla la nuova versione; se in un minuto e mezzo non risponde, ripristina.
+    $guardia = @'
+$attivita = "FuturaPro Code"
+for ($i = 0; $i -lt 30 -and (Get-ScheduledTask -TaskName $attivita).State -eq "Running"; $i++) { Start-Sleep 1 }
+Start-ScheduledTask -TaskName $attivita
+$ok = $false
+for ($i = 0; $i -lt 45; $i++) {
+    Start-Sleep 2
+    try { if ((Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:PORTA/salute" -TimeoutSec 3).Content -match '"versione":"VERSIONE"') { $ok = $true; break } } catch { }
+}
+if (-not $ok) {
+    Stop-ScheduledTask -TaskName $attivita
+    Start-Sleep 2
+    Copy-Item "PRECEDENTE\*" "SCRIPT" -Force
+    Set-Content -Path "SCARTATA" -Value "IMPRONTA"
+    Add-Content -Path "REGISTRO" -Value "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))  aggiornamento a VERSIONE non riuscito: ripristinata la versione precedente"
+    Start-ScheduledTask -TaskName $attivita
+}
+'@
+    $guardia = $guardia.Replace("PORTA", [string]$PortaHttp).Replace("VERSIONE", $versioneNuova).Replace("PRECEDENTE", $precedente).Replace("SCRIPT", $PSScriptRoot).Replace("SCARTATA", $fileScartata).Replace("IMPRONTA", $impronta).Replace("REGISTRO", $fileRegistro)
+    $codificato = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($guardia))
+    Start-Process -FilePath "powershell.exe" -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $codificato"
+    $script:esci = $true
+}
+
 # --- Avvio ----------------------------------------------------------------------------
 
 Carica-Stato
@@ -981,18 +1072,25 @@ if (-not $SoloHttp) { $ascoltatore.Prefixes.Add("https://+:$PortaHttps/") }
 $ascoltatore.Start()
 Registra "servizio code avviato (versione $Versione, porte $PortaHttp/$PortaHttps)"
 
-while ($ascoltatore.IsListening) {
-    # Si aspetta una richiesta, ma ogni pochi secondi si guarda se c'è da copiare un file dei plugin.
+while ($ascoltatore.IsListening -and -not $script:esci) {
+    # Si aspetta una richiesta, ma ogni pochi secondi si guarda se c'è da copiare un file dei
+    # plugin o da installare una versione nuova del servizio.
     $attesa = $ascoltatore.BeginGetContext($null, $null)
     while (-not $attesa.AsyncWaitHandle.WaitOne(5000)) {
         try { Aggiorna-Plugin } catch { Registra "plugin: $($_.Exception.Message)" }
+        try { Controlla-Aggiornamento } catch { Registra "aggiornamento: $($_.Exception.Message)" }
+        if ($script:esci) { break }
     }
+    if ($script:esci) { break }
     $contesto = $ascoltatore.EndGetContext($attesa)
-    try { Aggiorna-Plugin } catch { Registra "plugin: $($_.Exception.Message)" }
+    # Prima la risposta (un biglietto non aspetta), poi i controlli dei plugin.
     try {
         Gestisci $contesto
     } catch {
         Registra "errore: $($_.Exception.Message)"
         try { Rispondi $contesto 500 @{ errore = "Errore interno." } } catch { }
     }
+    try { Aggiorna-Plugin } catch { Registra "plugin: $($_.Exception.Message)" }
 }
+$ascoltatore.Stop()
+Registra "servizio code fermato"

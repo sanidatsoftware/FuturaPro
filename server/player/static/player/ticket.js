@@ -18,13 +18,29 @@ function libreriaQr() {
   return caricamentoQr;
 }
 
+// Le immagini (il logo) si decodificano una volta sola: i biglietti dopo il primo non aspettano.
+const immagini = new Map();
+
 function immagine(src) {
-  return new Promise((ok) => {
-    const img = new Image();
-    img.onload = () => ok(img);
-    img.onerror = () => ok(null);
-    img.src = src;
-  });
+  if (!immagini.has(src)) {
+    immagini.set(src, new Promise((ok) => {
+      const img = new Image();
+      img.onload = () => ok(img);
+      img.onerror = () => {
+        immagini.delete(src);
+        ok(null);
+      };
+      img.src = src;
+    }));
+  }
+  return immagini.get(src);
+}
+
+// Prepara in anticipo quello che serve al biglietto (logo e libreria del QR), così al tocco
+// del cliente si disegna e basta.
+export function preparaTicket(layout) {
+  if (layout?.logo) immagine(layout.logo);
+  if (layout?.elementi?.some((e) => e.campo === "qr" && e.visibile)) libreriaQr().catch(() => {});
 }
 
 // La data e l'ora del biglietto nel formato scelto (es. «15/10/26 10:42», «giovedì 15 ottobre 2026, 10:42»).

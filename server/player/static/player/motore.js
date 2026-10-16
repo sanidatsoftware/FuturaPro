@@ -7,7 +7,7 @@
 // Ogni testo che arriva da fuori (titoli, nomi) passa da textContent, mai da innerHTML.
 
 import { acceso, inOnda, istanteNelFuso } from "./regole.js";
-import { comandiEscPos, disegnaTicket, immagineEpson } from "./ticket.js";
+import { comandiEscPos, disegnaTicket, immagineEpson, preparaTicket } from "./ticket.js";
 
 const RISOLUZIONE = { orizzontale: [1920, 1080], verticale: [1080, 1920] };
 const ATTESA_SE_VUOTO = 5000;
@@ -972,6 +972,7 @@ class ZonaCoda {
     };
     aggiorna();
     this.timer = setInterval(aggiorna, OGNI_CODA);
+    preparaTicket(this.config.ticket);
   }
 
   mostra(code) {
@@ -1267,6 +1268,7 @@ class ZonaPrendiNumero {
     };
     aggiorna();
     this.timer = setInterval(aggiorna, OGNI_CODA);
+    preparaTicket(this.config.ticket);
   }
 
   mostra(code) {
@@ -1320,19 +1322,21 @@ class ZonaPrendiNumero {
         this.mostraEsito(dati, "Anteprima: biglietto di prova, non conta e non si stampa. I biglietti veri li emette il totem.");
         return;
       }
-      let errore = null;
+      // Il numero compare subito; il biglietto si stampa intanto. Se la stampa non riesce,
+      // l'avviso si aggiunge sotto il numero.
+      this.mostraEsito(dati, null);
       try {
         await stampaBiglietto(this.config, dati);
       } catch (e) {
-        errore = `${erroreStampa(e)} Ricorda il tuo numero.`;
+        this.mostraEsito(dati, `${erroreStampa(e)} Ricorda il tuo numero.`);
       }
-      this.mostraEsito(dati, errore);
     } catch {
       this.mostraEsito(null, "Servizio non disponibile, riprova tra poco.");
     }
   }
 
   mostraEsito(biglietto, errore) {
+    clearTimeout(this.timerEsito);
     this.esito.replaceChildren();
     this.esito.hidden = false;
     const scala = Math.min(this.px.altezza, this.px.larghezza);
@@ -1348,7 +1352,7 @@ class ZonaPrendiNumero {
     }
     if (errore) crea("div", "errore", this.esito).textContent = errore;
     this.esito.style.fontSize = `${scala * 0.07}px`;
-    setTimeout(() => {
+    this.timerEsito = setTimeout(() => {
       this.esito.hidden = true;
       this.occupato = false;
     }, errore ? 7000 : 4000);

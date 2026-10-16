@@ -32,6 +32,10 @@ fi
 if [ -f Caddyfile ] && ! grep -q 'Cache-Control "no-cache"' Caddyfile; then
     sed -i 's|^\thandle /static/\* {$|&\n\t\theader Cache-Control "no-cache"|' Caddyfile
 fi
+# I servizi code dei totem si aggiornano da soli scaricando /installa/ in HTTPS.
+if [ -f Caddyfile ] && [ "$(grep -c 'handle /installa/' Caddyfile)" -lt 2 ]; then
+    sed -i 's|^\thandle /static/\* {$|\thandle /installa/* {\n\t\troot * /srv\n\t\tfile_server\n\t}\n&|' Caddyfile
+fi
 docker compose up -d --build
 # Caddy rilegge il Caddyfile solo se glielo si chiede.
 docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile < /dev/null || docker compose restart caddy

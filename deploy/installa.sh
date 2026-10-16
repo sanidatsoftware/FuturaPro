@@ -142,6 +142,11 @@ http://$FP_INDIRIZZO {
 https://$FP_INDIRIZZO {
 	$tls
 	encode zstd gzip
+	# Anche in HTTPS: i servizi code dei totem ci prendono i loro aggiornamenti.
+	handle /installa/* {
+		root * /srv
+		file_server
+	}
 	handle /static/* {
 		header Cache-Control "no-cache"
 		root * /srv

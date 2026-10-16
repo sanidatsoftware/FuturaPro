@@ -38,7 +38,7 @@ layout video, eliminacode, player per monitor e totem, teleassistenza, registro)
   rifiutava la chiamata per il suo certificato autofirmato («Failed to fetch»). Se la stampante rimanda all'HTTPS (le Epson recenti lo fanno di fabbrica), il servizio la chiama in HTTPS accettandone il certificato. Serve rilanciare
   sul totem il comando di installazione del pannello; i messaggi distinguono «non raggiungibile»
   da «ePOS-Print non attivo».
-- **Stampanti dei biglietti: due tipi nuovi** (servizio code `1.7.3`).
+- **Stampanti dei biglietti: due tipi nuovi** (servizio code `1.8`).
   - *Stampante di Windows*: il driver installato sul totem, scelto **per nome** (non serve che
     sia la predefinita). Il player disegna il biglietto e il servizio code lo stampa con il driver.
     I totem riferiscono le stampanti installate e il pannello le propone nel campo.
@@ -48,6 +48,16 @@ layout video, eliminacode, player per monitor e totem, teleassistenza, registro)
   - *Predefinita di Windows*: sul totem la stampa ora il servizio code sulla predefinita
     dell'utente collegato, senza l'anteprima che il browser mostra per un istante; senza
     servizio si usa la stampa del browser come prima.
+- **Il servizio code del totem si aggiorna da solo** (dalla `1.8`): ogni 10 minuti guarda se sul
+  server c'è una versione nuova (in HTTPS), la installa quando da due minuti nessuno prende un
+  biglietto e si riavvia; se la nuova versione non risponde entro un minuto e mezzo torna a
+  quella di prima e non la riprova. I totem con una versione precedente alla 1.8 vanno
+  aggiornati a mano una volta (comando di installazione del totem).
+- **Biglietto più rapido**: il numero compare sullo schermo appena emesso e la stampa avviene
+  intanto; logo e QR del biglietto si preparano all'avvio; il servizio tiene in memoria
+  l'elenco delle stampanti.
+- **Player che non parte**: i moduli hanno la versione nell'indirizzo, quindi il browser non può
+  più mescolare file vecchi e nuovi; se comunque resta su «Avvio…» l'errore compare sullo schermo.
 - **Accesso automatico di Windows** (`accesso-automatico.ps1`): password nei segreti di sistema,
   orario di attività di Windows Update sull'apertura del negozio.
 
