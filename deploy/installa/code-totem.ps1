@@ -43,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.7.1"
+$Versione = "1.7.2"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -730,10 +730,26 @@ function Stampanti-Windows {
     try { return @([FpStampaWindows]::Elenco()) } catch { return @() }
 }
 
+# La stampante predefinita dell'utente collegato al totem (quello del player): il servizio gira
+# come SYSTEM, che ha una sua predefinita. Si legge dal registro dell'utente che possiede Esplora risorse.
+function Predefinita-Utente {
+    try {
+        $esplora = Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" | Select-Object -First 1
+        if ($esplora) {
+            $sid = (Invoke-CimMethod -InputObject $esplora -MethodName GetOwnerSid).Sid
+            $voce = Get-ItemProperty "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows NT\CurrentVersion\Windows" -Name Device -ErrorAction SilentlyContinue
+            if ($voce -and $voce.Device) { return ([string]$voce.Device -split ",")[0] }
+        }
+    } catch { }
+    return ""
+}
+
 function Gestisci-Stampa-Windows($contesto) {
     $richiesta = $contesto.Request
     $nome = [string]$richiesta.QueryString["stampante"]
-    if (-not $nome) { Rispondi $contesto 400 @{ errore = "manca il nome della stampante di Windows" }; return }
+    # Senza nome: la predefinita di Windows dell'utente del totem.
+    if (-not $nome) { $nome = Predefinita-Utente }
+    if (-not $nome) { Rispondi $contesto 502 @{ errore = "nessuna stampante predefinita in Windows per l'utente del totem" }; return }
     if (-not $script:stampaWindows) { Rispondi $contesto 502 @{ errore = "stampa con i driver di Windows non disponibile su questo totem (vedi registro del servizio)" }; return }
     if (@(Stampanti-Windows) -notcontains $nome) {
         Rispondi $contesto 502 @{ errore = "stampante «$nome» non installata in Windows su questo totem" }; return
@@ -866,7 +882,7 @@ function Gestisci($contesto) {
     }
     if ($metodo -eq "GET" -and $percorso -eq "/stampanti") {
         if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }
-        Rispondi $contesto 200 @{ stampanti = @(Stampanti-Windows) }; return
+        Rispondi $contesto 200 @{ stampanti = @(Stampanti-Windows); predefinita = (Predefinita-Utente) }; return
     }
     if ($metodo -eq "POST" -and $percorso -eq "/stampa/windows") {
         if (-not (Locale $richiesta)) { Rispondi $contesto 403 @{ errore = "Solo dal totem." }; return }

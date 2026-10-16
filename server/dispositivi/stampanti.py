@@ -23,7 +23,8 @@ def per_il_player(stampante) -> dict | None:
     punti = punti_stampante(stampante.modello, stampante.carta)
     disegno = ticket(stampante.layout, punti)
     # Windows e rete stampano sempre un'immagine: senza layout, quella del biglietto semplice.
-    if disegno is None and stampante.tipo in ("windows", "rete"):
+    # Anche la predefinita di Windows, che sul totem passa dal servizio code quando c'è.
+    if disegno is None and stampante.tipo in ("windows", "rete", "browser"):
         disegno = semplice(punti, stampante.carta)
     return {
         "id": str(stampante.id), "nome": stampante.nome, "stampa": stampante.tipo,

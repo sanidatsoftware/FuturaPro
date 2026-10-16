@@ -1167,6 +1167,16 @@ async function stampaBiglietto(config, dati) {
     if (!config.ticket || !config.stampante) throw new Error("stampante senza nome o indirizzo: completala in Anagrafica Stampanti");
     return stampaDalServizio(config, dati);
   }
+  // Predefinita di Windows: sul totem la stampa il servizio code, senza la finestra di anteprima
+  // che il browser mostra per un istante anche in stampa automatica; senza servizio (o se non
+  // riesce), la stampa del browser come sempre.
+  if (config.stampa === "browser" && config.ticket) {
+    try {
+      return await stampaDalServizio({ ...config, stampa: "windows", stampante: "" }, dati);
+    } catch {
+      // si passa alla stampa del browser
+    }
+  }
   if (config.stampa !== "epson" && config.stampa !== "browser") return;
   if (config.ticket) return stampaConLayout(config, dati);
   if (config.stampa === "epson") return stampaEpson(config.stampante, dati);

@@ -244,6 +244,11 @@ class StampanteTest(Base):
         # Il tipo predefinito di Windows non ha indirizzo.
         r = self.client.patch(f"/api/stampanti/{windows['id']}/", {"tipo": "browser"}, format="json")
         self.assertEqual(r.json()["indirizzo"], "")
+        # Anche la predefinita di Windows riceve il biglietto da disegnare (lo stampa il servizio code).
+        from .models import StampanteTicket
+        from .stampanti import per_il_player
+        with contesto_cliente(self.a.id):
+            self.assertEqual(per_il_player(StampanteTicket.objects.get(id=windows["id"]))["ticket"]["nome"], "Biglietto semplice")
         self.client.patch(f"/api/stampanti/{windows['id']}/", {"tipo": "windows", "indirizzo": "EPSON TM-T20IV Receipt"}, format="json")
 
         # Senza Layout Ticket il totem riceve il biglietto semplice da disegnare, con i testi della zona.
