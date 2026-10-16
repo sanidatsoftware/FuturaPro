@@ -174,7 +174,9 @@ LEFT JOIN Ingredients i ON i.Id = p.IngredientId
 LEFT JOIN Texts t5 ON t5.Id = p.Text5Id
 LEFT JOIN PluDepartments pd ON pd.PluId = p.Id
 LEFT JOIN Departments d ON d.Id = pd.DepartmentId
-WHERE p.IsEnabled = 1 AND length(:codice) >= 7 AND substr(p.BarCode1, 1, 7) = substr(:codice, 1, 7)
+WHERE p.IsEnabled = 1 AND (
+      (length(:codice) >= 7 AND substr(p.BarCode1, 1, 7) = substr(:codice, 1, 7))
+   OR (length(:codice) < 7 AND :plu <> '' AND p.Code = CAST(:plu AS INTEGER)))
 ORDER BY (i.Id IS NOT NULL) DESC, p.UpdatedAt DESC
 LIMIT 1
 """.strip()

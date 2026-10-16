@@ -195,6 +195,9 @@ class DigiTest(Base):
         self.assertTrue(salsiccia["ingredienti"].startswith("INGREDIENTI: carne di suino"))
         self.assertEqual(cerca("2120254002242")["ingredienti"], "INGREDIENTI: coscia di suino, sale")  # dal testo 5
         self.assertIsNone(cerca("2110099001000"))  # PLU disattivato
+        # Il PLU scritto a mano sul totem (Info Ingredienti, poche cifre).
+        riga = db.execute(q.DIGI, {"codice": "162", "codice_corto": "162", "plu": "162", "reparto": ""}).fetchone()
+        self.assertEqual(riga["descrizione"], "SALSICCIA FINA")
         self.assertIsNone(cerca("8001234567890"))
 
 

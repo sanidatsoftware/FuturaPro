@@ -240,6 +240,8 @@ export function preparaLettore({ motore, indirizzo }) {
     const config = plugin[tipo];
     const questa = ++richiesta;
     const parametri = new URLSearchParams({ codice });
+    // Info Ingredienti con poche cifre scritte a mano: è il PLU della bilancia.
+    if (tipo === "ingredienti" && !bilancia && codice.length < 7) parametri.set("plu", codice);
     if (bilancia) {
       parametri.set("plu", bilancia.plu);
       parametri.set("reparto", bilancia.reparto);
@@ -332,7 +334,8 @@ export function preparaLettore({ motore, indirizzo }) {
         return;
       }
       if (!config.ricerca) {
-        nota.textContent = "Per questo prodotto scrivi il codice a barre (solo numeri).";
+        nota.textContent = "La ricerca per nome non è disponibile per questo archivio: scrivi il codice a barre"
+          + (tipo === "ingredienti" ? " o il PLU della bilancia (solo numeri)." : " (solo numeri).");
         return;
       }
       if (cercato.length < 2) {
@@ -343,7 +346,9 @@ export function preparaLettore({ motore, indirizzo }) {
       const esito = await chiedi(tipo, new URLSearchParams({ testo: cercato }));
       if (!velo.isConnected) return;
       const trovati = esito.trovati || [];
-      if (esito.errore) nota.textContent = esito.messaggio || "Servizio non disponibile, riprova tra poco.";
+      // Un servizio code precedente alla 1.9 non conosce la ricerca per nome e risponde «Codice non valido».
+      if (esito.errore && /codice non valido/i.test(esito.messaggio || "")) nota.textContent = "La ricerca per nome richiede il servizio del totem aggiornato (1.9): per ora scrivi il codice a barre.";
+      else if (esito.errore) nota.textContent = esito.messaggio || "Servizio non disponibile, riprova tra poco.";
       else if (!trovati.length) nota.textContent = `Nessun prodotto trovato per «${cercato}».`;
       else if (trovati.length === 1) {
         chiudiRicerca();
