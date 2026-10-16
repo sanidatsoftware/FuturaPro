@@ -248,7 +248,8 @@ if ($Tipo -eq "totem") {
     Start-ScheduledTask -TaskName $NomeAttivitaCode
 
     $pronto = $false
-    for ($i = 0; $i -lt 15; $i++) {
+    # All'avvio il servizio compila i suoi moduli (SQLite, stampa): può volerci mezzo minuto.
+    for ($i = 0; $i -lt 30; $i++) {
         Start-Sleep -Seconds 2
         try { Invoke-WebRequest -UseBasicParsing -Uri "https://127.0.0.1:8443/salute" -TimeoutSec 5 | Out-Null; $pronto = $true; break } catch { }
     }
