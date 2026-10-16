@@ -1062,9 +1062,9 @@ async function epsonDalServizio(indirizzo, corpo, segnale) {
     });
   } catch (e) {
     if (e.name === "AbortError") throw e;
-    return null; // servizio non installato su questo PC
+    return { assente: "servizio code del totem non raggiungibile" }; // non installato o fermo
   }
-  if (risposta.status === 404) return null; // servizio di una versione precedente
+  if (risposta.status === 404) return { assente: "servizio code del totem da aggiornare" };
   const dati = await risposta.json().catch(() => ({}));
   if (!risposta.ok) throw new Error(dati.errore || `servizio HTTP ${risposta.status}`);
   return { stato: dati.stato, testo: dati.risposta || "" };
@@ -1079,13 +1079,19 @@ async function inviaEpson(indirizzo, contenuto) {
   const limite = setTimeout(() => controllo.abort(), 15000);
   try {
     let esito = await epsonDalServizio(indirizzo, corpo, controllo.signal);
-    if (!esito) {
+    if (esito.assente) {
       // Stesso protocollo della pagina: su HTTPS la stampante va usata in HTTPS
       // (il suo certificato va accettato una volta sul totem).
       const url = `${location.protocol}//${indirizzo}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
-      const risposta = await fetch(url, {
-        method: "POST", headers: { "Content-Type": "text/xml; charset=utf-8" }, body: corpo, signal: controllo.signal,
-      });
+      let risposta;
+      try {
+        risposta = await fetch(url, {
+          method: "POST", headers: { "Content-Type": "text/xml; charset=utf-8" }, body: corpo, signal: controllo.signal,
+        });
+      } catch (e) {
+        if (e.name === "AbortError") throw e;
+        throw new TypeError(`${esito.assente}; diretta in ${location.protocol.slice(0, -1).toUpperCase()}: ${e.message}`);
+      }
       esito = { stato: risposta.status, testo: await risposta.text() };
     }
     if (esito.stato === 404) throw new Error("ePOS-Print non attivo sulla stampante: attivalo dalla sua pagina web");
