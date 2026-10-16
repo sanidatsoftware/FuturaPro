@@ -53,6 +53,11 @@ export class Motore {
         rete: `Inviato alla stampante ${config.stampante} (porta 9100).`,
         windows: `Inviato alla stampante di Windows «${config.stampante}».`,
       };
+      if (config.stampa === "browser") {
+        return { ok: true, messaggio: ultimaStampa.viaBrowser
+          ? `Stampato con la stampa del browser (con l'anteprima) perché il servizio code non ha potuto: ${ultimaStampa.viaBrowser}.`
+          : "Inviato alla stampante predefinita di Windows dal servizio code (senza anteprima)." };
+      }
       return { ok: true, messaggio: dove[config.stampa] || "Inviato alla stampante predefinita di Windows." };
     } catch (e) {
       return { ok: false, messaggio: erroreStampa(e) };
@@ -1161,6 +1166,9 @@ async function stampaDalServizio(config, dati) {
   return alServizio(`/stampa/windows?stampante=${encodeURIComponent(config.stampante)}`, png, "image/png");
 }
 
+// Perché l'ultima stampa «predefinita di Windows» è passata dal browser (null: dal servizio code).
+const ultimaStampa = { viaBrowser: null };
+
 // La stampa di un biglietto: con il Layout Ticket della stampante, o quella semplice.
 async function stampaBiglietto(config, dati) {
   if (config.stampa === "windows" || config.stampa === "rete") {
@@ -1172,9 +1180,12 @@ async function stampaBiglietto(config, dati) {
   // riesce), la stampa del browser come sempre.
   if (config.stampa === "browser" && config.ticket) {
     try {
-      return await stampaDalServizio({ ...config, stampa: "windows", stampante: "" }, dati);
-    } catch {
-      // si passa alla stampa del browser
+      await stampaDalServizio({ ...config, stampa: "windows", stampante: "" }, dati);
+      ultimaStampa.viaBrowser = null;
+      return;
+    } catch (e) {
+      // si passa alla stampa del browser, ricordando perché (lo dice la prova di stampa)
+      ultimaStampa.viaBrowser = e.message;
     }
   }
   if (config.stampa !== "epson" && config.stampa !== "browser") return;

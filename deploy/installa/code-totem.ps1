@@ -43,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.7.2"
+$Versione = "1.7.3"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -733,13 +733,23 @@ function Stampanti-Windows {
 # La stampante predefinita dell'utente collegato al totem (quello del player): il servizio gira
 # come SYSTEM, che ha una sua predefinita. Si legge dal registro dell'utente che possiede Esplora risorse.
 function Predefinita-Utente {
+    # Chi è l'utente del totem: il proprietario di Esplora risorse, oppure quello scritto
+    # dall'installazione del player (C:\FuturaPro\impostazioni.json, voce «utente»).
+    $sid = $null
     try {
         $esplora = Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" | Select-Object -First 1
-        if ($esplora) {
-            $sid = (Invoke-CimMethod -InputObject $esplora -MethodName GetOwnerSid).Sid
-            $voce = Get-ItemProperty "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows NT\CurrentVersion\Windows" -Name Device -ErrorAction SilentlyContinue
-            if ($voce -and $voce.Device) { return ([string]$voce.Device -split ",")[0] }
-        }
+        if ($esplora) { $sid = (Invoke-CimMethod -InputObject $esplora -MethodName GetOwnerSid).Sid }
+    } catch { }
+    if (-not $sid) {
+        try {
+            $utente = (Get-Content (Join-Path (Split-Path $Cartella -Parent) "impostazioni.json") -Raw | ConvertFrom-Json).utente
+            if ($utente) { $sid = (New-Object System.Security.Principal.NTAccount($utente)).Translate([System.Security.Principal.SecurityIdentifier]).Value }
+        } catch { }
+    }
+    if (-not $sid) { return "" }
+    try {
+        $voce = Get-ItemProperty "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows NT\CurrentVersion\Windows" -Name Device -ErrorAction Stop
+        if ($voce.Device) { return ([string]$voce.Device -split ",")[0] }
     } catch { }
     return ""
 }
