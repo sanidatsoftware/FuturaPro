@@ -1086,7 +1086,7 @@ async function inviaEpson(indirizzo, contenuto) {
       let risposta;
       try {
         risposta = await fetch(url, {
-          method: "POST", headers: { "Content-Type": "text/xml; charset=utf-8" }, body: corpo, signal: controllo.signal,
+          method: "POST", headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: '""' }, body: corpo, signal: controllo.signal,
         });
       } catch (e) {
         if (e.name === "AbortError") throw e;

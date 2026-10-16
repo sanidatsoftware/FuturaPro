@@ -43,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.6.4"
+$Versione = "1.6.5"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -639,6 +639,10 @@ function Invia-Epson([string]$protocollo, [string]$indirizzo, [byte[]]$corpo) {
     $invio = [System.Net.HttpWebRequest]::Create("$($protocollo)://$indirizzo/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000")
     $invio.Method = "POST"
     $invio.ContentType = "text/xml; charset=utf-8"
+    # Le stesse intestazioni dell'SDK JavaScript di Epson (epos-print): alcune stampanti senza
+    # SOAPAction non rispondono.
+    $invio.Headers.Add("SOAPAction", '""')
+    $invio.IfModifiedSince = [datetime]"1970-01-01"
     $invio.Proxy = $null
     $invio.AllowAutoRedirect = $false
     $invio.KeepAlive = $false
