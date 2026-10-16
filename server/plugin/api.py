@@ -146,8 +146,8 @@ class ImpostazioniPluginSerializer(serializers.ModelSerializer):
             lunghezza = dati.get("plu_lunghezza", self.instance.plu_lunghezza)
             if inizio + lunghezza - 1 > 12:
                 raise serializers.ValidationError({"plu_lunghezza": "Il PLU deve stare nelle prime 12 cifre del codice."})
-            if attivo and not dati.get("prefissi", self.instance.prefissi):
-                raise serializers.ValidationError({"prefissi": "Indica almeno un prefisso (es. 20 = Salumeria)."})
+            # I prefissi servono solo a riconoscere le etichette della bilancia lette con il lettore:
+            # senza, Info Ingredienti funziona dal pulsante sul totem (ricerca per codice o descrizione).
         return dati
 
 

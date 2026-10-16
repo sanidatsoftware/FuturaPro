@@ -380,7 +380,7 @@ export function preparaLettore({ motore, indirizzo }) {
     document.addEventListener("keydown", tastiFisici, true);
     aggiornaCampo();
     attivita();
-    ricerca = { el: velo, chiudi: chiudiRicerca };
+    ricerca = { el: velo, chiudi: chiudiRicerca, tipo };
   }
 
   const lettura = () => {
@@ -388,9 +388,11 @@ export function preparaLettore({ motore, indirizzo }) {
     const codice = cifre;
     cifre = "";
     if (codice.length >= MINIMO_CIFRE) {
-      // Il lettore vince sempre: chiude la ricerca a mano e mostra subito il prodotto letto.
+      // Il lettore vince sempre: chiude la ricerca a mano e mostra subito il prodotto letto,
+      // nel plugin del pulsante toccato (es. Info Ingredienti) se la ricerca era aperta.
+      const forzato = ricerca?.tipo || null;
       ricerca?.chiudi();
-      cerca(codice);
+      cerca(codice, forzato);
     }
   };
 

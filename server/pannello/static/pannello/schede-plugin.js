@@ -66,8 +66,23 @@ async function schedaPlugin(tipo) {
       + "funziona anche senza internet e il file non passa dal server. Serve il Totem Master (Sedi e gruppi, Anagrafica Dispositivi Video).",
   }, intro);
   const attivo = crea("input", { type: "checkbox", checked: p.attivo });
-  const l = crea("label", { classe: "spunta interruttore" }, crea("div", {}, intro));
+  const contenitoreAttivo = crea("div", {}, intro);
+  const l = crea("label", { classe: "spunta interruttore" }, contenitoreAttivo);
   l.append(attivo, ` ${NOMI[tipo]} attivo`);
+  // La spunta si salva subito (prima si salvava solo con il pulsante in fondo alla pagina).
+  const esitoAttivo = crea("span", { classe: "tenue" }, contenitoreAttivo);
+  attivo.addEventListener("change", async () => {
+    esitoAttivo.className = "tenue";
+    esitoAttivo.textContent = " Salvo…";
+    try {
+      await api("PUT", `/api/plugin/${tipo}/`, { attivo: attivo.checked });
+      esitoAttivo.textContent = attivo.checked ? " ✓ Attivato: gli schermi lo ricevono entro un minuto." : " ✓ Disattivato.";
+    } catch (errore) {
+      attivo.checked = !attivo.checked;
+      esitoAttivo.className = "errore";
+      esitoAttivo.textContent = ` Non attivato: ${errore.message}`;
+    }
+  });
   const riga = crea("div", { classe: "riga" }, intro);
   const timeout = campo("Il riquadro resta per (secondi)", crea("input", { type: "number", min: 2, max: 120, value: p.timeout, classe: "corto" }), riga);
   let mostraPrezzo = null;
@@ -76,6 +91,10 @@ async function schedaPlugin(tipo) {
     const lp = crea("label", { classe: "spunta" }, riga);
     lp.append(mostraPrezzo, " Mostra anche il prezzo (da Info Prezzo)");
     if (!p.prezzo_attivo) crea("span", { classe: "tenue", testo: "Info Prezzo non è attivo: il prezzo non comparirà." }, riga);
+    if (!(p.prefissi || []).length) {
+      crea("p", { classe: "nota", testo: "Senza prefissi della bilancia (più sotto, es. 21 = Macelleria) le etichette lette con il lettore, senza toccare lo schermo, "
+        + "mostrano il prezzo e non gli ingredienti. Con il pulsante «Info Ingredienti» sul totem la ricerca funziona comunque, anche passando il prodotto sul lettore." }, intro);
+    }
   }
 
   // --- Negozi e file ---
