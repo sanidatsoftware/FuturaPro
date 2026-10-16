@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static moduli %}<!doctype html>
 <html lang="it" data-tema="{{ tema }}">
 <head>
   <meta charset="utf-8">
@@ -110,6 +110,7 @@
   </dialog>
 
   <dialog id="visore" class="visore"><form method="dialog"><button class="chiudi-visore" aria-label="Chiudi">✕</button></form><div id="visore-contenuto"></div></dialog>
-  <script type="module" src="{% static 'pannello/palinsesto.js' %}"></script>
+  {% mappa_moduli %}
+  <script type="module" src="{% modulo 'pannello/palinsesto.js' %}"></script>
 </body>
 </html>

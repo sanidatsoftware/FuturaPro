@@ -41,15 +41,18 @@ self.addEventListener("fetch", (evento) => {
   if (evento.request.method !== "GET" || url.origin !== location.origin) return;
   const chiave = url.pathname === "/player/" || evento.request.mode === "navigate" ? "/player/" : url.pathname;
   if (!FILE.includes(chiave)) return;
+  // I moduli arrivano con la loro versione nell'indirizzo («?v=»): la copia si tiene per
+  // indirizzo completo, così senza rete la pagina salvata trova proprio i suoi file.
+  const completa = chiave === "/player/" ? chiave : url.pathname + url.search;
   evento.respondWith(
     conLimite(evento.request, 5000)
       .then((risposta) => {
         if (risposta.ok) {
           const copia = risposta.clone();
-          caches.open(CACHE).then((cache) => cache.put(chiave, copia));
+          caches.open(CACHE).then((cache) => cache.put(completa, copia));
         }
         return risposta;
       })
-      .catch(() => caches.match(chiave).then((salvata) => salvata || Response.error())),
+      .catch(() => caches.match(completa).then((salvata) => salvata || caches.match(chiave)).then((salvata) => salvata || Response.error())),
   );
 });

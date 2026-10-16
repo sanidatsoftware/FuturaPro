@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static moduli %}<!doctype html>
 <html lang="it" data-tema="{{ tema }}">
 <head>
   <meta charset="utf-8">
@@ -33,6 +33,7 @@
     </aside>
   </main>
   <main class="elenco" id="elenco" hidden></main>
-  <script type="module" src="{% static 'layout/editor.js' %}"></script>
+  {% mappa_moduli %}
+  <script type="module" src="{% modulo 'layout/editor.js' %}"></script>
 </body>
 </html>

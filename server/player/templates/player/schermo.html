@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static moduli %}<!doctype html>
 <html lang="it">
 <head>
   <meta charset="utf-8">
@@ -46,6 +46,7 @@
       }, 45000);
     }
   </script>
-  <script type="module" src="{% static 'player/avvio.js' %}"></script>
+  {% mappa_moduli %}
+  <script type="module" src="{% modulo 'player/avvio.js' %}"></script>
 </body>
 </html>
