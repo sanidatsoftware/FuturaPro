@@ -38,7 +38,7 @@ layout video, eliminacode, player per monitor e totem, teleassistenza, registro)
   rifiutava la chiamata per il suo certificato autofirmato («Failed to fetch»). Se la stampante rimanda all'HTTPS (le Epson recenti lo fanno di fabbrica), il servizio la chiama in HTTPS accettandone il certificato. Serve rilanciare
   sul totem il comando di installazione del pannello; i messaggi distinguono «non raggiungibile»
   da «ePOS-Print non attivo».
-- **Stampanti dei biglietti: due tipi nuovi** (servizio code `1.7`).
+- **Stampanti dei biglietti: due tipi nuovi** (servizio code `1.7.1`).
   - *Stampante di Windows*: il driver installato sul totem, scelto **per nome** (non serve che
     sia la predefinita). Il player disegna il biglietto e il servizio code lo stampa con il driver.
     I totem riferiscono le stampanti installate e il pannello le propone nel campo.

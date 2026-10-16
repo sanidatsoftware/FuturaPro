@@ -43,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.7"
+$Versione = "1.7.1"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -771,7 +771,13 @@ function Gestisci-Stampa-Rete($contesto) {
         $flusso.WriteTimeout = 15000
         $flusso.Write($comandi, 0, $comandi.Length)
         $flusso.Flush()
-        Start-Sleep -Milliseconds 300   # la stampante legge tutto prima della chiusura
+        # Chiusura ordinata: si dice «finito» e si legge quello che la stampante manda (stato),
+        # finché chiude lei o passano 3 secondi. Chiudere con dati non letti farebbe un reset
+        # della connessione, e alcune stampanti buttano via il biglietto appena ricevuto.
+        $cliente.Client.Shutdown([System.Net.Sockets.SocketShutdown]::Send)
+        $cliente.Client.ReceiveTimeout = 3000
+        $avanzo = New-Object byte[] 256
+        try { while ($cliente.Client.Receive($avanzo) -gt 0) { } } catch { }
     } catch {
         $motivo = "$_"
         $e = $_.Exception
