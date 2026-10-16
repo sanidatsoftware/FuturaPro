@@ -101,6 +101,27 @@ def genera(tipo: str, m: dict) -> str:
     return f"SELECT {', '.join(uscite)} FROM {tabella} WHERE {condizione} LIMIT 1"
 
 
+def genera_ricerca(tipo: str, m: dict) -> str:
+    """La ricerca per descrizione (parametro ``:testo``, già con i «%»): più righe, in ordine."""
+    uscite = [f"{colonna(m[c])} AS {c}" for c in USCITE[tipo] if m.get(c)]
+    descrizione = colonna(m["descrizione"])
+    return f"SELECT {', '.join(uscite)} FROM {colonna(m['tabella'])} WHERE {descrizione} LIKE :testo ORDER BY {descrizione} LIMIT 30"
+
+
+def ricerca_di(impostazioni) -> str | None:
+    """La query della ricerca per descrizione; None con una query scritta a mano (non si può derivare)."""
+    pronta = RICERCHE.get(impostazioni.tipo, {}).get(impostazioni.formato)
+    if pronta:
+        return pronta
+    if PREIMPOSTAZIONI.get(impostazioni.tipo, {}).get(impostazioni.formato) or impostazioni.query:
+        return None
+    try:
+        mappatura = valida_mappatura(impostazioni.tipo, impostazioni.mappatura, obbligatoria=True)
+    except ValueError:
+        return None
+    return genera_ricerca(impostazioni.tipo, mappatura)
+
+
 def query_di(impostazioni) -> str | None:
     pronta = PREIMPOSTAZIONI.get(impostazioni.tipo, {}).get(impostazioni.formato)
     if pronta:
@@ -174,3 +195,56 @@ PREIMPOSTAZIONI = {
         "digi": ("DIGI (DigiProject.db)", DIGI),
     },
 }
+
+
+# La ricerca per descrizione nei gestionali conosciuti (stesse colonne della ricerca per codice).
+EVOPOS_RICERCA = """
+SELECT a.Descrizione AS descrizione,
+       p.Valore AS prezzo,
+       (SELECT round(p.Valore - l.ValoreEffetto1, 2) FROM LinkArticoliLegacypromo k
+          JOIN LegacyPromo l ON l.CodiceOfferta = k.CodiceOfferta
+         WHERE k.CodiceArticolo = a.Codice AND l.Attivo = 1 AND l.CodiceEffetto = 11
+           AND datetime('now', 'localtime') BETWEEN l.DataInizio AND l.DataFine
+           AND l.ValoreEffetto1 > 0 AND l.ValoreEffetto1 < p.Valore
+         ORDER BY l.ValoreEffetto1 DESC LIMIT 1) AS prezzo_offerta,
+       (SELECT l.DataInizio FROM LinkArticoliLegacypromo k
+          JOIN LegacyPromo l ON l.CodiceOfferta = k.CodiceOfferta
+         WHERE k.CodiceArticolo = a.Codice AND l.Attivo = 1 AND l.CodiceEffetto = 11
+           AND datetime('now', 'localtime') BETWEEN l.DataInizio AND l.DataFine
+           AND l.ValoreEffetto1 > 0 AND l.ValoreEffetto1 < p.Valore
+         ORDER BY l.ValoreEffetto1 DESC LIMIT 1) AS offerta_dal,
+       (SELECT l.DataFine FROM LinkArticoliLegacypromo k
+          JOIN LegacyPromo l ON l.CodiceOfferta = k.CodiceOfferta
+         WHERE k.CodiceArticolo = a.Codice AND l.Attivo = 1 AND l.CodiceEffetto = 11
+           AND datetime('now', 'localtime') BETWEEN l.DataInizio AND l.DataFine
+           AND l.ValoreEffetto1 > 0 AND l.ValoreEffetto1 < p.Valore
+         ORDER BY l.ValoreEffetto1 DESC LIMIT 1) AS offerta_al,
+       CASE WHEN a.Tipo = 'KG' THEN 'kg' ELSE '' END AS unita
+FROM Articoli a
+JOIN PrezziDiVendita p ON p.CodiceArticolo = a.Codice AND p.numeroPrezzo = 1
+WHERE a.Stato = 1 AND a.Descrizione LIKE :testo
+ORDER BY a.Descrizione
+LIMIT 30
+""".strip()
+
+DIGI_RICERCA = """
+SELECT p.Label AS descrizione,
+       max(d.Name) AS reparto,
+       trim(coalesce(i.Description, CASE WHEN t5.Message LIKE 'INGR%' THEN t5.Message END)) AS ingredienti,
+       '' AS allergeni,
+       '' AS conservazione,
+       CASE WHEN t5.Message LIKE 'ORIGINE%' THEN t5.Message END AS note,
+       p.SellPriceWithTaxes AS prezzo_bilancia,
+       CASE WHEN p.QuantityType = 0 THEN 'kg' ELSE '' END AS unita
+FROM Plus p
+LEFT JOIN Ingredients i ON i.Id = p.IngredientId
+LEFT JOIN Texts t5 ON t5.Id = p.Text5Id
+LEFT JOIN PluDepartments pd ON pd.PluId = p.Id
+LEFT JOIN Departments d ON d.Id = pd.DepartmentId
+WHERE p.IsEnabled = 1 AND p.Label LIKE :testo
+GROUP BY p.Id
+ORDER BY p.Label
+LIMIT 30
+""".strip()
+
+RICERCHE = {"prezzo": {"evopos": EVOPOS_RICERCA}, "ingredienti": {"digi": DIGI_RICERCA}}

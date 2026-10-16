@@ -5,7 +5,7 @@ from core.email import decifra
 
 from .api import abilitato, aspetto_pulito
 from .models import FontePlugin, ImpostazioniPlugin
-from .query import query_di
+from .query import query_di, ricerca_di
 
 
 def per_il_monitor(monitor, code: dict):
@@ -21,7 +21,8 @@ def per_il_monitor(monitor, code: dict):
         fonte, sql = fonti.get(tipo), query_di(i)
         if fonte is None or not sql:
             continue
-        voce = {"timeout": i.timeout, "aspetto": aspetto_pulito(i.aspetto)}
+        # «ricerca»: il pulsante sul totem cerca anche per descrizione (non con una query scritta a mano).
+        voce = {"timeout": i.timeout, "aspetto": aspetto_pulito(i.aspetto), "ricerca": bool(ricerca_di(i))}
         if tipo == "ingredienti":
             voce.update({
                 "prefissi": i.prefissi, "plu_inizio": i.plu_inizio, "plu_lunghezza": i.plu_lunghezza,
@@ -33,7 +34,7 @@ def per_il_monitor(monitor, code: dict):
             servizio[tipo] = {
                 "condivisione": f"\\\\{fonte.indirizzo}\\{condivisione}", "file": file,
                 "utente": fonte.utente, "password": decifra(fonte.password_cifrata),
-                "minuti": fonte.aggiorna_minuti, "orari": fonte.orari, "query": sql,
+                "minuti": fonte.aggiorna_minuti, "orari": fonte.orari, "query": sql, "ricerca": ricerca_di(i) or "",
                 "richiesta": fonte.richiesta_copia.isoformat() if fonte.richiesta_copia else "",
             }
     return player or None, servizio or None

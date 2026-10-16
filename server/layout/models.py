@@ -57,6 +57,7 @@ class TipoZona(models.TextChoices):
     LISTINO = "listino", "Listino prezzi"
     CODA = "coda", "Eliminacode: numeri dei reparti"
     PRENDI_NUMERO = "prendi_numero", "Eliminacode: prendi il numero (totem touch)"
+    PULSANTE_PLUGIN = "pulsante_plugin", "Pulsante Info Prezzo / Info Ingredienti (totem touch)"
 
 
 class Zona(ModelloCliente):

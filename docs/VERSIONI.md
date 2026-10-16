@@ -48,6 +48,14 @@ layout video, eliminacode, player per monitor e totem, teleassistenza, registro)
   - *Predefinita di Windows*: sul totem la stampa ora il servizio code sulla predefinita
     dell'utente collegato, senza l'anteprima che il browser mostra per un istante; senza
     servizio si usa la stampa del browser come prima.
+- **Pulsanti «Info Prezzo» e «Info Ingredienti» sul totem** (servizio code `1.9`): due zone
+  facoltative del layout, da mettere dove si vuole, anche sopra altre zone, con colori, forma
+  (rettangolo, angoli arrotondati, pillola, cerchio), contorno, ombra e scritta personalizzabili.
+  Al tocco si apre una casella di 13 caratteri con la tastiera sullo schermo: un codice EAN
+  cerca il prodotto, delle lettere cercano per descrizione (spazi = più parole, es. «MOZZ BUF») e
+  mostrano l'elenco da toccare. Il lettore di codici a barre resta automatico: legge, cerca e
+  mostra il prodotto senza toccare nulla, anche con la ricerca aperta. La ricerca per descrizione
+  c'è con EvoPos, DIGI e le mappature; con una query scritta a mano si cerca solo per codice.
 - **Il servizio code del totem si aggiorna da solo** (dalla `1.8`): ogni 10 minuti guarda se sul
   server c'è una versione nuova (in HTTPS), la installa quando da due minuti nessuno prende un
   biglietto e si riavvia; se la nuova versione non risponde entro un minuto e mezzo torna a

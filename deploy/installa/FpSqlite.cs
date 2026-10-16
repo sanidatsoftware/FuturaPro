@@ -59,6 +59,13 @@ public static class FpSqlite
     // La prima riga della query (o null), con i parametri «:nome» presenti nella query.
     public static Hashtable Cerca(string percorso, string sql, Hashtable parametri)
     {
+        ArrayList righe = CercaTutti(percorso, sql, parametri, 1);
+        return righe.Count > 0 ? (Hashtable)righe[0] : null;
+    }
+
+    // Fino a «massimo» righe della query (es. la ricerca per descrizione).
+    public static ArrayList CercaTutti(string percorso, string sql, Hashtable parametri, int massimo)
+    {
         IntPtr db = Apri(percorso, SOLA_LETTURA);
         IntPtr st = IntPtr.Zero;
         try
@@ -72,26 +79,31 @@ public static class FpSqlite
                 byte[] valore = Encoding.UTF8.GetBytes(Convert.ToString(p.Value));
                 sqlite3_bind_text(st, i, valore, valore.Length, COPIA);
             }
-            int rc = sqlite3_step(st);
-            if (rc == FINE) return null;
-            if (rc != RIGA) throw new Exception("Query: " + Testo(sqlite3_errmsg(db), -1));
-            Hashtable riga = new Hashtable();
+            ArrayList righe = new ArrayList();
             int colonne = sqlite3_column_count(st);
-            for (int c = 0; c < colonne; c++)
+            while (righe.Count < massimo)
             {
-                string nome = Testo(sqlite3_column_name(st, c), -1);
-                switch (sqlite3_column_type(st, c))
+                int rc = sqlite3_step(st);
+                if (rc == FINE) break;
+                if (rc != RIGA) throw new Exception("Query: " + Testo(sqlite3_errmsg(db), -1));
+                Hashtable riga = new Hashtable();
+                for (int c = 0; c < colonne; c++)
                 {
-                    case 1: riga[nome] = sqlite3_column_int64(st, c); break;
-                    case 2: riga[nome] = sqlite3_column_double(st, c); break;
-                    case 5: riga[nome] = null; break;
-                    default:
-                        IntPtr t = sqlite3_column_text(st, c);
-                        riga[nome] = Testo(t, sqlite3_column_bytes(st, c));
-                        break;
+                    string nome = Testo(sqlite3_column_name(st, c), -1);
+                    switch (sqlite3_column_type(st, c))
+                    {
+                        case 1: riga[nome] = sqlite3_column_int64(st, c); break;
+                        case 2: riga[nome] = sqlite3_column_double(st, c); break;
+                        case 5: riga[nome] = null; break;
+                        default:
+                            IntPtr t = sqlite3_column_text(st, c);
+                            riga[nome] = Testo(t, sqlite3_column_bytes(st, c));
+                            break;
+                    }
                 }
+                righe.Add(riga);
             }
-            return riga;
+            return righe;
         }
         finally
         {

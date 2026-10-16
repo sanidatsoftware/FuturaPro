@@ -43,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.8"
+$Versione = "1.9"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -363,7 +363,7 @@ function Imposta-Plugin($configurazione) {
         if (-not $c) { continue }
         $nuovo[$tipo] = @{
             condivisione = [string]$c.condivisione; file = [string]$c.file; utente = [string]$c.utente
-            password = [string]$c.password; minuti = [Math]::Max(0, [int]$c.minuti); query = [string]$c.query
+            password = [string]$c.password; minuti = [Math]::Max(0, [int]$c.minuti); query = [string]$c.query; ricerca = [string]$c.ricerca
             orari = @($c.orari | Where-Object { $_ -match "^\d{2}:\d{2}$" }); richiesta = [string]$c.richiesta
         }
         $locale = Join-Path $cartellaPlugin "$tipo.db"
@@ -397,7 +397,7 @@ function Imposta-Plugin($configurazione) {
     $salvato = @{}
     foreach ($tipo in $nuovo.Keys) {
         $c = $nuovo[$tipo]
-        $salvato[$tipo] = @{ condivisione = $c.condivisione; file = $c.file; utente = $c.utente; password = (Proteggi $c.password); minuti = $c.minuti; query = $c.query; orari = @($c.orari); richiesta = $c.richiesta }
+        $salvato[$tipo] = @{ condivisione = $c.condivisione; file = $c.file; utente = $c.utente; password = (Proteggi $c.password); minuti = $c.minuti; query = $c.query; ricerca = $c.ricerca; orari = @($c.orari); richiesta = $c.richiesta }
     }
     [System.IO.File]::WriteAllText($filePlugin, ($salvato | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
 }
@@ -523,6 +523,24 @@ function Gestisci-Plugin($contesto, [string]$tipo) {
         $errore = $script:statoPlugin[$tipo].errore
         if (-not $errore) { $errore = "File non ancora copiato dal PC del negozio." }
         Rispondi $contesto 503 @{ errore = $errore }; return
+    }
+    # Ricerca per descrizione (pulsante sul totem): al massimo 13 caratteri, solo lettere, cifre,
+    # spazi e pochi segni; gli spazi diventano «%» (MOZZ BUF trova «Mozzarella di bufala»).
+    $testo = [string]$richiesta.QueryString["testo"]
+    if ($testo) {
+        $testo = ($testo -replace "[^\p{L}\p{Nd} .'-]", "").Trim()
+        if ($testo.Length -lt 2 -or $testo.Length -gt 13) { Rispondi $contesto 400 @{ errore = "Scrivi da 2 a 13 caratteri." }; return }
+        $c = $script:plugin[$tipo]
+        if (-not $c.ricerca) { Rispondi $contesto 404 @{ errore = "Ricerca per descrizione non disponibile per questo file." }; return }
+        try {
+            $parametri = @{ testo = "%" + ($testo -replace "\s+", "%") + "%" }
+            $righe = @([FpSqlite]::CercaTutti($file, $c.ricerca, $parametri, 30))
+            Rispondi $contesto 200 ([ordered]@{ trovati = $righe; aggiornato = $script:statoPlugin[$tipo].copiato })
+        } catch {
+            Registra "plugin $($tipo) (ricerca): $($_.Exception.Message)"
+            Rispondi $contesto 500 @{ errore = $_.Exception.Message }
+        }
+        return
     }
     # Solo cifre (il codice letto), il reparto come lo scrive il pannello: niente altro arriva alla query.
     $codice = ([string]$richiesta.QueryString["codice"]) -replace "[^0-9]", ""

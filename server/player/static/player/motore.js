@@ -1363,6 +1363,44 @@ class ZonaPrendiNumero {
   }
 }
 
+// Pulsante Info Prezzo / Info Ingredienti: apre la ricerca a mano (codice o descrizione).
+// Si vede solo se il plugin è attivo per questo negozio; può stare sopra altre zone.
+class ZonaPulsantePlugin {
+  constructor(el, zona, px, motore) {
+    Object.assign(this, { el, zona, px, motore, config: zona.configurazione });
+  }
+
+  avvia() {
+    const c = this.config;
+    const tipo = c.plugin || "prezzo";
+    const attivo = this.motore.manifest?.plugin?.[tipo] || this.motore.anteprima;
+    this.el.style.overflow = "visible";
+    if (!attivo) return;
+    const pulsante = crea("button", "pulsante-plugin", this.el);
+    const lato = Math.min(this.px.larghezza, this.px.altezza);
+    const raggio = { rettangolo: "0", arrotondato: `${Math.round(lato * 0.18)}px`, pillola: "9999px", cerchio: "50%" }[c.forma] || "0";
+    Object.assign(pulsante.style, {
+      background: c.sfondo || "transparent", color: c.colore || "#ffffff", borderRadius: raggio,
+      border: c.spessore_contorno ? `${c.spessore_contorno}px solid ${c.contorno || "#ffffff"}` : "0",
+      fontSize: `${Math.round(this.px.altezza * (c.grandezza_testo || 34) / 100)}px`,
+      boxShadow: c.ombra === false ? "none" : `0 ${Math.round(lato * 0.04)}px ${Math.round(lato * 0.12)}px rgba(0, 0, 0, .35)`,
+    });
+    if (c.icona !== false) crea("span", "icona", pulsante).textContent = tipo === "prezzo" ? "🏷️" : "🥗";
+    crea("span", "testo", pulsante).textContent = c.testo || (tipo === "prezzo" ? "Info Prezzo" : "Info Ingredienti");
+    pulsante.addEventListener("click", () => this.motore.lettore?.apriRicerca(tipo));
+    // La scritta si rimpicciolisce finché sta nel pulsante (su due righe al massimo).
+    requestAnimationFrame(() => {
+      let grandezza = parseFloat(pulsante.style.fontSize);
+      for (let i = 0; i < 30 && grandezza > 8 && (pulsante.scrollWidth > pulsante.clientWidth + 1 || pulsante.scrollHeight > pulsante.clientHeight + 1); i++) {
+        grandezza *= 0.92;
+        pulsante.style.fontSize = `${grandezza}px`;
+      }
+    });
+  }
+
+  ferma() {}
+}
+
 const TIPI = {
   slide: ZonaSlide,
   orologio: ZonaOrologio,
@@ -1373,4 +1411,5 @@ const TIPI = {
   listino: ZonaListino,
   coda: ZonaCoda,
   prendi_numero: ZonaPrendiNumero,
+  pulsante_plugin: ZonaPulsantePlugin,
 };

@@ -38,6 +38,10 @@ class QueryTest(Base):
         ingredienti = q.genera("ingredienti", {"tabella": "bilancia", "plu": "plu", "reparto": "reparto", "descrizione": "nome", "ingredienti": "ingr"})
         # Stesso PLU in due banchi: decide il prefisso.
         self.assertEqual(esegui(ingredienti, plu="00123", reparto="21")["descrizione"], "Pane casereccio")
+        ricerca = q.genera_ricerca("prezzo", {"tabella": "articoli", "codice": "ean", "descrizione": "descr", "prezzo": "prezzo"})
+        db = sqlite3.connect(":memory:")
+        db.executescript("CREATE TABLE articoli (ean TEXT, descr TEXT, prezzo REAL); INSERT INTO articoli VALUES ('1', 'Sale fino', 0.5), ('2', 'Pasta', 1), ('3', 'Sale grosso', 0.4);")
+        self.assertEqual([r[0] for r in db.execute(ricerca, {"testo": "%SALE%"})], ["Sale fino", "Sale grosso"])
         with self.assertRaises(ValueError):
             q.valida_mappatura("prezzo", {"tabella": 'x"; DROP'}, obbligatoria=False)
         with self.assertRaises(ValueError):
@@ -139,6 +143,12 @@ class EvoPosTest(Base):
             riga = db.execute(q.EVOPOS, {"codice": codice, "codice_corto": codice.lstrip("0"), "plu": "", "reparto": ""}).fetchone()
             return dict(riga) if riga else None
 
+        # Ricerca per descrizione (pulsante sul totem): solo articoli attivi, con l'offerta in corso.
+        trovati = [dict(r) for r in db.execute(q.EVOPOS_RICERCA, {"testo": "%i%"}).fetchall()]
+        self.assertEqual([t["descrizione"] for t in trovati], ["BISCOTTI", "PIATTI"])
+        self.assertEqual(trovati[1]["prezzo_offerta"], 0.89)
+        self.assertIsNone(trovati[0]["prezzo_offerta"])
+
         piatti = cerca("0800000000011")  # letto a 13 cifre, salvato a 14
         self.assertEqual((piatti["prezzo"], piatti["prezzo_offerta"]), (1.19, 0.89))
         self.assertIsNone(cerca("8000000000028")["prezzo_offerta"])  # offerta scaduta
@@ -175,6 +185,9 @@ class DigiTest(Base):
         def cerca(codice):
             riga = db.execute(q.DIGI, {"codice": codice, "codice_corto": codice.lstrip("0"), "plu": "", "reparto": ""}).fetchone()
             return dict(riga) if riga else None
+
+        trovati = [dict(r) for r in db.execute(q.DIGI_RICERCA, {"testo": "%s%"}).fetchall()]
+        self.assertEqual([(t["descrizione"], t["reparto"]) for t in trovati], [("SALSICCIA FINA", "Macelleria")])
 
         salsiccia = cerca("2110162005664")
         self.assertEqual((salsiccia["descrizione"], salsiccia["reparto"], salsiccia["prezzo_etichetta"], salsiccia["unita"]),

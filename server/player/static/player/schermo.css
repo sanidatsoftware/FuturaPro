@@ -155,3 +155,11 @@ html, body {
 .riga-listino .prezzo { flex: none; font-weight: 800; font-variant-numeric: tabular-nums; }
 .riga-listino .prezzo small { font-size: .55em; font-weight: 600; opacity: .75; }
 .riga-listino.evidenza .prodotto::before { content: "★ "; }
+
+/* Pulsante Info Prezzo / Info Ingredienti (riempie la sua zona, che può stare sopra le altre). */
+.zona-pulsante_plugin { background: transparent; }
+.pulsante-plugin { width: 100%; height: 100%; box-sizing: border-box; overflow: hidden; display: flex; align-items: center; justify-content: center;
+  gap: .35em; padding: 0 .4em; font-family: inherit; font-weight: 800; line-height: 1.05; text-align: center; cursor: pointer;
+  touch-action: manipulation; user-select: none; transition: transform .08s; }
+.pulsante-plugin:active { transform: scale(.96); }
+.pulsante-plugin .icona { font-size: 1.1em; }

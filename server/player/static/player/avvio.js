@@ -543,7 +543,7 @@ async function avviaPlayer() {
     },
   });
   // Plugin Info Prezzo e Info Ingredienti: il lettore di codici a barre collegato a questo schermo.
-  preparaLettore({ motore, indirizzo: () => serviziCode(motore.manifest) });
+  motore.lettore = preparaLettore({ motore, indirizzo: () => serviziCode(motore.manifest) });
 
   // All'avvio, l'ultimo manifest ricevuto: lo schermo riparte anche senza rete.
   let mostrato = null;
@@ -869,6 +869,8 @@ async function avviaAnteprima() {
     // In anteprima non si emettono biglietti veri.
     emetti: async () => ({ reparto: "Anteprima", colore: "#5a5a5a", numero: 0, davanti: 0, anteprima: true }),
   });
+  // In anteprima i pulsanti Info Prezzo / Info Ingredienti si vedono sempre (ma non cercano).
+  motore.anteprima = true;
   const aggiorna = async () => {
     try {
       const manifest = await (await leggi(`/api/anteprima/${monitor}/manifest/`)).json();

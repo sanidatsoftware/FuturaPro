@@ -47,6 +47,19 @@ class LayoutTest(ConFile):
         self.assertEqual(self.crea(zone=[zona("slide"), zona("slide")]).status_code, 400)
         self.assertEqual(self.crea(zone=[zona("notizie", feed=["ftp://x.it/feed"])]).status_code, 400)
 
+    def test_pulsanti_info_prezzo_e_ingredienti(self):
+        from .zone import valida_configurazione
+
+        self.come(self.admin_a)
+        # Due pulsanti sopra la slide (zone sovrapposte, livelli diversi).
+        r = self.crea(zone=[zona("slide"), zona("pulsante_plugin", plugin="prezzo", forma="pillola", spessore_contorno=3),
+                            zona("pulsante_plugin", plugin="ingredienti", sfondo="")])
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(self.crea(zone=[zona("pulsante_plugin", plugin="sconti")]).status_code, 400)
+        self.assertEqual(self.crea(zone=[zona("pulsante_plugin", forma="stella")]).status_code, 400)
+        predefinita = valida_configurazione("pulsante_plugin", {})
+        self.assertEqual((predefinita["plugin"], predefinita["forma"], predefinita["testo"]), ("prezzo", "arrotondato", ""))
+
     def test_formato_immagini_e_adattamenti(self):
         self.come(self.admin_a)
         r = self.crea(formato_larghezza=2480, formato_altezza=3508, zone=[zona("slide", adattamento="sfondo")])

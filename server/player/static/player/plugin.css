@@ -22,3 +22,32 @@
 .plugin-riquadro.vuoto .plugin-titolo { font-size: 1.1em; }
 @keyframes plugin-lampeggia { 50% { opacity: .25; } }
 @keyframes plugin-entra { from { opacity: 0; } }
+
+/* La ricerca a mano dei pulsanti Info Prezzo / Info Ingredienti: casella e tastiera sullo schermo. */
+.plugin-ricerca { position: absolute; inset: 0; z-index: 4500; background: rgba(0, 0, 0, .55); display: flex;
+  align-items: center; justify-content: center; animation: plugin-entra .2s ease-out; font-family: sans-serif; }
+.plugin-ricerca-pannello { width: min(94%, 46em); max-height: 94%; box-sizing: border-box; background: #fff; color: #1d2330;
+  border-radius: 1em; padding: 1em; display: flex; flex-direction: column; gap: .6em; box-shadow: 0 1.2em 3em rgba(0, 0, 0, .45); }
+.plugin-ricerca-testa { display: flex; align-items: center; justify-content: space-between; }
+.plugin-ricerca-titolo { font-size: 1.3em; font-weight: 800; }
+.plugin-ricerca-esci { font-size: 1.1em; width: 2.2em; height: 2.2em; border-radius: 50%; border: 0; background: #e8ebf0; color: #1d2330; cursor: pointer; }
+.plugin-ricerca-campo { display: flex; align-items: center; min-height: 2.4em; padding: 0 .7em; border: .12em solid #1e88e5;
+  border-radius: .5em; font-size: 1.5em; font-weight: 700; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.plugin-ricerca-testo { white-space: pre; }
+.plugin-ricerca-cursore { width: .08em; height: 1.1em; background: #1e88e5; margin-left: .05em; animation: plugin-lampeggia 1s steps(1) infinite; }
+.plugin-ricerca-conta { margin-left: auto; font-size: .5em; font-weight: 600; opacity: .55; }
+.plugin-ricerca-nota { font-size: .8em; opacity: .75; min-height: 1.2em; }
+.plugin-ricerca-elenco { display: flex; flex-direction: column; gap: .3em; overflow-y: auto; max-height: 11em; }
+.plugin-ricerca-elenco[hidden] { display: none; }
+.plugin-ricerca-voce { display: flex; justify-content: space-between; gap: 1em; align-items: center; text-align: left;
+  font-size: .95em; padding: .55em .8em; border: 0; border-radius: .45em; background: #eef3fb; color: inherit; cursor: pointer; }
+.plugin-ricerca-nome { font-weight: 700; }
+.plugin-ricerca-prezzo { font-weight: 800; white-space: nowrap; color: #1f4e79; }
+.plugin-ricerca-tastiera { display: flex; flex-direction: column; gap: .3em; }
+.plugin-tastiera-riga { display: flex; gap: .3em; justify-content: center; }
+.plugin-tasto { flex: 1 1 0; max-width: 3.4em; height: 2.6em; font-size: 1em; font-weight: 700; border: 0; border-radius: .45em;
+  background: #e8ebf0; color: #1d2330; cursor: pointer; touch-action: manipulation; user-select: none; }
+.plugin-tasto:active { background: #c9d3e0; }
+.plugin-tasto.largo { max-width: 6em; flex-grow: 1.6; }
+.plugin-tasto.spazio { max-width: none; flex-grow: 4; }
+.plugin-tasto.cerca { max-width: 8em; flex-grow: 2; background: #1e88e5; color: #fff; }

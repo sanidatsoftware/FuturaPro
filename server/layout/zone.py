@@ -217,6 +217,26 @@ class PrendiNumero(serializers.Serializer):
         return dati
 
 
+FORME = ["rettangolo", "arrotondato", "pillola", "cerchio"]
+
+
+class PulsantePlugin(serializers.Serializer):
+    """Un pulsante facoltativo sul totem: apre la ricerca di Info Prezzo o Info Ingredienti
+    (codice EAN o parte della descrizione, con la tastiera sullo schermo). Si mette dove si
+    vuole, anche sopra altre zone (il livello decide chi sta sopra)."""
+
+    plugin = serializers.ChoiceField(["prezzo", "ingredienti"], required=False, default="prezzo")
+    testo = serializers.CharField(max_length=40, required=False, allow_blank=True, default="")  # vuoto: «Info Prezzo»…
+    icona = serializers.BooleanField(required=False, default=True)
+    colore = Colore("#ffffff")
+    sfondo = Sfondo("#1e88e5")
+    forma = serializers.ChoiceField(FORME, required=False, default="arrotondato")
+    contorno = Colore("#ffffff")
+    spessore_contorno = serializers.IntegerField(min_value=0, max_value=30, required=False, default=0)
+    grandezza_testo = serializers.IntegerField(min_value=10, max_value=80, required=False, default=34)  # % dell'altezza
+    ombra = serializers.BooleanField(required=False, default=True)
+
+
 CONFIGURAZIONI = {
     TipoZona.SLIDE: Slide,
     TipoZona.OROLOGIO: Orologio,
@@ -227,6 +247,7 @@ CONFIGURAZIONI = {
     TipoZona.LISTINO: ListinoZona,
     TipoZona.CODA: Coda,
     TipoZona.PRENDI_NUMERO: PrendiNumero,
+    TipoZona.PULSANTE_PLUGIN: PulsantePlugin,
 }
 
 

@@ -71,6 +71,8 @@ const SPIEGAZIONI = {
   listino: "Una tabella di prodotti e prezzi (es. banco salumi), dal listino compilato nel pannello, da Excel o dal gestionale. Va a pagine se le righe sono tante.",
   coda: "I numeri chiamati dei reparti (eliminacode), con il din-don quando cambiano.",
   prendi_numero: "I pulsanti del totem per prendere il numero e stampare il biglietto.",
+  pulsante_prezzo: "Un pulsante per il cliente: apre la ricerca del prezzo, per codice a barre o per nome, con la tastiera sullo schermo. Mettilo dove vuoi, anche sopra altre zone. Con il lettore di codici a barre la ricerca parte da sola, senza toccarlo.",
+  pulsante_ingredienti: "Un pulsante per il cliente: apre la ricerca degli ingredienti, per codice a barre o per nome, con la tastiera sullo schermo. Mettilo dove vuoi, anche sopra altre zone. Con il lettore di codici a barre la ricerca parte da sola, senza toccarlo.",
 };
 
 // --- Tipi di zona e loro campi ----------------------------------------------------
@@ -86,7 +88,20 @@ const TIPI = {
   listino: { nome: "Listino prezzi", colore: "#2e7d32", dimensioni: [40, 60] },
   coda: { nome: "Numeri dei reparti", colore: "#c62828", dimensioni: [22, 50] },
   prendi_numero: { nome: "Prendi il numero", colore: "#ef6c00", dimensioni: [100, 33] },
+  pulsante_plugin: { nome: "Pulsante Info", colore: "#1e88e5", dimensioni: [24, 9] },
 };
+
+function nomeTipo(zona) {
+  if (zona.tipo === "pulsante_plugin") return zona.configurazione?.plugin === "ingredienti" ? "Pulsante Info Ingredienti" : "Pulsante Info Prezzo";
+  return TIPI[zona.tipo].nome;
+}
+
+// Nella tavolozza il pulsante dei plugin è due pulsanti: Info Prezzo e Info Ingredienti.
+const TAVOLOZZA = [
+  ...Object.keys(TIPI).filter((t) => t !== "pulsante_plugin").map((t) => ({ chiave: t, tipo: t, nome: TIPI[t].nome, colore: TIPI[t].colore })),
+  { chiave: "pulsante_prezzo", tipo: "pulsante_plugin", nome: "Pulsante Info Prezzo", colore: "#1e88e5", configurazione: { plugin: "prezzo" } },
+  { chiave: "pulsante_ingredienti", tipo: "pulsante_plugin", nome: "Pulsante Info Ingredienti", colore: "#43a047", configurazione: { plugin: "ingredienti", sfondo: "#43a047" } },
+];
 
 const ALLINEAMENTO = [["sinistra", "Sinistra"], ["centro", "Centro"], ["destra", "Destra"]];
 const ADATTAMENTO = [
@@ -230,6 +245,18 @@ const CAMPI = {
     { nome: "volume_annunci", etichetta: "Volume degli annunci (%) — a parte da video e dirette", tipo: "numero", min: 0, max: 100, passo: 5, predefinito: 100 },
     { nome: "personalizza", etichetta: "Aspetto dei reparti in questa zona", tipo: "personalizza" },
   ],
+  pulsante_plugin: [
+    { nome: "plugin", etichetta: "Cosa cerca", tipo: "scelta", valori: [["prezzo", "Info Prezzo"], ["ingredienti", "Info Ingredienti"]], predefinito: "prezzo" },
+    { nome: "testo", etichetta: "Scritta (vuoto = «Info Prezzo» / «Info Ingredienti»)", tipo: "testo", predefinito: "" },
+    { nome: "icona", etichetta: "Icona accanto alla scritta", tipo: "si_no", predefinito: true },
+    { nome: "colore", etichetta: "Colore della scritta", tipo: "colore", predefinito: "#ffffff" },
+    { nome: "sfondo", etichetta: "Colore del pulsante", tipo: "sfondo", predefinito: "#1e88e5" },
+    { nome: "forma", etichetta: "Forma", tipo: "scelta", valori: [["rettangolo", "Rettangolo"], ["arrotondato", "Angoli arrotondati"], ["pillola", "Pillola"], ["cerchio", "Cerchio / ovale"]], predefinito: "arrotondato" },
+    { nome: "spessore_contorno", etichetta: "Spessore del contorno (px, 0 = senza)", tipo: "numero", min: 0, max: 30, passo: 1, predefinito: 0 },
+    { nome: "contorno", etichetta: "Colore del contorno", tipo: "colore", predefinito: "#ffffff" },
+    { nome: "grandezza_testo", etichetta: "Grandezza della scritta (% dell'altezza)", tipo: "numero", min: 10, max: 80, passo: 2, predefinito: 34 },
+    { nome: "ombra", etichetta: "Ombra", tipo: "si_no", predefinito: true },
+  ],
   prendi_numero: [
     { nome: "reparti", etichetta: "Reparti", tipo: "reparti" },
     { nome: "titolo", etichetta: "Titolo (vuoto = senza barra)", tipo: "testo", predefinito: "PRENDI QUI IL TUO NUMERO" },
@@ -334,6 +361,21 @@ function anteprimaZona(el, zona) {
       if (!righe.length) crea("div", { testo: listino ? "Listino vuoto" : "Scegli il listino" }, corpo);
       break;
     }
+    case "pulsante_plugin": {
+      // Il pulsante com'è sul totem: la zona resta trasparente, il pulsante la riempie.
+      el.style.background = "transparent";
+      el.style.overflow = "visible";
+      const pulsante = crea("div", { classe: "pulsante-plugin" }, corpo);
+      const raggio = { rettangolo: "0", arrotondato: "18%", pillola: "9999px", cerchio: "50%" }[c.forma || "arrotondato"] || "0";
+      Object.assign(pulsante.style, {
+        background: c.sfondo ?? "#1e88e5", color: c.colore || "#ffffff", borderRadius: raggio,
+        border: c.spessore_contorno ? `${Math.max(1, c.spessore_contorno / 4)}px solid ${c.contorno || "#ffffff"}` : "0",
+        boxShadow: c.ombra === false ? "none" : "0 2px 8px rgba(0,0,0,.35)",
+      });
+      const icona = c.icona === false ? "" : (c.plugin === "ingredienti" ? "🥗 " : "🏷️ ");
+      pulsante.textContent = icona + (c.testo || (c.plugin === "ingredienti" ? "Info Ingredienti" : "Info Prezzo"));
+      break;
+    }
     case "coda":
     case "prendi_numero": {
       corpo.classList.add(zona.tipo === "coda" ? "riquadri" : "pulsanti");
@@ -369,7 +411,7 @@ function disegna() {
     if (zona._chiave === stato.selezionata) el.classList.add("selezionata");
     if (stato.errori.has(zona._chiave)) el.classList.add("con-errore");
     anteprimaZona(el, zona);
-    crea("span", { classe: "nome-tipo", testo: zona.nome || TIPI[zona.tipo].nome }, el);
+    crea("span", { classe: "nome-tipo", testo: zona.nome || nomeTipo(zona) }, el);
     for (const lato of ["n", "s", "e", "o", "ne", "no", "se", "so"]) crea("span", { classe: `maniglia ${lato}` }, el).dataset.lato = lato;
     el.addEventListener("pointerdown", (evento) => iniziaTrascinamento(evento, zona));
   }
@@ -621,7 +663,7 @@ function mostraProprieta() {
     crea("p", { classe: "vuoto", testo: "Seleziona una zona per modificarla, o aggiungine una dalla colonna a sinistra." }, pannello);
     return;
   }
-  crea("h2", { testo: TIPI[zona.tipo].nome }, pannello);
+  crea("h2", { testo: nomeTipo(zona) }, pannello);
   for (const messaggio of stato.errori.get(zona._chiave) || []) crea("p", { classe: "errore-campo", testo: messaggio }, pannello);
 
   const nome = crea("label", { classe: "campo" }, pannello);
@@ -756,13 +798,19 @@ function mostraProprieta() {
 
 // --- Operazioni sulle zone -----------------------------------------------------------
 
-function aggiungi(tipo) {
+function aggiungi(tipo, configurazione = {}) {
   const [larghezza, altezza] = TIPI[tipo].dimensioni;
+  // Sempre sopra le zone che ci sono: un pulsante si può mettere anche sopra le slide.
   const livello = Math.max(0, ...stato.zone.map((z) => z.livello + 1));
   const zona = {
-    _chiave: nuovaChiave(), tipo, nome: "", livello, configurazione: {},
+    _chiave: nuovaChiave(), tipo, nome: "", livello, configurazione: { ...configurazione },
     x: arrotonda((100 - larghezza) / 2), y: arrotonda((100 - altezza) / 2), larghezza, altezza,
   };
+  if (tipo === "pulsante_plugin") {
+    // In alto a destra, uno sotto l'altro: poi si spostano dove si vuole.
+    const gia = stato.zone.filter((z) => z.tipo === "pulsante_plugin").length;
+    Object.assign(zona, { x: arrotonda(100 - larghezza - 2), y: arrotonda(Math.min(100 - altezza, 2 + gia * (altezza + 1))) });
+  }
   stato.zone.push(zona);
   segnaModificato();
   seleziona(zona._chiave);
@@ -872,10 +920,10 @@ async function avviaEditor(id) {
   document.querySelector(".editor").hidden = false;
   document.getElementById("torna").href = `/editor/${suffisso}`;
   const tavolozza = document.getElementById("tavolozza");
-  for (const [tipo, info] of Object.entries(TIPI)) {
-    const b = crea("button", { type: "button", classe: "aggiungi", testo: info.nome, "data-aiuto": SPIEGAZIONI[tipo] }, tavolozza);
-    b.style.borderLeftColor = info.colore;
-    b.addEventListener("click", () => aggiungi(tipo));
+  for (const voce of TAVOLOZZA) {
+    const b = crea("button", { type: "button", classe: "aggiungi", testo: voce.nome, "data-aiuto": SPIEGAZIONI[voce.chiave] }, tavolozza);
+    b.style.borderLeftColor = voce.colore;
+    b.addEventListener("click", () => aggiungi(voce.tipo, voce.configurazione));
   }
   for (const id of ["nome", "sfondo", "predefinito"]) {
     document.getElementById(id).addEventListener("input", () => {

@@ -185,6 +185,7 @@ export function disegnaRiquadro(contenitore, { tipo, esito, aspetto, dimensioni,
 }
 
 // Nel player: ascolta il lettore e mostra le risposte. «indirizzo()» è il servizio code da usare.
+// Restituisce { apriRicerca(tipo) }: la ricerca a mano dei pulsanti Info Prezzo / Info Ingredienti.
 export function preparaLettore({ motore, indirizzo }) {
   let cifre = "";
   let ultimo = 0;
@@ -192,6 +193,7 @@ export function preparaLettore({ motore, indirizzo }) {
   let riquadro = null;
   let timerChiudi = null;
   let richiesta = 0;
+  let ricerca = null; // il pannello di ricerca aperto: { el, chiudi }
 
   const chiudi = () => {
     clearTimeout(timerChiudi);
@@ -199,13 +201,42 @@ export function preparaLettore({ motore, indirizzo }) {
     riquadro = null;
   };
 
-  async function cerca(codice) {
+  async function chiedi(tipo, parametri) {
+    const controllo = new AbortController();
+    const limite = setTimeout(() => controllo.abort(), 5000);
+    try {
+      const risposta = await fetch(`${indirizzo()}/plugin/${tipo}?${parametri}`, { signal: controllo.signal, cache: "no-store" });
+      if (risposta.ok) return await risposta.json();
+      const dati = await risposta.json().catch(() => ({}));
+      return { errore: true, messaggio: dati.errore || "" };
+    } catch {
+      return { errore: true };
+    } finally {
+      clearTimeout(limite);
+    }
+  }
+
+  function mostraArticolo(tipo, esito, bilancia = null) {
+    const config = motore.manifest?.plugin?.[tipo];
+    if (!config || !motore.palco) return;
+    chiudi();
+    riquadro = disegnaRiquadro(motore.palco, {
+      tipo, esito, aspetto: config.aspetto, dimensioni: motore.dimensioni,
+      reparto: bilancia?.nomeReparto, mostraPrezzo: Boolean(config.mostra_prezzo),
+    });
+    riquadro.addEventListener("click", chiudi);
+    const secondi = esito.trovato ? config.timeout || 8 : Math.min(config.timeout || 8, 4);
+    timerChiudi = setTimeout(chiudi, secondi * 1000);
+  }
+
+  // Un codice (letto o scritto). «forzato»: il plugin del pulsante premuto; senza, lo sceglie il codice.
+  async function cerca(codice, forzato = null) {
     const plugin = motore.manifest?.plugin;
-    const servizio = indirizzo();
-    if (!plugin || !servizio) return;
-    const bilancia = codiceBilancia(codice, plugin.ingredienti);
-    const tipo = bilancia ? "ingredienti" : plugin.prezzo ? "prezzo" : null;
+    if (!plugin || !indirizzo()) return;
+    let bilancia = codiceBilancia(codice, plugin.ingredienti);
+    const tipo = forzato && plugin[forzato] ? forzato : bilancia ? "ingredienti" : plugin.prezzo ? "prezzo" : null;
     if (!tipo) return;
+    if (tipo !== "ingredienti") bilancia = null;
     const config = plugin[tipo];
     const questa = ++richiesta;
     const parametri = new URLSearchParams({ codice });
@@ -214,33 +245,153 @@ export function preparaLettore({ motore, indirizzo }) {
       parametri.set("reparto", bilancia.reparto);
       if (config.mostra_prezzo) parametri.set("prezzo", "1");
     }
-    let esito;
-    const controllo = new AbortController();
-    const limite = setTimeout(() => controllo.abort(), 5000);
-    try {
-      const risposta = await fetch(`${servizio}/plugin/${tipo}?${parametri}`, { signal: controllo.signal, cache: "no-store" });
-      esito = risposta.ok ? await risposta.json() : { errore: true };
-    } catch {
-      esito = { errore: true };
-    } finally {
-      clearTimeout(limite);
-    }
-    if (questa !== richiesta || !motore.palco) return; // nel frattempo è arrivata un'altra lettura
+    const esito = await chiedi(tipo, parametri);
+    if (questa !== richiesta) return; // nel frattempo è arrivata un'altra lettura
+    mostraArticolo(tipo, { ...esito, codice }, bilancia);
+  }
+
+  // --- La ricerca a mano: casella di 13 caratteri e tastiera sullo schermo -------------------
+  function apriRicerca(tipo) {
+    const config = motore.manifest?.plugin?.[tipo];
+    if (!config || !motore.palco) return;
+    ricerca?.chiudi();
     chiudi();
-    riquadro = disegnaRiquadro(motore.palco, {
-      tipo, esito: { ...esito, codice }, aspetto: config.aspetto, dimensioni: motore.dimensioni,
-      reparto: bilancia?.nomeReparto, mostraPrezzo: Boolean(config.mostra_prezzo),
-    });
-    riquadro.addEventListener("click", chiudi);
-    const secondi = esito.trovato ? config.timeout || 8 : Math.min(config.timeout || 8, 4);
-    timerChiudi = setTimeout(chiudi, secondi * 1000);
+    const MASSIMO = 13;
+    let testo = "";
+    let timerInattivo = null;
+    const lato = Math.min(motore.dimensioni.larghezza, motore.dimensioni.altezza);
+    const velo = crea("div", "plugin-ricerca", motore.palco);
+    velo.style.fontSize = `${lato * 0.03}px`;
+    const pannello = crea("div", "plugin-ricerca-pannello", velo);
+    const testa = crea("div", "plugin-ricerca-testa", pannello);
+    crea("div", "plugin-ricerca-titolo", testa).textContent = tipo === "prezzo" ? "Info Prezzo" : "Info Ingredienti";
+    const esci = crea("button", "plugin-ricerca-esci", testa);
+    esci.textContent = "✕";
+    const campo = crea("div", "plugin-ricerca-campo", pannello);
+    const scritto = crea("span", "plugin-ricerca-testo", campo);
+    crea("span", "plugin-ricerca-cursore", campo);
+    const conta = crea("span", "plugin-ricerca-conta", campo);
+    const nota = crea("div", "plugin-ricerca-nota", pannello);
+    const suggerimento = config.ricerca
+      ? "Scrivi il codice a barre (EAN) oppure parte del nome, poi tocca CERCA. Puoi anche passare il prodotto sul lettore."
+      : "Scrivi il codice a barre (EAN), poi tocca CERCA. Puoi anche passare il prodotto sul lettore.";
+    nota.textContent = suggerimento;
+    const elenco = crea("div", "plugin-ricerca-elenco", pannello);
+    elenco.hidden = true;
+    const tastiera = crea("div", "plugin-ricerca-tastiera", pannello);
+
+    const aggiornaCampo = () => {
+      scritto.textContent = testo;
+      conta.textContent = `${testo.length}/${MASSIMO}`;
+    };
+    const chiudiRicerca = () => {
+      clearTimeout(timerInattivo);
+      document.removeEventListener("keydown", tastiFisici, true);
+      velo.remove();
+      if (ricerca?.el === velo) ricerca = null;
+    };
+    const attivita = () => {
+      clearTimeout(timerInattivo);
+      timerInattivo = setTimeout(chiudiRicerca, 45_000); // nessuno la usa più: si chiude da sola
+    };
+    const scrivi = (carattere) => {
+      attivita();
+      if (testo.length >= MASSIMO) return;
+      if (carattere === " " && (!testo || testo.endsWith(" "))) return;
+      testo += carattere;
+      aggiornaCampo();
+    };
+    const cancella = () => {
+      attivita();
+      testo = testo.slice(0, -1);
+      aggiornaCampo();
+    };
+    const mostraElenco = (articoli) => {
+      elenco.replaceChildren();
+      elenco.hidden = false;
+      for (const articolo of articoli) {
+        const voce = crea("button", "plugin-ricerca-voce", elenco);
+        crea("span", "plugin-ricerca-nome", voce).textContent = articolo.descrizione || "";
+        const prezzo = tipo === "prezzo" ? leggiPrezzo(articolo) : null;
+        const valore = prezzo ? (prezzo.offerta ?? prezzo.pieno) : null;
+        if (valore !== null && valore !== undefined) crea("span", "plugin-ricerca-prezzo", voce).textContent = euro(valore);
+        else if (articolo.reparto) crea("span", "plugin-ricerca-prezzo", voce).textContent = articolo.reparto;
+        voce.addEventListener("click", () => {
+          chiudiRicerca();
+          mostraArticolo(tipo, { trovato: true, articolo });
+        });
+      }
+    };
+    const avvia = async () => {
+      attivita();
+      const cercato = testo.trim();
+      if (!cercato) return;
+      if (/^\d+$/.test(cercato)) {
+        chiudiRicerca();
+        cerca(cercato, tipo);
+        return;
+      }
+      if (!config.ricerca) {
+        nota.textContent = "Per questo prodotto scrivi il codice a barre (solo numeri).";
+        return;
+      }
+      if (cercato.length < 2) {
+        nota.textContent = "Scrivi almeno 2 lettere.";
+        return;
+      }
+      nota.textContent = "Cerco…";
+      const esito = await chiedi(tipo, new URLSearchParams({ testo: cercato }));
+      if (!velo.isConnected) return;
+      const trovati = esito.trovati || [];
+      if (esito.errore) nota.textContent = esito.messaggio || "Servizio non disponibile, riprova tra poco.";
+      else if (!trovati.length) nota.textContent = `Nessun prodotto trovato per «${cercato}».`;
+      else if (trovati.length === 1) {
+        chiudiRicerca();
+        mostraArticolo(tipo, { trovato: true, articolo: trovati[0] });
+        return;
+      } else nota.textContent = `${trovati.length === 30 ? "Primi 30 prodotti" : `${trovati.length} prodotti`}: tocca quello che cerchi.`;
+      if (trovati.length > 1) mostraElenco(trovati);
+      else elenco.hidden = true;
+    };
+
+    const tasto = (riga, etichetta, azione, classe = "") => {
+      const b = crea("button", `plugin-tasto ${classe}`, riga);
+      b.textContent = etichetta;
+      b.addEventListener("click", azione);
+      return b;
+    };
+    for (const lettere of ["1234567890", "QWERTYUIOP", "ASDFGHJKL'", "ZXCVBNM.-"]) {
+      const riga = crea("div", "plugin-tastiera-riga", tastiera);
+      for (const lettera of lettere) tasto(riga, lettera, () => scrivi(lettera));
+    }
+    const ultima = crea("div", "plugin-tastiera-riga", tastiera);
+    tasto(ultima, "⌫", cancella, "largo");
+    tasto(ultima, "SPAZIO", () => scrivi(" "), "spazio");
+    tasto(ultima, "CERCA", avvia, "cerca");
+    esci.addEventListener("click", chiudiRicerca);
+
+    // Anche una tastiera vera, se c'è (le cifre veloci del lettore le gestisce il lettore).
+    function tastiFisici(e) {
+      if (e.key === "Backspace") { cancella(); e.preventDefault(); }
+      else if (e.key === "Escape") chiudiRicerca();
+      else if (e.key === "Enter" && !/^\d{6,}$/.test(testo)) { e.preventDefault(); avvia(); }
+      else if (e.key.length === 1 && /[\p{L}\p{Nd} .'-]/u.test(e.key)) scrivi(e.key.toUpperCase());
+    }
+    document.addEventListener("keydown", tastiFisici, true);
+    aggiornaCampo();
+    attivita();
+    ricerca = { el: velo, chiudi: chiudiRicerca };
   }
 
   const lettura = () => {
     clearTimeout(timerFine);
     const codice = cifre;
     cifre = "";
-    if (codice.length >= MINIMO_CIFRE) cerca(codice);
+    if (codice.length >= MINIMO_CIFRE) {
+      // Il lettore vince sempre: chiude la ricerca a mano e mostra subito il prodotto letto.
+      ricerca?.chiudi();
+      cerca(codice);
+    }
   };
 
   document.addEventListener("keydown", (e) => {
@@ -260,4 +411,6 @@ export function preparaLettore({ motore, indirizzo }) {
       timerFine = setTimeout(lettura, 150);
     }
   }, true);
+
+  return { apriRicerca };
 }
