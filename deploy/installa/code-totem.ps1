@@ -43,7 +43,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Versione = "1.6.1"
+$Versione = "1.6.2"
 $fileStato = Join-Path $Cartella "stato.json"
 $fileRegistro = Join-Path $Cartella "registro.log"
 $cartellaAnnunci = Join-Path $Cartella "annunci"
@@ -611,13 +611,57 @@ function Stato-Plugin {
 # --- Stampante Epson di rete ----------------------------------------------------------
 # Il player stampa da qui: dalla pagina in HTTPS il browser dovrebbe chiamare la stampante in
 # HTTPS, e il suo certificato autofirmato lo rifiuta («Failed to fetch»). Il servizio la chiama in
-# HTTP sulla rete locale e restituisce la risposta della stampante.
+# HTTP; se la stampante rimanda all'HTTPS (le Epson recenti lo fanno di fabbrica) la chiama in
+# HTTPS accettandone il certificato, solo per indirizzi della rete locale.
+
+Add-Type -TypeDefinition @"
+using System.Net.Security;
+public static class FpStampante {
+    public static RemoteCertificateValidationCallback Accetta = delegate { return true; };
+}
+"@
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
 function Indirizzo-Rete-Locale([string]$testo) {
     $ip = $null
     if (-not [System.Net.IPAddress]::TryParse($testo, [ref]$ip) -or $ip.AddressFamily -ne "InterNetwork") { return $false }
     $b = $ip.GetAddressBytes()
     return ($b[0] -eq 10) -or ($b[0] -eq 172 -and $b[1] -ge 16 -and $b[1] -le 31) -or ($b[0] -eq 192 -and $b[1] -eq 168) -or ($b[0] -eq 169 -and $b[1] -eq 254)
+}
+
+# Una chiamata ePOS-Print: @{ stato; testo; rimando } (rimando: la stampante vuole l'HTTPS).
+function Invia-Epson([string]$protocollo, [string]$indirizzo, [byte[]]$corpo) {
+    $invio = [System.Net.HttpWebRequest]::Create("$($protocollo)://$indirizzo/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000")
+    $invio.Method = "POST"
+    $invio.ContentType = "text/xml; charset=utf-8"
+    $invio.Proxy = $null
+    $invio.AllowAutoRedirect = $false
+    $invio.KeepAlive = $false
+    $invio.Timeout = 12000
+    $invio.ReadWriteTimeout = 12000
+    if ($protocollo -eq "https") { $invio.ServerCertificateValidationCallback = [FpStampante]::Accetta }
+    $invio.ContentLength = $corpo.Length
+    $risposta = $null
+    try {
+        $flusso = $invio.GetRequestStream()
+        $flusso.Write($corpo, 0, $corpo.Length)
+        $flusso.Close()
+        $risposta = $invio.GetResponse()
+    } catch {
+        $e = $_.Exception
+        while ($e -and -not ($e -is [System.Net.WebException])) { $e = $e.InnerException }
+        if ($e -and $e.Response) { $risposta = $e.Response }
+        else { throw $(if ($e) { $e.Message } else { $_.Exception.Message }) }
+    }
+    try {
+        $stato = [int]$risposta.StatusCode
+        $verso = [string]$risposta.Headers["Location"]
+        $lettore = New-Object System.IO.StreamReader($risposta.GetResponseStream(), [System.Text.Encoding]::UTF8)
+        $testo = $lettore.ReadToEnd()
+    } finally {
+        $risposta.Close()
+    }
+    return @{ stato = $stato; testo = $testo; rimando = ($stato -ge 300 -and $stato -lt 400 -and $verso -like "https:*") }
 }
 
 function Gestisci-Stampa($contesto) {
@@ -628,42 +672,14 @@ function Gestisci-Stampa($contesto) {
     }
     $corpo = Leggi-Byte $richiesta (4MB)
     if ($null -eq $corpo) { Rispondi $contesto 413 @{ errore = "biglietto troppo grande" }; return }
-    $risposta = $null
     try {
-        $invio = [System.Net.HttpWebRequest]::Create("http://$indirizzo/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000")
-        $invio.Method = "POST"
-        $invio.ContentType = "text/xml; charset=utf-8"
-        $invio.Proxy = $null
-        $invio.AllowAutoRedirect = $false
-        $invio.Timeout = 12000
-        $invio.ReadWriteTimeout = 12000
-        $invio.ContentLength = $corpo.Length
-        $flusso = $invio.GetRequestStream()
-        $flusso.Write($corpo, 0, $corpo.Length)
-        $flusso.Close()
-        $risposta = $invio.GetResponse()
+        $esito = Invia-Epson "http" $indirizzo $corpo
+        if ($esito.rimando) { $esito = Invia-Epson "https" $indirizzo $corpo }
     } catch {
-        $e = $_.Exception
-        while ($e -and -not ($e -is [System.Net.WebException])) { $e = $e.InnerException }
-        if ($e -and $e.Response) { $risposta = $e.Response }
-        else {
-            $motivo = if ($e) { $e.Message } else { $_.Exception.Message }
-            Registra "stampa su $($indirizzo): $motivo"
-            Rispondi $contesto 502 @{ errore = "stampante $indirizzo non raggiungibile dal totem ($motivo)" }; return
-        }
+        Registra "stampa su $($indirizzo): $_"
+        Rispondi $contesto 502 @{ errore = "stampante $indirizzo non raggiungibile dal totem ($_)" }; return
     }
-    try {
-        $lettore = New-Object System.IO.StreamReader($risposta.GetResponseStream(), [System.Text.Encoding]::UTF8)
-        $testo = $lettore.ReadToEnd()
-        $stato = [int]$risposta.StatusCode
-    } finally {
-        $risposta.Close()
-    }
-    # Stampante impostata per rimandare l'HTTP all'HTTPS: lo si dice chiaro invece di inseguirla.
-    if ($stato -ge 300 -and $stato -lt 400) {
-        Rispondi $contesto 502 @{ errore = "la stampante $indirizzo accetta solo HTTPS: nella sua pagina web (SSL/TLS) togli il reindirizzamento da HTTP a HTTPS" }; return
-    }
-    Rispondi $contesto 200 @{ stato = $stato; risposta = $testo }
+    Rispondi $contesto 200 @{ stato = $esito.stato; risposta = $esito.testo }
 }
 
 function Gestisci($contesto) {

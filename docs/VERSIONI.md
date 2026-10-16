@@ -33,9 +33,9 @@ layout video, eliminacode, player per monitor e totem, teleassistenza, registro)
 
 ### Dopo la 1.6
 
-- **Stampanti Epson di rete** (servizio code `1.6.1`): il totem stampa passando dal suo servizio
+- **Stampanti Epson di rete** (servizio code `1.6.2`): il totem stampa passando dal suo servizio
   code, che chiama la stampante in HTTP sulla rete locale. Dal browser in HTTPS la stampante
-  rifiutava la chiamata per il suo certificato autofirmato («Failed to fetch»). Serve rilanciare
+  rifiutava la chiamata per il suo certificato autofirmato («Failed to fetch»). Se la stampante rimanda all'HTTPS (le Epson recenti lo fanno di fabbrica), il servizio la chiama in HTTPS accettandone il certificato. Serve rilanciare
   sul totem il comando di installazione del pannello; i messaggi distinguono «non raggiungibile»
   da «ePOS-Print non attivo».
 - **Accesso automatico di Windows** (`accesso-automatico.ps1`): password nei segreti di sistema,
