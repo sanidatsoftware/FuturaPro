@@ -230,62 +230,87 @@ function daQuanto(iso) {
   return `${Math.floor(minuti / 1440)} giorni`;
 }
 
+let aggiornaStato = null;
+
 export async function schedaStato() {
   const { crea, sezione, api, prova } = H;
   const dati = await api("GET", "/api/stato-schermi/?giorni=7");
   const gestione = H.ruoloGestione();
 
   const riepilogo = sezione("Stato degli schermi");
-  const conta = (f) => dati.schermi.filter(f).length;
-  const tessere = crea("div", { classe: "tessere-stato" }, riepilogo);
-  for (const [n, testo, classe] of [
-    [conta((s) => s.online && !s.riposo), "in linea", "ok"],
-    [conta((s) => s.online && s.riposo), "a riposo (fuori orario)", "riposo"],
-    [conta((s) => !s.online && s.ultimo_contatto), "scollegati", "male"],
-    [conta((s) => !s.ultimo_contatto), "mai collegati", "tenue"],
-  ]) {
-    const t = crea("div", { classe: `tessera ${classe}` }, tessere);
-    crea("strong", { testo: String(n) }, t);
-    crea("span", { testo: testo }, t);
-  }
-
-  const corpo = H.tabella(["", "Schermo", "Sede", "Stato", "Orario", "Disponibilità ultimi 7 giorni", "Player"], riepilogo);
-  for (const s of dati.schermi) {
-    const riga = crea("tr", {}, corpo);
-    crea("span", { classe: `pallino ${s.online ? (s.riposo ? "riposo" : "acceso") : "spento"}` }, crea("td", {}, riga));
-    crea("td", { testo: s.nome }, riga);
-    crea("td", { testo: s.sede }, riga);
-    const stato = crea("td", {}, riga);
-    stato.textContent = s.online ? (s.riposo ? "A riposo" : "In linea") : s.ultimo_contatto ? `Scollegato da ${daQuanto(s.ultimo_contatto)}` : "Mai collegato";
-    if (!s.online && s.ultimo_contatto) stato.className = "attenzione";
-    if (s.problema) crea("div", { classe: "problema-schermo", testo: `⚠ ${s.problema.testo}` }, stato);
-    crea("td", { testo: s.orario || "sempre acceso" }, riga);
-    // Una barretta per giorno: la parte verde è il tempo in linea sul tempo in cui doveva essere acceso.
-    const cella = crea("td", {}, riga);
-    const barre = crea("div", { classe: "barre-disponibilita" }, cella);
-    let somma = 0;
-    let attesi = 0;
-    for (const giorno of dati.giorni) {
-      const [minuti, riposo] = s.presenze[giorno] || [0, 0];
-      const atteso = s.atteso[giorno] || 0;
-      const senzaDati = !s.dati_dal || giorno < s.dati_dal;
-      const quota = atteso && !senzaDati ? Math.min(1, (minuti - riposo) / atteso) : null;
-      if (quota !== null) { somma += Math.min(atteso, minuti - riposo); attesi += atteso; }
-      const barra = crea("span", { classe: senzaDati ? "nessuno" : quota === null ? "chiuso" : quota > 0.95 ? "pieno" : quota > 0.6 ? "medio" : "basso" }, barre);
-      barra.style.setProperty("--quota", quota === null ? "100%" : `${Math.max(4, quota * 100)}%`);
-      barra.title = `${new Date(`${giorno}T00:00`).toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })}: `
-        + (senzaDati ? "nessun dato" : atteso ? `in linea ${Math.round((minuti - riposo) / 60 * 10) / 10} h su ${Math.round(atteso / 60 * 10) / 10} h previste` : "spento per orario");
+  // Lo stato si aggiorna da solo ogni 30 secondi (solo questa parte: gli allarmi sotto non si toccano).
+  const testaStato = crea("div", { classe: "riga" }, riepilogo);
+  const vivo = crea("span", { classe: "tenue", "data-aiuto": "La tabella si aggiorna da sola ogni 30 secondi; gli schermi mandano il loro segnale ogni minuto." }, testaStato);
+  crea("button", { type: "button", testo: "⟳ Aggiorna", "data-aiuto": "Aggiorna subito, senza aspettare i 30 secondi.", onclick: () => ricarica() }, testaStato);
+  const contenitore = crea("div", {}, riepilogo);
+  const disegna = (dati) => {
+    contenitore.replaceChildren();
+    vivo.textContent = `● dal vivo · aggiornata alle ${new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+    const riepilogo = contenitore;
+    const conta = (f) => dati.schermi.filter(f).length;
+    const tessere = crea("div", { classe: "tessere-stato" }, riepilogo);
+    for (const [n, testo, classe] of [
+      [conta((s) => s.online && !s.riposo), "in linea", "ok"],
+      [conta((s) => s.online && s.riposo), "a riposo (fuori orario)", "riposo"],
+      [conta((s) => !s.online && s.ultimo_contatto), "scollegati", "male"],
+      [conta((s) => !s.ultimo_contatto), "mai collegati", "tenue"],
+    ]) {
+      const t = crea("div", { classe: `tessera ${classe}` }, tessere);
+      crea("strong", { testo: String(n) }, t);
+      crea("span", { testo: testo }, t);
     }
-    crea("span", { classe: "percentuale", testo: attesi ? `${Math.round((somma / attesi) * 100)}%` : "—" }, cella);
-    // La versione del player che gira davvero; se non è l'ultima, si aggiorna da solo al prossimo segnale.
-    const versione = crea("td", { testo: s.versione || "—", classe: "tenue" }, riga);
-    if (s.versione && dati.versione_attuale && s.versione !== dati.versione_attuale) {
-      crea("div", {
-        classe: "attenzione", testo: "⟳ da aggiornare",
-        "data-aiuto": `L'ultima versione è ${dati.versione_attuale}. Lo schermo si aggiorna da solo entro un minuto dal prossimo segnale; un player di una versione precedente alla 1.5 va riavviato una volta a mano.`,
-      }, versione);
-    } else if (s.versione) versione.dataset.aiuto = "La versione del player che gira su questo schermo: è l'ultima.";
-  }
+
+    const corpo = H.tabella(["", "Schermo", "Sede", "Stato", "Orario", "Disponibilità ultimi 7 giorni", "Player"], riepilogo);
+    for (const s of dati.schermi) {
+      const riga = crea("tr", {}, corpo);
+      crea("span", { classe: `pallino ${s.online ? (s.riposo ? "riposo" : "acceso") : "spento"}` }, crea("td", {}, riga));
+      crea("td", { testo: s.nome }, riga);
+      crea("td", { testo: s.sede }, riga);
+      const stato = crea("td", {}, riga);
+      stato.textContent = s.online ? (s.riposo ? "A riposo" : "In linea") : s.ultimo_contatto ? `Scollegato da ${daQuanto(s.ultimo_contatto)}` : "Mai collegato";
+      if (!s.online && s.ultimo_contatto) stato.className = "attenzione";
+      if (s.problema) crea("div", { classe: "problema-schermo", testo: `⚠ ${s.problema.testo}` }, stato);
+      crea("td", { testo: s.orario || "sempre acceso" }, riga);
+      // Una barretta per giorno: la parte verde è il tempo in linea sul tempo in cui doveva essere acceso.
+      const cella = crea("td", {}, riga);
+      const barre = crea("div", { classe: "barre-disponibilita" }, cella);
+      let somma = 0;
+      let attesi = 0;
+      for (const giorno of dati.giorni) {
+        const [minuti, riposo] = s.presenze[giorno] || [0, 0];
+        const atteso = s.atteso[giorno] || 0;
+        const senzaDati = !s.dati_dal || giorno < s.dati_dal;
+        const quota = atteso && !senzaDati ? Math.min(1, (minuti - riposo) / atteso) : null;
+        if (quota !== null) { somma += Math.min(atteso, minuti - riposo); attesi += atteso; }
+        const barra = crea("span", { classe: senzaDati ? "nessuno" : quota === null ? "chiuso" : quota > 0.95 ? "pieno" : quota > 0.6 ? "medio" : "basso" }, barre);
+        barra.style.setProperty("--quota", quota === null ? "100%" : `${Math.max(4, quota * 100)}%`);
+        barra.title = `${new Date(`${giorno}T00:00`).toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })}: `
+          + (senzaDati ? "nessun dato" : atteso ? `in linea ${Math.round((minuti - riposo) / 60 * 10) / 10} h su ${Math.round(atteso / 60 * 10) / 10} h previste` : "spento per orario");
+      }
+      crea("span", { classe: "percentuale", testo: attesi ? `${Math.round((somma / attesi) * 100)}%` : "—" }, cella);
+      // La versione del player che gira davvero; se non è l'ultima, si aggiorna da solo al prossimo segnale.
+      const versione = crea("td", { testo: s.versione || "—", classe: "tenue" }, riga);
+      if (s.versione && dati.versione_attuale && s.versione !== dati.versione_attuale) {
+        crea("div", {
+          classe: "attenzione", testo: "⟳ da aggiornare",
+          "data-aiuto": `L'ultima versione è ${dati.versione_attuale}. Lo schermo si aggiorna da solo entro un minuto dal prossimo segnale; un player di una versione precedente alla 1.5 va riavviato una volta a mano.`,
+        }, versione);
+      } else if (s.versione) versione.dataset.aiuto = "La versione del player che gira su questo schermo: è l'ultima.";
+    }
+  };
+  disegna(dati);
+  clearTimeout(aggiornaStato);
+  const ricarica = async () => {
+    clearTimeout(aggiornaStato); // anche quando si preme «Aggiorna»: un solo giro alla volta
+    if (!contenitore.isConnected || H.stato.scheda !== "stato") return;
+    try {
+      disegna(await api("GET", "/api/stato-schermi/?giorni=7"));
+    } catch {
+      // rete assente: si riprova al giro dopo
+    }
+    if (contenitore.isConnected && H.stato.scheda === "stato") aggiornaStato = setTimeout(ricarica, 30_000);
+  };
+  aggiornaStato = setTimeout(ricarica, 30_000);
 
   const allarmi = sezione("🔔 Allarmi via email");
   crea("p", {

@@ -253,8 +253,9 @@ export async function schedaPanoramica() {
       const azienda = H.stato.clienti?.find((c) => c.id === H.stato.cliente)?.nome;
       H.crea("p", {
         classe: "tenue",
-        testo: `${new Date().toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · ${globale ? "tutta la piattaforma" : azienda || "la tua azienda"} · aggiornata alle ${new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}`,
+        testo: `${new Date().toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · ${globale ? "tutta la piattaforma" : azienda || "la tua azienda"} · aggiornata alle ${new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`,
       }, titoli);
+      H.crea("button", { type: "button", testo: "⟳ Aggiorna", "data-aiuto": "Aggiorna subito, senza aspettare i 30 secondi.", onclick: () => carica() }, titoli);
       if (piattaforma) {
         const scelta = H.crea("div", { classe: "interruttore", "data-aiuto": "Tutte le aziende della piattaforma insieme, oppure solo quella scelta in alto." }, capo);
         H.crea("button", { type: "button", classe: `pillola ${globale ? "attiva" : ""}`, testo: "🌐 Tutte le aziende", onclick: () => { f.globale = true; carica(); } }, scelta);
