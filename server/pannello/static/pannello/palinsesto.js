@@ -831,13 +831,14 @@ function confermaDirette(ids) {
   );
 }
 
-function aggiungiAllaPromozione(ids) {
-  if (!confermaDirette(ids)) return;
+function aggiungiAllaPromozione(ids, giaConfermate = false) {
+  if (!giaConfermate && !confermaDirette(ids)) return false;
   const presenti = new Set(S.promozione.contenuti);
   for (const id of ids) if (!presenti.has(id)) S.promozione.contenuti.push(id);
   segnaModificata();
   disegnaLibreria();
   disegnaPannello();
+  return true;
 }
 
 function togliDallaPromozione(id) {
@@ -1792,7 +1793,9 @@ function preparaDirette() {
         onclick: () => {
           finestra.close();
           if (S.promozione) {
-            aggiungiAllaPromozione([c.id]);
+            if (!aggiungiAllaPromozione([c.id])) return;
+            apriSequenza();
+            avvisa(`«${c.nome}» aggiunta in fondo alla corsia Monitor della sequenza: spostala dove vuoi e salva.`, "ok");
             return;
           }
           S.libreria = "tutti";
@@ -1800,7 +1803,7 @@ function preparaDirette() {
           S.selezione.add(c.id);
           disegnaLibreria();
           disegnaSelezione();
-          document.querySelector("#gallerie .galleria.diretta")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          document.querySelector("#gallerie .galleria.diretta")?.scrollIntoView({ behavior: "smooth", block: "start" });
         },
       }, voce);
     }
@@ -1859,12 +1862,22 @@ function preparaDirette() {
       S.libreria = "tutti";
       S.cartella = null;
       await ricarica();
+      const gia = riusate ? " (era già in libreria: si usa la stessa)" : "";
+      if (S.promozione) {
+        // Con una promozione aperta la diretta va dritta nella sua sequenza (in fondo ai monitor):
+        // l'autorizzazione è appena stata confermata nella finestra.
+        aggiungiAllaPromozione(creati.map((c) => c.id), true);
+        apriSequenza();
+        avvisa(`${creati.length === 1 ? "Diretta aggiunta" : `${creati.length} dirette aggiunte`} alla promozione aperta${gia}: `
+          + "la trovi in fondo alla corsia Monitor della sequenza, spostala dove vuoi e salva.", "ok");
+        return;
+      }
       for (const c of creati) S.selezione.add(c.id);
       disegnaLibreria();
       disegnaSelezione();
-      avvisa(`${creati.length === 1 ? "Diretta selezionata" : `${creati.length} dirette selezionate`}${riusate ? " (già in libreria: si riusa la stessa)" : ""}: `
-        + (S.promozione ? "trascinala nella sequenza o premi «+» per aggiungerla alla promozione aperta." : "mettila in una promozione, da sola o tra le immagini."), "ok");
-      document.querySelector("#gallerie .galleria.diretta")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      avvisa(`${creati.length === 1 ? "Diretta selezionata" : `${creati.length} dirette selezionate`}${gia}: `
+        + "è nel riquadro «Dirette» della vista «Tutti»; mettila in una promozione.", "ok");
+      document.querySelector("#gallerie .galleria.diretta")?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (errore) {
       avvisa(errore.message);
     }
