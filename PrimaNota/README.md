@@ -35,9 +35,28 @@ Aprire `http://IP_SERVER:8096`.
 5. **Utenti**: abilitare per singolo utente il permesso “Ricerca Matricole”.
 6. **DB legacy**: configurare SQL Server del database `Scontrini`. Nessuna password è hardcoded nel progetto.
 
+## Importazione automatica
+Ogni `AUTO_IMPORT_MINUTES` minuti (predefinito 60, `0` per disattivarla) vengono importati i nuovi
+SysSpy di tutti i negozi attivi con un percorso configurato. Il pulsante **Importa nuovi/pregresso**
+resta disponibile; per lo stesso negozio non partono mai due importazioni insieme.
+
 ## Archivio
 Il file originale viene copiato in `archive/<negozio>/<YYYYMMDD>/<cassa>/`.
 Nel DB viene salvato anche il testo pulito (prime quattro colonne rimosse). L'indice SQLite FTS è persistente in `data/documentale.sqlite3`.
+
+Il file originale si scarica dal dettaglio dell'archivio; le scansioni si aprono dall'elenco Scansioni.
+Se un SysSpy viene modificato in negozio, la nuova versione sostituisce quella archiviata.
+
+## Password salvate
+Le password di condivisioni e SQL Server sono cifrate con `APP_SECRET`: non cambiarlo dopo il primo
+avvio, altrimenti vanno reinserite. Lasciando vuoto il campo password in Negozi o DB legacy si
+mantiene quella già salvata.
+
+## Test
+```bash
+pip install -r requirements.txt pytest
+python -m pytest tests
+```
 
 ## Nota rete SMB
 Il container deve poter raggiungere il server SMB sulla porta TCP 445. In alternativa è possibile montare la share sul Linux host e indicare un percorso locale, ad esempio `/mnt/negozi/5048/sys_spy`, aggiungendo il relativo bind mount al `docker-compose.yml`.

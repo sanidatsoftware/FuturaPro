@@ -1,22 +1,25 @@
-import os, re, sqlite3, threading, hashlib, shutil, json
+import os, re, sqlite3, threading, hashlib, shutil, json, secrets, time, logging
 from pathlib import Path
 from datetime import datetime, date
 from functools import wraps
-from flask import Flask, render_template, request, redirect, url_for, session, flash, send_file, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash, send_file, jsonify, abort
 from werkzeug.security import generate_password_hash, check_password_hash
 from cryptography.fernet import Fernet
 import base64, hashlib as _hashlib
 
 BASE = Path(__file__).resolve().parent
-DATA_DIR = BASE / "data"
-ARCHIVE_DIR = BASE / "archive"
-UPLOAD_DIR = BASE / "uploads"
+HOME = Path(os.environ.get("PRIMANOTA_HOME", BASE))
+DATA_DIR = HOME / "data"
+ARCHIVE_DIR = HOME / "archive"
+UPLOAD_DIR = HOME / "uploads"
 DB_PATH = DATA_DIR / "documentale.sqlite3"
 for p in (DATA_DIR, ARCHIVE_DIR, UPLOAD_DIR): p.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("APP_SECRET", "change-me")
 app.config["MAX_CONTENT_LENGTH"] = 40 * 1024 * 1024
+log = logging.getLogger("primanota")
+if app.secret_key == "change-me": log.warning("APP_SECRET non impostato: usare genera_env.sh")
 
 _jobs = {}
 _jobs_lock = threading.Lock()
@@ -38,7 +41,9 @@ def enc(v):
 def dec(v):
     if not v: return ""
     try: return _fernet().decrypt(v.encode()).decode()
-    except Exception: return ""
+    except Exception:
+        log.warning("Password cifrata illeggibile: APP_SECRET e' cambiato? Reinserire la password.")
+        return ""
 
 def init_db():
     with db() as c:
@@ -59,7 +64,7 @@ def init_db():
           fiscal_total REAL, annulli REAL, resi REAL, riscosso REAL, non_riscosso REAL, num_scontrini INTEGER,
           pos_preview TEXT NOT NULL DEFAULT '', fiscal_preview TEXT NOT NULL DEFAULT '',
           UNIQUE(store_id, source_path, size_bytes, mtime));
-        CREATE VIRTUAL TABLE IF NOT EXISTS sys_files_fts USING fts5(content_clean, content='sys_files', content_rowid='id', tokenize='unicode61 remove_diacritics 2');
+        CREATE VIRTUAL TABLE IF NOT EXISTS sys_files_fts USING fts5(content_clean, content='sys_files', content_rowid='id', tokenize='trigram');
         CREATE TRIGGER IF NOT EXISTS sys_files_ai AFTER INSERT ON sys_files BEGIN
           INSERT INTO sys_files_fts(rowid,content_clean) VALUES(new.id,new.content_clean); END;
         CREATE TRIGGER IF NOT EXISTS sys_files_ad AFTER DELETE ON sys_files BEGIN
@@ -78,6 +83,13 @@ def init_db():
           created_at TEXT NOT NULL, closed INTEGER NOT NULL DEFAULT 0, closed_at TEXT);
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');
         ''')
+        # La v1 creava l'indice con il tokenizer unicode61, che non trova parti di parola
+        # (es. "1074" dentro "001074"): lo si ricrea a trigrammi e lo si ricostruisce.
+        fts=c.execute("SELECT sql FROM sqlite_master WHERE name='sys_files_fts'").fetchone()
+        if 'trigram' not in fts['sql']:
+            c.execute('DROP TABLE sys_files_fts')
+            c.execute("CREATE VIRTUAL TABLE sys_files_fts USING fts5(content_clean, content='sys_files', content_rowid='id', tokenize='trigram')")
+            c.execute("INSERT INTO sys_files_fts(sys_files_fts) VALUES('rebuild')")
         admin = os.environ.get("ADMIN_USER","admin")
         pw = os.environ.get("ADMIN_PASSWORD","CAMBIA_QUESTA_PASSWORD")
         if not c.execute("SELECT 1 FROM users WHERE username=?",(admin,)).fetchone():
@@ -85,10 +97,33 @@ def init_db():
                       (admin,generate_password_hash(pw),1,1,1,datetime.now().isoformat(timespec='seconds')))
 init_db()
 
+NOTE_TYPES = ('NOTA','ANOMALIA','RICHIESTA_CONTATTO')
 DOC_TYPES = {
  'CHIUSURA_FISCALE':'Chiusura fiscale','CHIUSURA_POS':'Chiusure POS bancari','RESI':'Resi',
  'TRANSAZIONI_ABORTITE':'Transazioni abortite','VERSAMENTO_CONTANTE':'Versamenti contante'
 }
+
+ISO_DATE=re.compile(r'^\d{4}-\d{2}-\d{2}$')
+def valid_date(v):
+    if not v or not ISO_DATE.match(v): return None
+    try: return date.fromisoformat(v).isoformat()
+    except ValueError: return None
+
+def csrf_token():
+    if 'csrf' not in session: session['csrf']=secrets.token_urlsafe(32)
+    return session['csrf']
+
+@app.before_request
+def before():
+    if request.method=='POST':
+        tok=request.form.get('csrf_token') or request.headers.get('X-CSRF-Token')
+        if not tok or not secrets.compare_digest(tok,session.get('csrf','')): abort(400,'Sessione scaduta, ricaricare la pagina')
+    # Permessi riletti a ogni richiesta: un utente disattivato o a cui si toglie un modulo
+    # perde l'accesso subito, non al login successivo.
+    if session.get('uid'):
+        with db() as c:u=c.execute('SELECT * FROM users WHERE id=? AND active=1',(session['uid'],)).fetchone()
+        if not u: session.clear()
+        else: session.update(is_admin=bool(u['is_admin']),can_legacy=bool(u['can_legacy']))
 
 def login_required(fn):
     @wraps(fn)
@@ -185,12 +220,26 @@ def iter_store_files(store, stop_event=None):
                 if not re.match(r'^SysSpy\.\d{8}\.\d+$',name,re.I): continue
                 full=root.rstrip('\\/')+'\\'+name
                 st=smbclient.stat(full)
-                yield full,name,st.st_size,st.st_mtime,lambda full=full:smbclient.open_file(full,'rb').read()
+                def read(full=full):
+                    with smbclient.open_file(full,'rb') as fh: return fh.read()
+                yield full,name,st.st_size,st.st_mtime,read
+
+_store_locks={}
 
 def import_store(store_id, full=False, job_id=None):
     stop=threading.Event()
     if job_id:
         with _jobs_lock:_jobs[job_id]={'state':'running','seen':0,'imported':0,'skipped':0,'errors':0,'message':'','stop':stop}
+    # Una sola importazione per negozio alla volta (pulsante e importazione automatica).
+    with _jobs_lock: lock=_store_locks.setdefault(store_id,threading.Lock())
+    if not lock.acquire(blocking=False):
+        if job_id:
+            with _jobs_lock:_jobs[job_id].update(state='error',message='Importazione già in corso per questo negozio')
+        return
+    try: _import_store(store_id,full,job_id,stop)
+    finally: lock.release()
+
+def _import_store(store_id, full, job_id, stop):
     with db() as c: store=c.execute('SELECT * FROM stores WHERE id=?',(store_id,)).fetchone()
     try:
         for source,name,size,mtime,reader in iter_store_files(store,stop):
@@ -213,7 +262,9 @@ def import_store(store_id, full=False, job_id=None):
                 ap=dest/name
                 if not ap.exists() or hashlib.sha256(ap.read_bytes()).hexdigest()!=sha: ap.write_bytes(b)
                 with db() as c:
-                    c.execute('''INSERT OR REPLACE INTO sys_files(store_id,file_name,source_path,archive_path,business_date,register_no,size_bytes,mtime,sha256,imported_at,content_clean,pos_total,host_total,fiscal_total,annulli,resi,riscosso,non_riscosso,num_scontrini,pos_preview,fiscal_preview)
+                    # Un file modificato in negozio sostituisce la versione già archiviata.
+                    c.execute('DELETE FROM sys_files WHERE store_id=? AND source_path=?',(store_id,source))
+                    c.execute('''INSERT INTO sys_files(store_id,file_name,source_path,archive_path,business_date,register_no,size_bytes,mtime,sha256,imported_at,content_clean,pos_total,host_total,fiscal_total,annulli,resi,riscosso,non_riscosso,num_scontrini,pos_preview,fiscal_preview)
                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                     (store_id,name,source,str(ap),bdate,reg,size,mtime,sha,datetime.now().isoformat(timespec='seconds'),clean,parsed['pos_total'],parsed['host_total'],parsed['fiscal_total'],parsed['annulli'],parsed['resi'],parsed['riscosso'],parsed['non_riscosso'],parsed['num_scontrini'],parsed['pos_preview'],parsed['fiscal_preview']))
                 if job_id:
@@ -227,8 +278,20 @@ def import_store(store_id, full=False, job_id=None):
         if job_id:
             with _jobs_lock:_jobs[job_id]['state']='error'; _jobs[job_id]['message']=str(e)
 
+def auto_import_loop(minutes):
+    while True:
+        time.sleep(minutes*60)
+        try:
+            with db() as c: ids=[r['id'] for r in c.execute("SELECT id FROM stores WHERE active=1 AND share_path<>''")]
+            for sid in ids: import_store(sid,False)
+        except Exception: log.exception('Importazione automatica fallita')
+
+AUTO_IMPORT_MINUTES=int(os.environ.get('AUTO_IMPORT_MINUTES','60') or 0)
+if AUTO_IMPORT_MINUTES>0 and not os.environ.get('PRIMANOTA_NO_AUTO'):
+    threading.Thread(target=auto_import_loop,args=(AUTO_IMPORT_MINUTES,),daemon=True).start()
+
 @app.context_processor
-def ctx(): return {'DOC_TYPES':DOC_TYPES}
+def ctx(): return {'DOC_TYPES':DOC_TYPES,'csrf_token':csrf_token}
 
 @app.route('/login',methods=['GET','POST'])
 def login():
@@ -236,7 +299,9 @@ def login():
         with db() as c:u=c.execute('SELECT * FROM users WHERE username=? AND active=1',(request.form['username'].strip(),)).fetchone()
         if u and check_password_hash(u['password_hash'],request.form['password']):
             session.clear();session.update(uid=u['id'],username=u['username'],is_admin=bool(u['is_admin']),can_legacy=bool(u['can_legacy']))
-            return redirect(request.args.get('next') or url_for('dashboard'))
+            nxt=request.args.get('next') or ''
+            if not nxt.startswith('/') or nxt.startswith('//') or '\\' in nxt: nxt=url_for('dashboard')
+            return redirect(nxt)
         flash('Credenziali non valide','error')
     return render_template('login.html')
 
@@ -256,26 +321,30 @@ def dashboard():
 @app.route('/monitor')
 @login_required
 def monitor():
-    dal=request.args.get('dal') or date.today().isoformat(); al=request.args.get('al') or dal
+    dal=valid_date(request.args.get('dal')) or date.today().isoformat(); al=valid_date(request.args.get('al')) or dal
     with db() as c:
+        # Tutte le coppie negozio/data che hanno scansioni, SysSpy o note aperte.
         rows=c.execute('''WITH d AS (SELECT store_id,business_date,
         SUM(doc_type='CHIUSURA_FISCALE') cf,SUM(doc_type='CHIUSURA_POS') pos,SUM(doc_type='RESI') resi,SUM(doc_type='TRANSAZIONI_ABORTITE') abort,
         SUM(doc_type='VERSAMENTO_CONTANTE') vers,SUM(doc_type='VERSAMENTO_CONTANTE' AND worked=0) vers_open
-        FROM documents WHERE business_date BETWEEN ? AND ? GROUP BY store_id,business_date),
-        s AS (SELECT store_id,business_date,COUNT(*) sys,COUNT(DISTINCT register_no) casse FROM sys_files WHERE business_date BETWEEN ? AND ? GROUP BY store_id,business_date),
-        n AS (SELECT store_id,business_date,COUNT(*) note FROM notes WHERE closed=0 AND business_date BETWEEN ? AND ? GROUP BY store_id,business_date)
-        SELECT st.code,st.name,COALESCE(d.business_date,s.business_date,n.business_date) business_date,
+        FROM documents WHERE business_date BETWEEN :dal AND :al GROUP BY store_id,business_date),
+        s AS (SELECT store_id,business_date,COUNT(*) sys,COUNT(DISTINCT register_no) casse FROM sys_files WHERE business_date BETWEEN :dal AND :al GROUP BY store_id,business_date),
+        n AS (SELECT store_id,business_date,COUNT(*) note FROM notes WHERE closed=0 AND business_date BETWEEN :dal AND :al GROUP BY store_id,business_date),
+        k AS (SELECT store_id,business_date FROM d UNION SELECT store_id,business_date FROM s UNION SELECT store_id,business_date FROM n)
+        SELECT st.code,st.name,k.business_date,
         COALESCE(cf,0) cf,COALESCE(pos,0) pos,COALESCE(resi,0) resi,COALESCE(abort,0) abort,COALESCE(vers,0) vers,COALESCE(vers_open,0) vers_open,
         COALESCE(sys,0) sys,COALESCE(casse,0) casse,COALESCE(note,0) note
-        FROM stores st LEFT JOIN d ON d.store_id=st.id LEFT JOIN s ON s.store_id=st.id AND (d.business_date IS NULL OR s.business_date=d.business_date)
-        LEFT JOIN n ON n.store_id=st.id AND COALESCE(d.business_date,s.business_date)=n.business_date
-        WHERE st.active=1 AND COALESCE(d.business_date,s.business_date,n.business_date) IS NOT NULL ORDER BY business_date DESC,st.code''',(dal,al,dal,al,dal,al)).fetchall()
+        FROM k JOIN stores st ON st.id=k.store_id
+        LEFT JOIN d ON d.store_id=k.store_id AND d.business_date=k.business_date
+        LEFT JOIN s ON s.store_id=k.store_id AND s.business_date=k.business_date
+        LEFT JOIN n ON n.store_id=k.store_id AND n.business_date=k.business_date
+        WHERE st.active=1 ORDER BY k.business_date DESC,st.code''',{'dal':dal,'al':al}).fetchall()
     return render_template('monitor.html',rows=rows,dal=dal,al=al)
 
 @app.route('/archive')
 @login_required
 def archive():
-    store_id=request.args.get('store_id',''); dal=request.args.get('dal',''); al=request.args.get('al','')
+    store_id=request.args.get('store_id',''); dal=valid_date(request.args.get('dal')) or ''; al=valid_date(request.args.get('al')) or ''
     q='''SELECT f.*,s.code store_code,s.name store_name FROM sys_files f JOIN stores s ON s.id=f.store_id WHERE 1=1'''; args=[]
     if store_id:q+=' AND f.store_id=?';args.append(store_id)
     if dal:q+=' AND f.business_date>=?';args.append(dal)
@@ -291,6 +360,13 @@ def archive_detail(file_id):
     if not r:return 'Non trovato',404
     return render_template('archive_detail.html',r=r)
 
+@app.route('/archive/<int:file_id>/download')
+@login_required
+def archive_download(file_id):
+    with db() as c:r=c.execute('SELECT archive_path,file_name FROM sys_files WHERE id=?',(file_id,)).fetchone()
+    if not r or not Path(r['archive_path']).is_file():return 'Non trovato',404
+    return send_file(r['archive_path'],as_attachment=True,download_name=r['file_name'])
+
 @app.route('/search')
 @login_required
 def search():
@@ -298,8 +374,10 @@ def search():
     with db() as c:
         stores=c.execute('SELECT * FROM stores WHERE active=1 ORDER BY code').fetchall()
         if term:
-            # FTS for words; LIKE fallback covers punctuation/receipt numbers exactly.
-            q='''SELECT f.*,s.code store_code,s.name store_name FROM sys_files f JOIN stores s ON s.id=f.store_id WHERE (f.content_clean LIKE ?)''';args=['%'+term+'%']
+            # L'indice a trigrammi rende veloce il LIKE per testi di almeno 3 caratteri.
+            like='%'+term.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
+            q='''SELECT f.*,s.code store_code,s.name store_name FROM sys_files f JOIN stores s ON s.id=f.store_id
+            WHERE f.id IN (SELECT rowid FROM sys_files_fts WHERE content_clean LIKE ? ESCAPE '\\')''';args=[like]
             if store_id:q+=' AND f.store_id=?';args.append(store_id)
             q+=' ORDER BY f.business_date DESC LIMIT 500'; rows=c.execute(q,args).fetchall()
     return render_template('search.html',term=term,rows=rows,stores=stores,store_id=store_id)
@@ -308,36 +386,59 @@ def search():
 @login_required
 def documents():
     if request.method=='POST':
-        f=request.files.get('file'); store_id=int(request.form['store_id']); bdate=request.form['business_date']; typ=request.form['doc_type']; reg=request.form.get('register_no') or None
-        if not f or typ not in DOC_TYPES: flash('Dati non validi','error');return redirect(url_for('documents'))
+        f=request.files.get('file'); store_id=int(request.form['store_id']); bdate=valid_date(request.form.get('business_date')); typ=request.form['doc_type']; reg=request.form.get('register_no') or None
+        if not f or not f.filename or not bdate or typ not in DOC_TYPES: flash('Dati non validi','error');return redirect(url_for('documents'))
         dest=UPLOAD_DIR/str(store_id)/bdate/typ;dest.mkdir(parents=True,exist_ok=True)
         safe=re.sub(r'[^A-Za-z0-9._-]+','_',f.filename); path=dest/(datetime.now().strftime('%H%M%S_')+safe);f.save(path)
         with db() as c:c.execute('INSERT INTO documents(store_id,business_date,register_no,doc_type,original_name,stored_path,uploaded_by,uploaded_at) VALUES(?,?,?,?,?,?,?,?)',(store_id,bdate,reg,typ,f.filename,str(path),session['uid'],datetime.now().isoformat(timespec='seconds')))
         flash('Documento archiviato','ok');return redirect(url_for('documents'))
-    with db() as c:stores=c.execute('SELECT * FROM stores WHERE active=1 ORDER BY code').fetchall();rows=c.execute('SELECT d.*,s.code store_code FROM documents d JOIN stores s ON s.id=d.store_id ORDER BY d.uploaded_at DESC LIMIT 300').fetchall()
+    with db() as c:stores=c.execute('SELECT * FROM stores WHERE active=1 ORDER BY code').fetchall();rows=c.execute('SELECT d.*,s.code store_code,u.username worked_by_name FROM documents d JOIN stores s ON s.id=d.store_id LEFT JOIN users u ON u.id=d.worked_by ORDER BY d.uploaded_at DESC LIMIT 300').fetchall()
     return render_template('documents.html',stores=stores,rows=rows)
+
+@app.route('/documents/<int:doc_id>/file')
+@login_required
+def document_file(doc_id):
+    with db() as c:r=c.execute('SELECT stored_path,original_name FROM documents WHERE id=?',(doc_id,)).fetchone()
+    if not r or not Path(r['stored_path']).is_file():return 'Non trovato',404
+    return send_file(r['stored_path'],download_name=r['original_name'])
 
 @app.route('/documents/<int:doc_id>/worked',methods=['POST'])
 @login_required
 def worked(doc_id):
-    with db() as c:c.execute("UPDATE documents SET worked=1,worked_by=?,worked_at=? WHERE id=? AND doc_type='VERSAMENTO_CONTANTE'",(session['uid'],datetime.now().isoformat(timespec='seconds'),doc_id))
+    # Il pulsante alterna SI/NO, così un versamento segnato per errore si può riaprire.
+    with db() as c:c.execute("""UPDATE documents SET worked=1-worked,
+        worked_by=CASE WHEN worked=0 THEN ? END,worked_at=CASE WHEN worked=0 THEN ? END
+        WHERE id=? AND doc_type='VERSAMENTO_CONTANTE'""",(session['uid'],datetime.now().isoformat(timespec='seconds'),doc_id))
     return redirect(url_for('documents'))
 
 @app.route('/notes',methods=['GET','POST'])
 @login_required
 def notes():
     if request.method=='POST':
-        with db() as c:c.execute('INSERT INTO notes(store_id,business_date,note_type,body,created_by,created_at) VALUES(?,?,?,?,?,?)',(request.form['store_id'],request.form['business_date'],request.form['note_type'],request.form['body'].strip(),session['uid'],datetime.now().isoformat(timespec='seconds')))
+        bdate=valid_date(request.form.get('business_date'))
+        if not bdate or request.form.get('note_type') not in NOTE_TYPES: flash('Dati non validi','error');return redirect(url_for('notes'))
+        with db() as c:c.execute('INSERT INTO notes(store_id,business_date,note_type,body,created_by,created_at) VALUES(?,?,?,?,?,?)',(request.form['store_id'],bdate,request.form['note_type'],request.form['body'].strip(),session['uid'],datetime.now().isoformat(timespec='seconds')))
         return redirect(url_for('notes'))
     with db() as c:stores=c.execute('SELECT * FROM stores WHERE active=1 ORDER BY code').fetchall();rows=c.execute('SELECT n.*,s.code store_code,u.username FROM notes n JOIN stores s ON s.id=n.store_id LEFT JOIN users u ON u.id=n.created_by ORDER BY n.created_at DESC LIMIT 300').fetchall()
     return render_template('notes.html',stores=stores,rows=rows)
+
+@app.route('/notes/<int:note_id>/close',methods=['POST'])
+@login_required
+def close_note(note_id):
+    # Alterna aperta/chiusa; il monitor conta solo le aperte.
+    with db() as c:c.execute("UPDATE notes SET closed=1-closed,closed_at=CASE WHEN closed=0 THEN ? END WHERE id=?",(datetime.now().isoformat(timespec='seconds'),note_id))
+    return redirect(url_for('notes'))
 
 @app.route('/admin/stores',methods=['GET','POST'])
 @admin_required
 def admin_stores():
     if request.method=='POST':
         code=request.form['code'].strip();name=request.form['name'].strip();path=request.form.get('share_path','').strip();user=request.form.get('share_user','').strip();pw=request.form.get('share_password','')
-        with db() as c:c.execute('INSERT OR REPLACE INTO stores(id,code,name,share_path,share_user,share_password_enc,active) VALUES((SELECT id FROM stores WHERE code=?),?,?,?,?,?,1)',(code,code,name,path,user,enc(pw)))
+        with db() as c:
+            # Password lasciata vuota = si tiene quella già salvata.
+            old=c.execute('SELECT share_password_enc FROM stores WHERE code=?',(code,)).fetchone()
+            pw_enc=enc(pw) if pw else (old['share_password_enc'] if old else '')
+            c.execute('INSERT OR REPLACE INTO stores(id,code,name,share_path,share_user,share_password_enc,active) VALUES((SELECT id FROM stores WHERE code=?),?,?,?,?,?,1)',(code,code,name,path,user,pw_enc))
         return redirect(url_for('admin_stores'))
     with db() as c:rows=c.execute('SELECT id,code,name,share_path,share_user,active FROM stores ORDER BY code').fetchall()
     return render_template('admin_stores.html',rows=rows)
@@ -347,10 +448,27 @@ def admin_stores():
 def admin_users():
     if request.method=='POST':
         user=request.form['username'].strip();pw=request.form['password'];adm=1 if request.form.get('is_admin') else 0;leg=1 if request.form.get('can_legacy') else 0
-        with db() as c:c.execute('INSERT INTO users(username,password_hash,is_admin,active,can_legacy,created_at) VALUES(?,?,?,?,?,?)',(user,generate_password_hash(pw),adm,1,leg,datetime.now().isoformat(timespec='seconds')))
+        try:
+            with db() as c:c.execute('INSERT INTO users(username,password_hash,is_admin,active,can_legacy,created_at) VALUES(?,?,?,?,?,?)',(user,generate_password_hash(pw),adm,1,leg,datetime.now().isoformat(timespec='seconds')))
+        except sqlite3.IntegrityError: flash('Utente già esistente','error')
         return redirect(url_for('admin_users'))
     with db() as c:rows=c.execute('SELECT * FROM users ORDER BY username').fetchall()
     return render_template('admin_users.html',rows=rows)
+
+@app.route('/admin/users/<int:uid>/toggle-active',methods=['POST'])
+@admin_required
+def toggle_active(uid):
+    if uid==session['uid']: flash('Non puoi disattivare il tuo utente','error');return redirect(url_for('admin_users'))
+    with db() as c:c.execute('UPDATE users SET active=1-active WHERE id=?',(uid,))
+    return redirect(url_for('admin_users'))
+
+@app.route('/admin/users/<int:uid>/password',methods=['POST'])
+@admin_required
+def set_password(uid):
+    pw=request.form.get('password','')
+    if len(pw)<8: flash('La password deve avere almeno 8 caratteri','error');return redirect(url_for('admin_users'))
+    with db() as c:c.execute('UPDATE users SET password_hash=? WHERE id=?',(generate_password_hash(pw),uid))
+    flash('Password aggiornata','ok');return redirect(url_for('admin_users'))
 
 @app.route('/admin/users/<int:uid>/toggle-legacy',methods=['POST'])
 @admin_required
@@ -386,7 +504,8 @@ def job_stop(job_id):
 @admin_required
 def legacy_settings():
     if request.method=='POST':
-        vals={k:request.form.get(k,'') for k in ['mssql_host','mssql_db','mssql_user','mssql_port']};vals['mssql_password_enc']=enc(request.form.get('mssql_password',''))
+        vals={k:request.form.get(k,'') for k in ['mssql_host','mssql_db','mssql_user','mssql_port']}
+        if request.form.get('mssql_password'): vals['mssql_password_enc']=enc(request.form['mssql_password'])
         with db() as c:
             for k,v in vals.items():c.execute('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',(k,v))
         flash('Configurazione salvata','ok')
@@ -400,7 +519,8 @@ def get_setting(k,default=''):
 @app.route('/legacy/matricole',methods=['GET','POST'])
 @legacy_required
 def legacy_matricole():
-    rows=[];err='';dal=request.form.get('dal') or date.today().isoformat();al=request.form.get('al') or dal
+    rows=[];err=''
+    dal=valid_date(request.form.get('dal')) or date.today().isoformat();al=valid_date(request.form.get('al')) or dal
     if request.method=='POST':
         try:
             import pymssql
