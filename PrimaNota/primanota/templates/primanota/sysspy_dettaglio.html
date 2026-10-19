@@ -1,0 +1,50 @@
+{% extends "primanota/base.html" %}
+{% block title %}{{ f.nome_file }}{% endblock %}
+{% block content %}
+<div class="top-actions">
+    <h1>{{ negozio_label }} · {{ f.data|date:"d/m/Y" }} · Cassa {{ f.cassa }}</h1>
+    <a class="btn btn-orange" href="/primanota/giornata/{{ f.negozio_id }}/{{ f.data|date:'Y-m-d' }}/">Giornata</a>
+    <a class="btn btn-light" href="/primanota/sysspy/{{ f.id }}/scarica/">Scarica originale</a>
+    {% include "primanota/_menu.html" with attivo="sysspy" %}
+</div>
+<div class="card small">File {{ f.nome_file }} · {{ f.righe }} righe · archiviato il {{ f.importato_il|date:"d/m/Y H:i" }} · origine {{ f.percorso_origine }}</div>
+<div class="grid2">
+    <div class="card"><h3>Chiusura POS</h3>{% if f.chiusura_pos %}<div class="mono">{{ f.chiusura_pos }}</div>{% else %}<p class="small">Non presente nel file.</p>{% endif %}</div>
+    <div class="card"><h3>Chiusura fiscale</h3>{% if f.chiusura_fiscale %}<div class="mono">{{ f.chiusura_fiscale }}</div>{% else %}<p class="small">Non presente nel file.</p>{% endif %}</div>
+</div>
+{% if documenti %}
+<div class="card">
+    <h3>Documenti particolari</h3>
+    {% for d in documenti %}
+        <details><summary>{{ d.get_tipo_display }} · {{ d.numero }} · {{ d.ora }}{% if d.importo is not None %} · {{ d.importo }} €{% endif %}</summary><div class="mono">{{ d.testo }}</div></details>
+    {% endfor %}
+</div>
+{% endif %}
+<div class="card">
+    <h3>Testo completo <span class="small">(senza le prime 4 colonne)</span></h3>
+    <input id="cerca" placeholder="Cerca nella pagina e premi Invio" value="{{ request.GET.cerca }}" style="margin-bottom:10px;width:340px">
+    <div class="mono" id="testo" style="max-height:900px">{{ testo }}</div>
+</div>
+{% endblock %}
+{% block script %}
+<script>
+// Evidenzia e porta in vista la prima riga che contiene il testo cercato.
+(function(){
+    const box = document.getElementById("testo"), input = document.getElementById("cerca"), originale = box.textContent;
+    function cerca(){
+        const t = input.value.trim();
+        box.textContent = originale;
+        if(!t) return;
+        const i = originale.toLowerCase().indexOf(t.toLowerCase());
+        if(i < 0) return;
+        const mark = document.createElement("mark");
+        mark.textContent = originale.substr(i, t.length);
+        box.textContent = "";
+        box.append(originale.slice(0, i), mark, originale.slice(i + t.length));
+        mark.scrollIntoView({block:"center"});
+    }
+    input.addEventListener("keydown", e => { if(e.key === "Enter") cerca(); });
+    if(input.value) cerca();
+})();
+</script>
+{% endblock %}

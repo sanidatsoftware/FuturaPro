@@ -1,62 +1,95 @@
-# Documentale Prima Nota v1
+# Prima Nota
 
-Portale Flask/Docker per:
-- scansioni: chiusura fiscale, POS bancari, resi, transazioni abortite, versamenti contante;
-- flag `lavorato` separato per i versamenti;
-- note, anomalie e richieste di contatto;
-- monitor tabellare per negozio/data;
-- acquisizione automatica e archiviazione del pregresso `SysSpy.YYYYMMDD.CASSA` da una condivisione per negozio;
-- salvataggio del testo con rimozione delle prime 4 colonne e anteprima Consolas Regular 11pt;
-- estrazione automatica delle sezioni Chiusura POS e Chiusura Fiscale;
-- indicizzazione persistente e ricerca nel testo/numero scontrino;
-- modulo `Ricerca Matricole` protetto da permesso amministrativo, collegato a SQL Server e alla stored procedure `dbo.RicercaMatricole` del vecchio programma VB.NET.
+Modulo Django del portale (accanto a Scansioni PV) per la documentazione di prima nota dei negozi.
+Stesso login, stessi utenti Negozio/Ufficio e stessi negozi Baserow di Scansioni PV.
 
-## Installazione
+- **Negozio** (`/primanota/upload/`): carica le scansioni per genere — Chiusura fiscale, Chiusure POS
+  bancari, Resi, Transazioni abortite, Versamenti contante — con data, cassa facoltativa e note.
+  Invia note, anomalie e richieste di contatto all'ufficio.
+- **Ufficio** (`/primanota/admin/`): scansioni raggruppate per negozio e giornata, flag *Lavorato*
+  come in Scansioni PV; i Versamenti contante hanno in più il flag separato *Versamento lavorato*.
+- **Giornata** (`/primanota/giornata/<negozio>/<data>/`): per ogni genere, le scansioni affiancate
+  ai dati del SysSpy di ogni cassa (chiusura fiscale, chiusura POS, transazioni abortite, resi),
+  con le quadrature: totale POS = corrispettivo non riscosso; somma scontrini = totale giornaliero.
+- **Monitor** (`/primanota/monitor/`): tabella negozi × giorni come il Monitor Trasmissioni PV,
+  con in più versamenti da lavorare, note aperte e casse SysSpy (in rosso se non quadrano).
+- **Archivio SysSpy** (`/primanota/sysspy/`): file archiviati per negozio, data e cassa; ricerca nel
+  testo; testo completo e download dell'originale.
+- **Condivisioni negozi** (`/primanota/condivisioni/`, Direttore e Amministratore): cartella di ogni
+  negozio da cui prelevare i SysSpy, importazione manuale.
 
-```bash
-cd /opt/tocal
-unzip DocumentalePrimaNota_v1.zip
-cd DocumentalePrimaNota_v1
-chmod +x genera_env.sh
-./genera_env.sh
-nano .env
-# cambiare ADMIN_PASSWORD
+## File SysSpy
 
-docker compose up -d --build
-```
+Il nome `SysSpy.20260528.2` dà la data (28/05/2026) e la cassa (2); il negozio è quello della
+condivisione da cui il file è prelevato (il codice letto nel file è solo un controllo).
+Le prime 4 colonne di ogni riga (codice tecnico) vengono tolte nel testo archiviato e nelle anteprime,
+mostrate in Consolas Regular 11 pt.
 
-Aprire `http://IP_SERVER:8096`.
+Dal file si estraggono: chiusura POS (con il foglio C.C.D. del cassiere), chiusura fiscale e i suoi
+valori, gli scontrini con `OPERAZIONE ABORTITA`, storni, annullamenti di riga e pagamenti POS negati.
+Il riconoscimento dei **resi** cerca la parola `RESO` nello scontrino: va verificato con un file che
+contenga un reso vero.
 
-## Primo avvio
-1. Login con utente admin configurato in `.env`.
-2. **Negozi**: censire codice, descrizione e percorso condiviso di ogni negozio. Per SMB si può usare `\\server\share\cartella`; utente/password vengono salvati cifrati.
-3. Premere **Importa nuovi/pregresso** sul negozio. La prima esecuzione importa tutto lo storico; le successive saltano i files già archiviati in base a percorso/dimensione/mtime.
-4. **Ricerca testi** consente ricerca per parole chiave o numero scontrino sul testo pulito.
-5. **Utenti**: abilitare per singolo utente il permesso “Ricerca Matricole”.
-6. **DB legacy**: configurare SQL Server del database `Scontrini`. Nessuna password è hardcoded nel progetto.
+L'originale è copiato in `<PRIMANOTA_ARCHIVIO_DIR>/<negozio>/<AAAA>/<MM>/<GG>/cassa_<n>/` con accanto
+il testo pulito compresso (`.txt.gz`). Nel database restano solo i dati estratti, perché un file può
+superare le 16.000 righe. Un file modificato in negozio viene riletto e sostituisce il precedente.
 
-## Importazione automatica
-Ogni `AUTO_IMPORT_MINUTES` minuti (predefinito 60, `0` per disattivarla) vengono importati i nuovi
-SysSpy di tutti i negozi attivi con un percorso configurato. Il pulsante **Importa nuovi/pregresso**
-resta disponibile; per lo stesso negozio non partono mai due importazioni insieme.
+## Installazione nel portale
 
-## Archivio
-Il file originale viene copiato in `archive/<negozio>/<YYYYMMDD>/<cassa>/`.
-Nel DB viene salvato anche il testo pulito (prime quattro colonne rimosse). L'indice SQLite FTS è persistente in `data/documentale.sqlite3`.
+1. Copiare la cartella `primanota/` accanto a `scansioni/` nel progetto Django.
+2. In `settings.py`:
+   ```python
+   INSTALLED_APPS += ["primanota"]
+   BASEROW_PRIMANOTA_TABLE_ID = 000          # id della nuova tabella (punto 4)
+   PRIMANOTA_ARCHIVIO_DIR = "/opt/tocal/primanota_archivio"
+   # Facoltativo: campo booleano "Menu_PrimaNota" della tabella Utenti.
+   # Se non impostato, vede la Prima Nota chi vede Scansioni PV.
+   BASEROW_UTENTE_MENU_PRIMANOTA_FIELD = "field_0000"
+   ```
+3. In `urls.py`: `path("primanota/", include("primanota.urls")),`
+4. In Baserow creare la tabella **Prima Nota Scansioni** con questi campi (i nomi devono essere
+   esattamente questi, gli id non servono):
 
-Il file originale si scarica dal dettaglio dell'archivio; le scansioni si aprono dall'elenco Scansioni.
-Se un SysSpy viene modificato in negozio, la nuova versione sostituisce quella archiviata.
+   | Campo | Tipo |
+   |---|---|
+   | Data Documento | Data |
+   | Negozio | Collegamento a Negozi |
+   | Attivo | Booleano |
+   | Tipo Documento | Testo a riga singola |
+   | Cassa | Numero |
+   | Documento | File |
+   | Note | Testo lungo |
+   | Caricato Da | Collegamento a Utenti |
+   | Data Upload | Data con ora |
+   | Lavorato | Booleano |
+   | Lavorato Da | Collegamento a Utenti |
+   | Data Lavorazione | Data con ora |
+   | Versamento Lavorato | Booleano |
+   | Versamento Lavorato Da | Collegamento a Utenti |
+   | Data Lavorazione Versamento | Data con ora |
 
-## Password salvate
-Le password di condivisioni e SQL Server sono cifrate con `APP_SECRET`: non cambiarlo dopo il primo
-avvio, altrimenti vanno reinserite. Lasciando vuoto il campo password in Negozi o DB legacy si
-mantiene quella già salvata.
+5. Dipendenze: `pip install smbprotocol cryptography` (se non già presenti), poi
+   `python manage.py migrate primanota`.
+6. Nel menu del portale (`scansioni/menu.html`) aggiungere il link a `/primanota/`.
+7. Importazione automatica dei SysSpy la sera, per avere tutto pronto il mattino dopo, ad esempio
+   ogni 30 minuti dalle 20 alle 23 e una volta alle 6:
+   ```
+   */30 20-23 * * *  cd /opt/tocal/portale && python manage.py importa_sysspy >> /var/log/primanota.log 2>&1
+   0 6 * * *         cd /opt/tocal/portale && python manage.py importa_sysspy >> /var/log/primanota.log 2>&1
+   ```
+   Se il portale gira in Docker: `docker compose exec -T <servizio> python manage.py importa_sysspy`.
+
+Il server deve raggiungere le condivisioni SMB sulla porta 445; in alternativa montare le cartelle sul
+server e indicare il percorso locale (es. `/mnt/negozi/5048`).
+
+Non cambiare la `SECRET_KEY` del portale: cifra le password delle condivisioni.
 
 ## Test
+
 ```bash
-pip install -r requirements.txt pytest
-python -m pytest tests
+pip install "Django>=4.2" requests cryptography
+DJANGO_SETTINGS_MODULE=tests.settings python -m django test tests
 ```
 
-## Nota rete SMB
-Il container deve poter raggiungere il server SMB sulla porta TCP 445. In alternativa è possibile montare la share sul Linux host e indicare un percorso locale, ad esempio `/mnt/negozi/5048/sys_spy`, aggiungendo il relativo bind mount al `docker-compose.yml`.
+I test usano una copia di `scansioni/services` del portale (`tests/portale/`), un Baserow finto in
+memoria e un SysSpy ridotto e anonimizzato (`tests/dati/`).

@@ -1,0 +1,141 @@
+{% extends "primanota/base.html" %}
+{% block title %}Prima Nota PV{% endblock %}
+{% block style %}
+<style>
+.layout{display:grid;grid-template-columns:minmax(380px,560px) 1fr;gap:24px;align-items:start}
+.form-group{margin-bottom:14px}.form-group label{display:block;font-weight:bold;margin-bottom:6px;color:#2d4055}
+.form-group input,.form-group select,.form-group textarea{width:100%}
+.preview-box{border:2px dashed #ccc;border-radius:12px;min-height:480px;display:flex;align-items:center;justify-content:center;background:#fafafa;overflow:auto;text-align:center;color:#777}
+.preview-box iframe,.preview-box img{width:100%;height:600px;border:0;object-fit:contain;background:#fff}
+.file-info{margin-top:10px;background:#fff8d6;border:1px solid #d6b500;border-radius:8px;padding:10px;font-size:13px}
+@media(max-width:950px){.layout{grid-template-columns:1fr}}
+</style>
+{% endblock %}
+{% block content %}
+<div class="top-actions">
+    <h1>Prima Nota · {{ negozio }}</h1>
+    <a class="btn btn-dark" href="/menu/">Menu</a>
+</div>
+{% if message %}<div class="message-ok">{{ message }}</div>{% endif %}
+{% if error %}<div class="message-error">{{ error }}</div>{% endif %}
+
+<div class="layout">
+    <div>
+        <div class="card">
+            <h2>Carica scansione</h2>
+            <form method="post" enctype="multipart/form-data" id="uploadForm">
+                {% csrf_token %}
+                <div class="form-group">
+                    <label>Data prima nota</label>
+                    <input type="date" name="data_documento" value="{{ ieri }}" required>
+                </div>
+                <div class="form-group">
+                    <label>Tipo documento</label>
+                    <select name="tipo_documento" required>
+                        <option value="">Seleziona...</option>
+                        {% for tipo in tipi_documento %}<option value="{{ tipo.id }}">{{ tipo.label }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Cassa (se il documento è di una sola cassa)</label>
+                    <input type="number" name="cassa" min="1" max="99">
+                </div>
+                <div class="form-group">
+                    <label>Documento</label>
+                    <input type="file" name="documento" id="documentoInput" accept=".pdf,image/*" required>
+                    <div id="fileInfo"></div>
+                </div>
+                <div class="form-group">
+                    <label>Note</label>
+                    <textarea name="note" placeholder="Note facoltative..."></textarea>
+                </div>
+                <button type="submit" class="btn btn-orange">Invia documento</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>Segnalazioni all'ufficio</h2>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="azione" value="nota">
+                <div class="form-group">
+                    <label>Data prima nota</label>
+                    <input type="date" name="data" value="{{ ieri }}" required>
+                </div>
+                <div class="form-group">
+                    <label>Tipo</label>
+                    <select name="tipo">{% for k, v in tipi_nota %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+                </div>
+                <div class="form-group">
+                    <label>Testo</label>
+                    <textarea name="testo" required placeholder="Descrivi l'anomalia o perché vuoi essere contattato"></textarea>
+                </div>
+                <button type="submit" class="btn btn-dark">Invia segnalazione</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Anteprima documento</h2>
+        <div class="preview-box" id="previewBox">Seleziona un PDF o un'immagine per visualizzare l'anteprima.</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Ultimi documenti caricati</h2>
+    <table class="table">
+        <thead><tr><th>Data</th><th>Tipo</th><th>Cassa</th><th>Documento</th><th>Upload</th><th>Note</th><th>Lavorato</th><th>Azioni</th></tr></thead>
+        <tbody>
+        {% for s in scansioni %}
+            <tr>
+                <td>{{ s.data_documento_fmt }}</td>
+                <td>{{ s.tipo_documento }}</td>
+                <td>{{ s.cassa|default:"—" }}</td>
+                <td>{% for f in s.documento %}{% if f.url %}<a href="{{ f.url }}" target="_blank">{{ f.visible_name }}</a>{% else %}{{ f.visible_name }}{% endif %} {% endfor %}</td>
+                <td>{{ s.data_upload_fmt }}</td>
+                <td>{{ s.note|default:"—" }}</td>
+                <td>{% if s.lavorato %}<span class="badge badge-ok">Lavorato</span>{% else %}<span class="badge badge-no">Non lavorato</span>{% endif %}</td>
+                <td>{% if not s.lavorato and not s.versamento_lavorato %}<button class="btn btn-dark" onclick="deleteScansione({{ s.id }})">Elimina</button>{% else %}—{% endif %}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="8">Nessun documento caricato.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Le tue segnalazioni</h2>
+    <table class="table">
+        <thead><tr><th>Data</th><th>Tipo</th><th>Testo</th><th>Inviata</th><th>Stato</th></tr></thead>
+        <tbody>
+        {% for n in note %}
+            <tr><td>{{ n.data|date:"d/m/Y" }}</td><td>{{ n.get_tipo_display }}</td><td>{{ n.testo|linebreaksbr }}</td>
+                <td>{{ n.creata_il|date:"d/m/Y H:i" }}</td>
+                <td>{% if n.chiusa %}<span class="badge badge-ok">Chiusa</span>{% else %}<span class="badge badge-no">Aperta</span>{% endif %}</td></tr>
+        {% empty %}
+            <tr><td colspan="5">Nessuna segnalazione.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+{% block script %}
+<script>
+const input = document.getElementById("documentoInput");
+const box = document.getElementById("previewBox");
+input.addEventListener("change", function(){
+    const file = input.files[0];
+    document.getElementById("fileInfo").innerHTML = file ? `<div class="file-info">✓ File acquisito: <strong>${file.name}</strong></div>` : "";
+    if(!file){ box.textContent = "Seleziona un PDF o un'immagine per visualizzare l'anteprima."; return; }
+    const url = URL.createObjectURL(file);
+    if(file.type === "application/pdf") box.innerHTML = `<iframe src="${url}"></iframe>`;
+    else if(file.type.startsWith("image/")) box.innerHTML = `<img src="${url}" alt="Anteprima">`;
+    else box.textContent = "Anteprima non disponibile per questo formato.";
+});
+document.getElementById("uploadForm").addEventListener("submit", function(e){
+    if(!this.checkValidity()) return;
+    const b = this.querySelector('button[type="submit"]'); b.disabled = true; b.textContent = "Invio in corso...";
+});
+</script>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "primanota/base.html" %}
+{% block title %}Condivisioni negozi{% endblock %}
+{% block content %}
+<div class="top-actions">
+    <h1>Condivisioni dei negozi (SysSpy)</h1>
+    {% include "primanota/_menu.html" with attivo="condivisioni" %}
+</div>
+<div class="card small">
+    Per ogni negozio indicare la cartella da cui prelevare i file <code>SysSpy.AAAAMMGG.CASSA</code>:
+    <code>\\server\condivisione\cartella</code> (SMB) oppure un percorso già montato sul server, ad esempio <code>/mnt/negozi/5048</code>.
+    La password resta cifrata; lasciandola vuota si mantiene quella salvata. L'importazione automatica gira con il comando
+    <code>python manage.py importa_sysspy</code> (vedi README).
+</div>
+<div class="card">
+    <table class="table">
+        <thead><tr><th>Negozio</th><th>Percorso</th><th>Utente</th><th>Password</th><th>Attiva</th><th></th><th>Ultima importazione</th><th></th></tr></thead>
+        <tbody>
+        {% for n, c in righe %}
+            <tr>
+                {# Un form non può avvolgere celle di tabella: i campi lo indicano con form="...". #}
+                <td><form method="post" id="cond-{{ n.id }}">{% csrf_token %}<input type="hidden" name="negozio_id" value="{{ n.id }}"></form>
+                    <strong>{{ n.codice }}</strong> {{ n.descrizione }}</td>
+                <td><input form="cond-{{ n.id }}" name="percorso" value="{{ c.percorso|default:'' }}" style="width:300px"></td>
+                <td><input form="cond-{{ n.id }}" name="utente" value="{{ c.utente|default:'' }}" style="width:140px"></td>
+                <td><input form="cond-{{ n.id }}" type="password" name="password" placeholder="{% if c.password_cifrata %}(salvata){% endif %}" style="width:120px" autocomplete="new-password"></td>
+                <td><input form="cond-{{ n.id }}" type="checkbox" name="attiva" {% if not c or c.attiva %}checked{% endif %}></td>
+                <td><button form="cond-{{ n.id }}" class="btn btn-dark">Salva</button></td>
+                <td class="small">{% if c.ultima_importazione %}{{ c.ultima_importazione|date:"d/m/Y H:i" }}<br>{{ c.ultimo_esito }}{% else %}—{% endif %}</td>
+                <td>{% if c and c.percorso %}
+                    <form method="post" action="/primanota/condivisioni/{{ n.id }}/importa/" style="display:inline">{% csrf_token %}<button class="btn btn-orange">Importa nuovi</button></form>
+                    <form method="post" action="/primanota/condivisioni/{{ n.id }}/importa/" style="display:inline" onsubmit="return confirm('Rileggere e riarchiviare tutti i file del negozio?')">{% csrf_token %}<input type="hidden" name="completa" value="1"><button class="btn btn-light">Ricostruisci</button></form>
+                {% endif %}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

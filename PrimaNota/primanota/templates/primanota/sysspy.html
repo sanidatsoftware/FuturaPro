@@ -1,0 +1,53 @@
+{% extends "primanota/base.html" %}
+{% block title %}Archivio SysSpy{% endblock %}
+{% block content %}
+<div class="top-actions">
+    <h1>Archivio SysSpy</h1>
+    {% include "primanota/_menu.html" with attivo="sysspy" %}
+</div>
+{% if error %}<div class="message-error">{{ error }}</div>{% endif %}
+<div class="card">
+    <form method="get" class="filters">
+        <label class="field">Negozio
+            <select name="negozio"><option value="">Tutti</option>
+                {% for n in negozi %}<option value="{{ n.id }}" {% if filtro_negozio == n.id|stringformat:"s" %}selected{% endif %}>{{ n.codice }} - {{ n.descrizione }}</option>{% endfor %}
+            </select>
+        </label>
+        <label class="field">Dal <input type="date" name="data_da" value="{{ data_da }}"></label>
+        <label class="field">Al <input type="date" name="data_a" value="{{ data_a }}"></label>
+        <label class="field">Cerca nel testo <input name="testo" value="{{ testo }}" placeholder="Numero scontrino, articolo, cassiere, importo..." style="width:340px"></label>
+        <button class="btn btn-orange" type="submit">Cerca</button>
+    </form>
+</div>
+
+{% if risultati is not None %}
+<div class="card">
+    <h2>{{ risultati|length }} file contengono «{{ testo }}»</h2>
+    <table class="table">
+        <thead><tr><th>Data</th><th>Negozio</th><th>Cassa</th><th>Righe trovate</th><th></th></tr></thead>
+        <tbody>
+        {% for f, righe, totale in risultati %}
+            <tr><td>{{ f.data|date:"d/m/Y" }}</td><td>{{ f.codice_negozio }}</td><td>{{ f.cassa }}</td>
+                <td><div class="mono" style="max-height:140px">{% for r in righe %}{{ r }}
+{% endfor %}</div>{% if totale > 5 %}<span class="small">… altre {{ totale|add:"-5" }}</span>{% endif %}</td>
+                <td><a class="btn btn-dark" href="/primanota/sysspy/{{ f.id }}/?cerca={{ testo|urlencode }}">Apri</a></td></tr>
+        {% empty %}<tr><td colspan="5">Nessun risultato.</td></tr>{% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card">
+    <table class="table">
+        <thead><tr><th>Data</th><th>Negozio</th><th>Cassa</th><th>File</th><th>Tot. giornaliero</th><th>POS</th><th>Scontrini</th><th>Quadratura</th><th></th></tr></thead>
+        <tbody>
+        {% for f in files %}
+            <tr><td>{{ f.data|date:"d/m/Y" }}</td><td>{{ f.codice_negozio }}</td><td>{{ f.cassa }}</td><td>{{ f.nome_file }}</td>
+                <td>{{ f.totale_giornaliero|default:"—" }}</td><td>{{ f.totale_pos|default:"—" }}</td><td>{{ f.scontrini_trovati }}</td>
+                <td>{% if not f.chiusura_fiscale %}<span class="badge badge-no">Senza chiusura</span>{% elif f.quadrato %}<span class="badge badge-ok">OK</span>{% else %}<span class="badge badge-red">Da verificare</span>{% endif %}</td>
+                <td><a class="btn btn-dark" href="/primanota/sysspy/{{ f.id }}/">Apri</a> <a class="btn btn-light" href="/primanota/giornata/{{ f.negozio_id }}/{{ f.data|date:'Y-m-d' }}/">Giornata</a></td></tr>
+        {% empty %}<tr><td colspan="9">Nessun file archiviato nel periodo.</td></tr>{% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "primanota/base.html" %}
+{% block title %}Note e anomalie{% endblock %}
+{% block content %}
+<div class="top-actions">
+    <h1>Note, anomalie e richieste di contatto</h1>
+    {% include "primanota/_menu.html" with attivo="note" %}
+</div>
+<div class="card">
+    <a class="btn {% if stato == 'aperte' %}btn-orange{% else %}btn-light{% endif %}" href="?stato=aperte">Aperte</a>
+    <a class="btn {% if stato != 'aperte' %}btn-orange{% else %}btn-light{% endif %}" href="?stato=tutte">Tutte</a>
+</div>
+<div class="card">
+    <table class="table">
+        <thead><tr><th>Data</th><th>Negozio</th><th>Tipo</th><th>Testo</th><th>Inserita</th><th>Stato</th><th></th></tr></thead>
+        <tbody>
+        {% for n, negozio in elenco %}
+            <tr>
+                <td>{{ n.data|date:"d/m/Y" }}</td>
+                <td>{{ negozio }}</td>
+                <td>{% if n.tipo == "RICHIESTA_CONTATTO" %}<span class="badge badge-red">🔴 {{ n.get_tipo_display }}</span>{% elif n.tipo == "ANOMALIA" %}<span class="badge badge-no">🟠 {{ n.get_tipo_display }}</span>{% else %}{{ n.get_tipo_display }}{% endif %}</td>
+                <td>{{ n.testo|linebreaksbr }}</td>
+                <td>{{ n.creata_da }}<br><span class="small">{{ n.creata_il|date:"d/m/Y H:i" }}</span></td>
+                <td>
+                    <form method="post" action="/primanota/note/{{ n.id }}/chiudi/">{% csrf_token %}
+                        <input type="hidden" name="ritorno" value="{{ request.get_full_path }}">
+                        {% if n.chiusa %}<span class="badge badge-ok">Chiusa</span> <button class="btn btn-light">Riapri</button>
+                        {% else %}<span class="badge badge-no">Aperta</span> <button class="btn btn-dark">Chiudi</button>{% endif %}
+                    </form>
+                </td>
+                <td><a href="/primanota/giornata/{{ n.negozio_id }}/{{ n.data|date:'Y-m-d' }}/">Apri giornata</a></td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="7">🟢 Nessuna nota.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

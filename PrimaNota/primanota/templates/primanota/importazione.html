@@ -1,0 +1,27 @@
+{% extends "primanota/base.html" %}
+{% block title %}Importazione SysSpy{% endblock %}
+{% block content %}
+<div class="top-actions">
+    <h1>Importazione SysSpy · negozio {{ stato.negozio }}</h1>
+    {% include "primanota/_menu.html" with attivo="condivisioni" %}
+</div>
+<div class="card">
+    <div id="stato">Avvio…</div>
+    <p><button class="btn btn-red" id="stop">STOP</button></p>
+</div>
+{% endblock %}
+{% block script %}
+<script>
+const url = "/primanota/importazione/{{ lavoro }}/";
+async function aggiorna(){
+    const r = await fetch(url + "?formato=json", {cache:"no-store"});
+    const s = await r.json();
+    document.getElementById("stato").innerHTML =
+        `Stato: <b>${s.stato}</b><br>File esaminati: ${s.esaminati||0}<br>Importati: ${s.importati||0}<br>` +
+        `Già presenti: ${s.saltati||0}<br>Errori: ${s.errori||0}<br>${s.messaggio||""}`;
+    if(s.stato === "in corso") setTimeout(aggiorna, 1000);
+}
+document.getElementById("stop").addEventListener("click", () => postJson(url));
+aggiorna();
+</script>
+{% endblock %}

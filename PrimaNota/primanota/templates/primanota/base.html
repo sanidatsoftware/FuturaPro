@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token }}">
+<title>{% block title %}Prima Nota{% endblock %}</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f6f9;color:#263238}
+.header{background:#fff;padding:20px 30px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 12px rgba(0,0,0,.08)}
+.logo img{height:68px}.user-box{text-align:right;font-size:14px}.user-box strong{display:block;font-size:16px}.user-box a{color:#ff6a00;text-decoration:none;font-weight:bold}
+.container{padding:22px;width:98%;max-width:1960px;margin:auto}
+.top-actions{display:flex;gap:10px;align-items:center;margin-bottom:18px;flex-wrap:wrap}.top-actions h1{color:#2d4055;margin:0;flex:1;min-width:260px}
+.btn{border:0;border-radius:8px;padding:9px 13px;font-weight:bold;text-decoration:none;cursor:pointer;display:inline-block;font-size:14px}
+.btn-orange{background:#ff6a00;color:#fff}.btn-dark{background:#2d4055;color:#fff}.btn-light{background:#fff;color:#2d4055;border:1px solid #ced7e2}.btn-red{background:#c62828;color:#fff}
+.btn.active{outline:3px solid rgba(255,106,0,.35)}
+.card{background:#fff;border-radius:14px;padding:20px;box-shadow:0 4px 16px rgba(0,0,0,.08);margin-bottom:18px}
+.card h2,.card h3{margin-top:0;color:#2d4055}
+.filters{display:flex;gap:11px;align-items:end;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:bold;color:#2d4055}
+input,select,textarea{padding:9px;border:1px solid #ced7e2;border-radius:8px;font-size:14px;background:#fff;font-family:inherit}
+textarea{min-height:80px;resize:vertical;width:100%}
+.check{display:flex;gap:6px;align-items:center;font-size:13px;font-weight:bold;color:#2d4055}
+.table{width:100%;border-collapse:collapse;background:#fff}
+.table th{background:#2d4055;color:#fff;text-align:left;padding:10px;font-size:13px}
+.table td{border-bottom:1px solid #eee;padding:9px 10px;vertical-align:top;font-size:14px}
+.table tr.group td{background:#eef2f7;font-weight:bold;color:#2d4055}
+.badge{padding:4px 9px;border-radius:16px;font-size:12px;font-weight:bold;display:inline-block;white-space:nowrap}
+.badge-no{background:#fff3cd;color:#856404}.badge-ok{background:#d4edda;color:#155724}.badge-red{background:#f8d7da;color:#721c24}.badge-grey{background:#eef2f7;color:#2d4055}
+.message-ok{background:#d4edda;color:#155724;padding:12px;border-radius:8px;margin-bottom:16px}
+.message-error{background:#f8d7da;color:#721c24;padding:12px;border-radius:8px;margin-bottom:16px}
+.small{font-size:12px;color:#667085}
+/* Anteprime SysSpy: Consolas Regular 11 pt, colonne fisse come sulla stampa di cassa. */
+.mono{font-family:Consolas,"Lucida Console","Courier New",monospace;font-size:11pt;font-weight:400;white-space:pre;overflow:auto;background:#fff;border:1px solid #d9e0e8;border-radius:8px;padding:12px;line-height:1.25;max-height:640px;color:#111}
+.grid2{display:grid;grid-template-columns:minmax(320px,1fr) minmax(320px,1fr);gap:18px;align-items:start}
+@media(max-width:1000px){.grid2{grid-template-columns:1fr}}
+.nav{display:flex;gap:8px;flex-wrap:wrap}
+</style>
+{% block style %}{% endblock %}
+</head>
+<body>
+<div class="header">
+    <div class="logo"><img src="{% static 'img/logo_tocal_fondo_bianco.jpg' %}" alt="TOCAL"></div>
+    <div class="user-box">
+        <strong>{{ utente.field_2250 }}</strong>
+        <span>{{ utente.field_2253.value }}</span><br>
+        <a href="/menu/">Menu</a> | <a href="/logout/">Esci</a>
+    </div>
+</div>
+<div class="container">
+{% block content %}{% endblock %}
+</div>
+<script>
+function csrfToken(){ return document.querySelector('meta[name="csrf-token"]').content; }
+function postJson(url, body){
+    return fetch(url, {method:"POST", headers:{"Content-Type":"application/json","X-CSRFToken":csrfToken()},
+                       credentials:"same-origin", body:JSON.stringify(body||{})})
+        .then(r => r.json().catch(() => ({error:"Risposta non valida dal server"})));
+}
+function toggleLavorato(id, checkbox, versamento){
+    checkbox.disabled = true;
+    postJson(`/primanota/update-lavorato/${id}/`, {lavorato:checkbox.checked, versamento:!!versamento})
+        .then(data => {
+            checkbox.disabled = false;
+            if(data.error){ alert(data.error); checkbox.checked = !checkbox.checked; return; }
+            const badge = document.getElementById((versamento ? "vers-status-" : "scan-status-") + id);
+            if(badge){
+                badge.className = "badge " + (checkbox.checked ? "badge-ok" : "badge-no");
+                badge.innerText = checkbox.checked ? (versamento ? "Versamento lavorato" : "Lavorato")
+                                                   : (versamento ? "Versamento da lavorare" : "Non lavorato");
+            }
+        })
+        .catch(() => { checkbox.disabled = false; checkbox.checked = !checkbox.checked; alert("Errore aggiornamento lavorato."); });
+}
+function deleteScansione(id){
+    if(!confirm("Confermi l'eliminazione del documento?")) return;
+    postJson(`/primanota/delete/${id}/`).then(data => { if(data.error) alert(data.error); else location.reload(); });
+}
+</script>
+{% block script %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,51 @@
+{% extends "primanota/base.html" %}
+{% block title %}Prima Nota · Sede{% endblock %}
+{% block style %}<style>.scan-flags{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:4px}</style>{% endblock %}
+{% block content %}
+<div class="top-actions">
+    <h1>Prima Nota · Portale Sede</h1>
+    {% include "primanota/_menu.html" with attivo="admin" %}
+</div>
+{% if error %}<div class="message-error">{{ error }}</div>{% endif %}
+
+<div class="card">
+    <form method="get" class="filters">
+        <label class="field">Negozio
+            <select name="negozio">
+                <option value="">Tutti</option>
+                {% for n in negozi %}<option value="{{ n.id }}" {% if filtro_negozio == n.id|stringformat:"s" %}selected{% endif %}>{{ n.codice }} - {{ n.descrizione }}</option>{% endfor %}
+            </select>
+        </label>
+        <label class="field">Tipo
+            <select name="tipo">
+                <option value="">Tutti</option>
+                {% for t in tipi_documento %}<option value="{{ t.id }}" {% if filtro_tipo == t.id %}selected{% endif %}>{{ t.label }}</option>{% endfor %}
+            </select>
+        </label>
+        <label class="field">Data dal <input type="date" name="data_da" value="{{ data_da }}"></label>
+        <label class="field">al <input type="date" name="data_a" value="{{ data_a }}"></label>
+        <label class="check"><input type="checkbox" name="solo_non_lavorati" {% if solo_non_lavorati %}checked{% endif %}> Solo da lavorare</label>
+        <button class="btn btn-orange" type="submit">Filtra</button>
+        <span class="small">{{ conteggio }} documenti · {{ note_aperte }} note aperte{% if richieste_contatto %} · <span class="badge badge-red">{{ richieste_contatto }} richieste di contatto</span>{% endif %}</span>
+    </form>
+</div>
+
+{% for g in giornate %}
+<div class="card">
+    <div class="top-actions" style="margin-bottom:8px">
+        <h2 style="margin:0;flex:1">{{ g.negozio }} · {{ g.data_fmt }}</h2>
+        <a class="btn btn-orange" href="/primanota/giornata/{{ g.negozio_id }}/{{ g.data }}/">Apri giornata e SysSpy</a>
+    </div>
+    <table class="table">
+        <thead><tr><th style="width:220px">Tipo</th><th>Documento</th></tr></thead>
+        <tbody>
+        {% for s in g.scansioni %}
+            <tr><td><strong>{{ s.tipo_documento }}</strong></td><td>{% include "primanota/_scansione.html" %}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% empty %}
+<div class="card">Nessun documento per i filtri scelti.</div>
+{% endfor %}
+{% endblock %}
