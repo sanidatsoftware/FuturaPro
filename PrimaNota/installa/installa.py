@@ -364,7 +364,8 @@ def main():
         if MARCATORE_CRON in crontab_prima:
             ok("già presente nel crontab")
         else:
-            log = archivio / "importazione.log"
+            # Accanto agli altri log del portale (cron_tocal.log, ...), se la cartella c'è.
+            log = (portale / "logs" if (portale / "logs").is_dir() else archivio) / "primanota_importazione.log"
             righe = (f"{MARCATORE_CRON}\n"
                      f"*/30 20-23 * * * cd {portale} && {python} manage.py importa_sysspy >> {log} 2>&1\n"
                      f"0 6 * * * cd {portale} && {python} manage.py importa_sysspy >> {log} 2>&1\n")
@@ -372,9 +373,23 @@ def main():
             subprocess.run(cron + ["-"], input=nuovo, text=True, check=True)
             ok("aggiunta: ogni 30 minuti dalle 20 alle 23 e alle 6")
 
+    titolo("Riavvio del portale")
+    riavviato = False
+    servizio = "tocal.service"
+    if shutil.which("systemctl") and os.geteuid() == 0 and \
+            subprocess.run(["systemctl", "cat", servizio], capture_output=True).returncode == 0:
+        esegui(["systemctl", "restart", servizio], portale)
+        riavviato = subprocess.run(["systemctl", "is-active", "--quiet", servizio]).returncode == 0
+        if riavviato:
+            ok(f"{servizio} riavviato e attivo")
+        else:
+            avviso(f"{servizio} non risulta attivo: controllare con  journalctl -u {servizio} -n 50")
+    else:
+        avviso("servizio tocal.service non trovato: riavviare il portale come di consueto")
+
     titolo("Fatto")
     print(f"""  Ora:
-  1. riavviare il portale come di consueto;
+  1. {"portale già riavviato" if riavviato else "riavviare il portale come di consueto"};
   2. Menu > Prima Nota > Condivisioni negozi: indicare la cartella SysSpy di ogni negozio e premere «Importa nuovi».
   Per tornare indietro: i file originali sono in {backup.cartella}""")
 

@@ -11,8 +11,8 @@ PRIMA NOTA - INSTALLAZIONE AUTOMATICA
    - salva una copia di sicurezza di tutto cio' che tocca in
      /opt/tocal/backup_primanota_<data_ora>/  (settings.py, urls.py, menu.html,
      db.sqlite3, crontab ed eventuali cartelle primanota gia' presenti);
-   - mette la cartella primanota in /opt/tocal/primanota (e toglie quella messa per
-     errore in /opt/tocal/tocal/primanota, che resta nel backup);
+   - mette la cartella primanota in /opt/tocal/primanota, sostituendo quella gia'
+     copiata a mano (che resta nel backup);
    - aggiunge Prima Nota a settings.py, urls.py e al menu del portale;
    - crea in Baserow la tabella "Prima Nota Scansioni" con tutti i campi: chiede
      email e password di un utente Baserow amministratore (Invio per saltare);
@@ -20,11 +20,12 @@ PRIMA NOTA - INSTALLAZIONE AUTOMATICA
    - controlla il portale con "manage.py check": se qualcosa non va rimette i file
      come prima e si ferma;
    - aggiunge al crontab l'importazione dei SysSpy ogni 30 minuti dalle 20 alle 23
-     e alle 6 (log in /opt/tocal/primanota_archivio/importazione.log).
+     e alle 6 (log in /opt/tocal/logs/primanota_importazione.log);
+   - riavvia il servizio tocal.service e controlla che sia attivo.
 
    Si puo' rilanciare senza problemi: quello che e' gia' fatto viene saltato.
 
-3) Riavviare il portale come di consueto.
+3) Se lo script dice che non ha potuto riavviare il portale: sudo systemctl restart tocal
 
 4) Dal portale, come Direttore o Amministratore:
    Menu > Prima Nota > Condivisioni negozi: indicare per ogni negozio la cartella
