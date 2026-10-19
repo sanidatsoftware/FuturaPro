@@ -11,7 +11,7 @@ import { attivaAiuti } from "./aiuto.js";
 import { AIUTI_PALINSESTO, osservaAiutiPagina } from "./aiuti-campi.js";
 import { clienteRicordato, disegnaMenu, ricordaCliente } from "./menu.js";
 import { apriEventi, caricaEventi, eventiCaricati, preparaEventi } from "./eventi.js";
-import { FORMATO_LIBRERIA, apriAnteprima, disegnaSequenza, preparaSequenza } from "./sequenza.js";
+import { FORMATO_LIBRERIA, apriAnteprima, apriSequenza, disegnaSequenza, preparaSequenza } from "./sequenza.js";
 
 const cliente = clienteRicordato();
 const MESI = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
@@ -765,11 +765,17 @@ function apriCampagna(id) {
   S.promozione = null;
   S.modificata = false;
   disegna();
+  apriSequenza();
   document.getElementById("campagna").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function apriPromozione(campagnaId, promozioneId) {
-  if (S.promozione?.id === promozioneId) return;
+  // Già aperta: si riapre comunque la timeline della sequenza (magari era ridotta).
+  if (S.promozione?.id === promozioneId) {
+    apriSequenza();
+    document.getElementById("campagna").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    return;
+  }
   if (!confermaAbbandono()) return;
   const campagna = S.campagne.find((c) => c.id === campagnaId);
   const promozione = campagna?.promozioni.find((p) => p.id === promozioneId);

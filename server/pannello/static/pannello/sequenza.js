@@ -149,6 +149,13 @@ function sceltiInOrdine(chiave) {
 
 // --- Disegno ------------------------------------------------------------------------------------
 
+// Apre la timeline della sequenza (anche se era ridotta) e la porta in vista.
+export function apriSequenza() {
+  Q.ridotta = false;
+  disegnaSequenza();
+  document.getElementById("sequenza")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
 export function disegnaSequenza() {
   const dock = document.getElementById("sequenza");
   const p = H.S.promozione;
