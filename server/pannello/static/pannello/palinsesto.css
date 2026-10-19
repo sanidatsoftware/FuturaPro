@@ -458,6 +458,9 @@ code { background: var(--carta-forte); padding: 1px 6px; border-radius: 5px; }
 .canale { display: grid; grid-template-columns: auto 40px 1fr; gap: 8px; align-items: center; padding: 6px; border-radius: 8px; cursor: pointer; }
 .canale:hover { background: var(--carta-hover); }
 .canale.presente { opacity: .6; }
+.dirette-libreria:not(:empty) { margin: 12px 0; padding: 12px; border: 1px solid var(--linea); border-radius: 12px; }
+.dirette-libreria .lista-canali { max-height: 220px; }
+.dirette-libreria .canale { grid-template-columns: 40px 1fr auto; cursor: default; }
 .logo-canale { width: 40px; height: 28px; display: grid; place-items: center; background: #fff; border-radius: 4px; overflow: hidden; }
 .logo-canale img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .testi-canale { display: flex; flex-direction: column; min-width: 0; }
