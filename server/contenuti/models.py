@@ -185,6 +185,11 @@ class ContenutoPromozione(ModelloCliente):
     durata = models.PositiveIntegerField(null=True, blank=True)
     # Solo per le dirette: con l'audio acceso. Spento, gli altri suoni del monitor restano.
     audio = models.BooleanField(default=False)
+    # Solo per le dirette: quando ripeterla. {} = una volta, al suo posto nella sequenza;
+    # {"modo": "ogni_slide", "ogni": 10}: dopo ogni 10 voci; {"modo": "ogni_minuti", "ogni": 15}:
+    # circa ogni 15 minuti di sequenza; {"modo": "orari", "orari": ["12:00", "18:30"]}: a quelle
+    # ore interrompe le slide per la sua durata, poi le slide riprendono (vedi palinsesto).
+    ripeti = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["promozione", "ordine"]

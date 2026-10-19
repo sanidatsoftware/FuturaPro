@@ -19,19 +19,55 @@ from .models import Campagna, Contenuto, ContenutoPromozione, Orientamento, Play
 ETICHETTE = {Orientamento.VERTICALE: "totem", Orientamento.ORIZZONTALE: "monitor", "": "tutti"}
 
 
-def salva_contenuti(promozione, contenuti, durate=None, audio=None):
+def salva_contenuti(promozione, contenuti, durate=None, audio=None, ripeti=None):
     """Le voci della promozione in ordine; ``durate`` (id → secondi) per quelle con una durata
-    propria, ``audio`` (id) per le dirette da mandare con l'audio acceso."""
+    propria, ``audio`` (id) per le dirette da mandare con l'audio acceso, ``ripeti`` (id → regola)
+    per le dirette da ripetere (vedi ContenutoPromozione.ripeti)."""
     durate = durate or {}
     audio = {str(i) for i in (audio or [])}
+    ripeti = {str(k): v for k, v in (ripeti or {}).items()}
     ContenutoPromozione.objects.filter(promozione=promozione).delete()
     ContenutoPromozione.objects.bulk_create(
         ContenutoPromozione(
             cliente_id=promozione.cliente_id, promozione=promozione, contenuto=c, ordine=i,
-            durata=durate.get(str(c.id)), audio=str(c.id) in audio
+            durata=durate.get(str(c.id)), audio=str(c.id) in audio,
+            ripeti=ripeti.get(str(c.id), {}) if c.tipo == Tipo.DIRETTA else {},
         )
         for i, c in enumerate(contenuti)
     )
+
+
+def con_ripetizioni(elenco, ripeti, secondi_di):
+    """La sequenza con le dirette «ogni N voci» o «ogni N minuti» ripetute al loro ritmo, al
+    posto della loro posizione; quelle «a orari» si tolgono (le manda il palinsesto come eventi).
+    ``secondi_di(contenuto)``: quanto resta in onda una voce (per il ritmo a minuti)."""
+    regole = {c.id: ripeti.get(c.id) or {} for c in elenco if (ripeti.get(c.id) or {}).get("modo") in ("ogni_slide", "ogni_minuti", "orari")}
+    if not regole:
+        return list(elenco)
+    ritmate = [c for c in elenco if regole.get(c.id, {}).get("modo") in ("ogni_slide", "ogni_minuti")]
+    base = [c for c in elenco if c.id not in regole]
+    if not base:
+        return ritmate  # nessun'altra voce: le dirette vanno una dopo l'altra
+    risultato, voci, secondi, inserite = [], 0, {c.id: 0 for c in ritmate}, set()
+    for c in base:
+        risultato.append(c)
+        voci += 1
+        durata = secondi_di(c)
+        for d in ritmate:
+            regola = regole[d.id]
+            ogni = max(1, int(regola.get("ogni") or 1))
+            if regola["modo"] == "ogni_slide" and voci % ogni == 0:
+                risultato.append(d)
+                inserite.add(d.id)
+            elif regola["modo"] == "ogni_minuti":
+                secondi[d.id] += durata
+                if secondi[d.id] >= ogni * 60:
+                    risultato.append(d)
+                    inserite.add(d.id)
+                    secondi[d.id] = 0
+    # Sequenza più corta del ritmo: la diretta va comunque una volta a ogni giro.
+    risultato.extend(d for d in ritmate if d.id not in inserite)
+    return risultato
 
 
 def gruppi_per_orientamento(contenuti) -> dict[str, list]:
@@ -60,6 +96,7 @@ def sincronizza(promozione):
     contenuti = [v.contenuto for v in voci]
     durate = {v.contenuto_id: v.durata for v in voci}
     audio = {v.contenuto_id for v in voci if v.audio}
+    ripeti = {v.contenuto_id: v.ripeti for v in voci if v.ripeti}
     gruppi = gruppi_per_orientamento(contenuti)
     # Senza destinatari la promozione è una bozza: nessuna pubblicazione.
     if not ha_destinatari(campagna):
@@ -87,9 +124,12 @@ def sincronizza(promozione):
         pubblicazione.insegne.set(campagna.insegne.all())
         pubblicazione.gruppi.set(campagna.gruppi.all())
         pubblicazione.monitor.set(campagna.monitor.all())
+        def secondi_di(c):
+            return durata_voce(c, durate.get(c.id), campagna) or c.durata or 30
+
         salva_elementi(pubblicazione.playlist, [
             {"contenuto": c, "durata": durata_voce(c, durate.get(c.id), campagna), "audio": c.id in audio}
-            for c in elenco
+            for c in con_ripetizioni(elenco, ripeti, secondi_di)
         ])
 
 

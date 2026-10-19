@@ -95,7 +95,7 @@ const orologio = (secondi) => `${Math.floor(secondi / 60)}:${String(Math.floor(s
 // Ogni modifica passa da qui: si può annullare (Ctrl+Z) e il pulsante «Salva» si accende.
 function modifica(operazione) {
   const p = H.S.promozione;
-  Q.storia.push(structuredClone({ contenuti: p.contenuti, durate: p.durate || {}, audio: p.audio || [] }));
+  Q.storia.push(structuredClone({ contenuti: p.contenuti, durate: p.durate || {}, audio: p.audio || [], ripeti: p.ripeti || {} }));
   if (Q.storia.length > 50) Q.storia.shift();
   operazione(p);
   H.segnaModificata();
@@ -304,6 +304,55 @@ function disegnaIspettore(box, corsie) {
       }),
     }, box);
   }
+  // Quando ripetere la diretta: al suo posto, ogni N immagini, ogni N minuti o a certe ore.
+  if (dirette.length === 1 && scelti.length === 1) {
+    const d = dirette[0];
+    const regola = p.ripeti?.[d.id] || { modo: "sequenza" };
+    const ripeti = crea("label", { classe: "durata-scelta", "data-aiuto": "Quando va in onda la diretta. «Ogni N immagini» e «ogni N minuti» la ripetono nella sequenza; «alle ore» interrompe le slide a quell'ora per la durata della diretta, poi le slide riprendono." }, box);
+    ripeti.append("Ripeti ");
+    const modo = crea("select", {}, ripeti);
+    for (const [v, t] of [["sequenza", "una volta, al suo posto"], ["ogni_slide", "ogni N immagini"], ["ogni_minuti", "ogni N minuti"], ["orari", "alle ore…"]]) {
+      crea("option", { value: v, testo: t, selected: regola.modo === v }, modo);
+    }
+    const valore = crea("input", { type: regola.modo === "orari" ? "text" : "number", min: 1, max: regola.modo === "ogni_minuti" ? 240 : 200 }, ripeti);
+    const aggiornaCampo = () => {
+      const m = modo.value;
+      valore.hidden = m === "sequenza";
+      valore.type = m === "orari" ? "text" : "number";
+      valore.placeholder = m === "orari" ? "es. 12:00, 18:30" : m === "ogni_minuti" ? "minuti" : "immagini";
+      valore.size = m === "orari" ? 16 : 4;
+      valore.value = m === regola.modo ? (m === "orari" ? (regola.orari || []).join(", ") : regola.ogni || "") : (m === "orari" ? "" : m === "ogni_minuti" ? 15 : 10);
+    };
+    aggiornaCampo();
+    let salvata = false; // Invio e poi l'uscita dal campo: una modifica sola
+    const salvaRegola = () => {
+      if (salvata) return;
+      const m = modo.value;
+      let nuova = null;
+      if (m === "ogni_slide" || m === "ogni_minuti") {
+        const n = parseInt(valore.value, 10);
+        if (!n || n < 1) return;
+        nuova = { modo: m, ogni: n };
+      } else if (m === "orari") {
+        const orari = valore.value.split(/[,;\s]+/).map((o) => o.trim()).filter(Boolean).map((o) => (/^\d{1,2}$/.test(o) ? `${o}:00` : o)).map((o) => o.replace(/^(\d):/, "0$1:"));
+        if (!orari.length) return;
+        if (!orari.every((o) => /^([01]\d|2[0-3]):[0-5]\d$/.test(o))) {
+          H.avvisa("Orari della diretta non validi: scrivili come 12:00, 18:30.");
+          return;
+        }
+        nuova = { modo: "orari", orari: [...new Set(orari)].sort() };
+      }
+      salvata = true;
+      modifica((q) => {
+        q.ripeti = { ...(q.ripeti || {}) };
+        if (nuova) q.ripeti[d.id] = nuova;
+        else delete q.ripeti[d.id];
+      });
+    };
+    modo.addEventListener("change", () => { aggiornaCampo(); if (modo.value === "sequenza" || valore.value) salvaRegola(); });
+    valore.addEventListener("change", salvaRegola);
+    valore.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); salvaRegola(); } });
+  }
   crea("span", { classe: "spazio" }, box);
   const corsia = corsie.find((c) => c.voci.some((x) => Q.selezione.has(x.id)));
   if (corsia) {
@@ -447,6 +496,14 @@ function blocco(x, d, indice, larghezza, corsia, scala) {
   crea("span", { classe: "nome", testo: x.nome }, piede);
   const badge = crea("span", { classe: "durata", testo: `${x.tipo === "video" ? "▶ " : x.tipo === "diretta" ? "📡 " : ""}${testoDurata(d.secondi)}${d.stimata ? "?" : ""}` }, piede);
   if (x.tipo === "diretta" && (H.S.promozione.audio || []).includes(x.id)) crea("span", { classe: "audio", testo: "🔊" }, el);
+  // La regola di ripetizione della diretta, ben visibile sul blocco.
+  const regola = x.tipo === "diretta" ? H.S.promozione.ripeti?.[x.id] : null;
+  if (regola) {
+    crea("span", {
+      classe: "ripeti",
+      testo: regola.modo === "orari" ? `🕒 ${regola.orari.join(" · ")}` : `🔁 ogni ${regola.ogni} ${regola.modo === "ogni_minuti" ? "min" : "imm."}`,
+    }, el);
+  }
 
   // Selezione: clic, Ctrl/⌘ + clic (aggiungi o togli), ⇧ + clic (da… a…).
   el.addEventListener("click", (e) => {

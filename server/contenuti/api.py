@@ -1,3 +1,5 @@
+import re
+
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -391,6 +393,8 @@ class PromozioneSerializer(serializers.ModelSerializer):
     durate = serializers.DictField(child=serializers.IntegerField(min_value=1, max_value=86400), required=False)
     # Le dirette da mandare con l'audio acceso (id dei contenuti).
     audio = serializers.ListField(child=serializers.UUIDField(), required=False)
+    # Quando ripetere le dirette (id → regola, vedi ContenutoPromozione.ripeti).
+    ripeti = serializers.DictField(child=serializers.DictField(), required=False)
     giorni = serializers.ListField(child=serializers.IntegerField(min_value=0, max_value=6), required=False)
     data_inizio = serializers.DateField()
     data_fine = serializers.DateField()
@@ -401,9 +405,33 @@ class PromozioneSerializer(serializers.ModelSerializer):
         model = Promozione
         fields = [
             "id", "campagna", "nome", "data_inizio", "data_fine", "ora_inizio", "ora_fine", "giorni",
-            "contenuti", "durate", "audio", "stato", "pubblicazioni", "creata", "modificata",
+            "contenuti", "durate", "audio", "ripeti", "stato", "pubblicazioni", "creata", "modificata",
         ]
         read_only_fields = ["creata", "modificata"]
+
+    def validate_ripeti(self, ripeti):
+        puliti = {}
+        for chiave, regola in ripeti.items():
+            modo = regola.get("modo") or "sequenza"
+            if modo == "sequenza":
+                continue
+            if modo in ("ogni_slide", "ogni_minuti"):
+                massimo = 200 if modo == "ogni_slide" else 240
+                try:
+                    ogni = int(regola.get("ogni"))
+                except (TypeError, ValueError):
+                    ogni = 0
+                if not 1 <= ogni <= massimo:
+                    raise serializers.ValidationError(f"Ripeti la diretta ogni 1-{massimo} {'immagini' if modo == 'ogni_slide' else 'minuti'}.")
+                puliti[str(chiave)] = {"modo": modo, "ogni": ogni}
+            elif modo == "orari":
+                orari = sorted({str(o)[:5] for o in regola.get("orari") or []})
+                if not orari or len(orari) > 24 or not all(re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", o) for o in orari):
+                    raise serializers.ValidationError("Orari della diretta non validi: es. 12:00, 18:30 (al massimo 24).")
+                puliti[str(chiave)] = {"modo": "orari", "orari": orari}
+            else:
+                raise serializers.ValidationError("Ripetizione della diretta non prevista.")
+        return puliti
 
     def get_stato(self, promozione):
         return campagne.stato(promozione, timezone.localdate())
@@ -421,6 +449,7 @@ class PromozioneSerializer(serializers.ModelSerializer):
         dati["contenuti"] = [str(v.contenuto_id) for v in voci]
         dati["durate"] = {str(v.contenuto_id): v.durata for v in voci if v.durata}
         dati["audio"] = [str(v.contenuto_id) for v in voci if v.audio]
+        dati["ripeti"] = {str(v.contenuto_id): v.ripeti for v in voci if v.ripeti}
         return dati
 
     def validate_giorni(self, giorni):
@@ -453,8 +482,8 @@ class PromozioneSerializer(serializers.ModelSerializer):
         verifica_campagna_modificabile(self.context["request"].user, campagna)
         return dati
 
-    def _salva(self, promozione, contenuti, durate, audio):
-        if contenuti is not None or durate is not None or audio is not None:
+    def _salva(self, promozione, contenuti, durate, audio, ripeti=None):
+        if contenuti is not None or durate is not None or audio is not None or ripeti is not None:
             voci = list(promozione.voci.select_related("contenuto").order_by("ordine"))
             if contenuti is None:
                 contenuti = [v.contenuto for v in voci]
@@ -462,18 +491,22 @@ class PromozioneSerializer(serializers.ModelSerializer):
                 durate = {str(v.contenuto_id): v.durata for v in voci if v.durata}
             if audio is None:
                 audio = [v.contenuto_id for v in voci if v.audio]
-            campagne.salva_contenuti(promozione, contenuti, durate, audio)
+            if ripeti is None:
+                ripeti = {str(v.contenuto_id): v.ripeti for v in voci if v.ripeti}
+            campagne.salva_contenuti(promozione, contenuti, durate, audio, ripeti)
         campagne.sincronizza(promozione)
         return promozione
 
     def create(self, dati):
         contenuti, durate, audio = dati.pop("contenuti", None), dati.pop("durate", None), dati.pop("audio", None)
-        return self._salva(super().create(dati), contenuti, durate, audio)
+        ripeti = dati.pop("ripeti", None)
+        return self._salva(super().create(dati), contenuti, durate, audio, ripeti)
 
     def update(self, promozione, dati):
         contenuti, durate, audio = dati.pop("contenuti", None), dati.pop("durate", None), dati.pop("audio", None)
+        ripeti = dati.pop("ripeti", None)
         vecchia_campagna = promozione.campagna
-        promozione = self._salva(super().update(promozione, dati), contenuti, durate, audio)
+        promozione = self._salva(super().update(promozione, dati), contenuti, durate, audio, ripeti)
         if vecchia_campagna.id != promozione.campagna_id:
             verifica_campagna_modificabile(self.context["request"].user, vecchia_campagna)
         return promozione

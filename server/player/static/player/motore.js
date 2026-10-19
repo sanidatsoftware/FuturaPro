@@ -378,7 +378,8 @@ class ZonaSlide {
     const evento = this === this.motore.principale ? this.motore.evento : null;
     if (evento && Date.now() < Date.parse(evento.fine)) {
       const resto = Math.max(1, Math.ceil((Date.parse(evento.fine) - Date.now()) / 1000));
-      return [{ contenuto: evento.contenuto, durata: resto, audio: evento.audio, volume: evento.volume, evento: evento.id }];
+      // «playlist»: la diretta a orari di una promozione si conta nella sua promozione.
+      return [{ contenuto: evento.contenuto, durata: resto, audio: evento.audio, volume: evento.volume, evento: evento.id, playlist: evento.playlist || null }];
     }
     if (this.config.sorgente && this.config.sorgente !== "palinsesto") {
       return (m.playlist[this.config.sorgente] || []).map((e) => ({ ...e, playlist: this.config.sorgente }));

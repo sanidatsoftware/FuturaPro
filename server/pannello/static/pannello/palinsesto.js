@@ -970,7 +970,7 @@ function disegnaCampagna(box) {
   fornitore.addEventListener("input", () => { c.fornitore = fornitore.value; segnaModificata(); });
   disegnaDestinatari(impostazioni, c);
   const piede = crea("div", { classe: "piede-campagna" }, impostazioni);
-  pulsanteSalva(piede, c.id ? "Salva la campagna" : "Crea la campagna", salvaCampagna);
+  pulsanteSalva(piede, c.id ? "Salva la campagna" : "Salva e crea la campagna", salvaCampagna);
   if (c.id) {
     crea("button", {
       type: "button", classe: "pericolo", testo: "Elimina la campagna",
@@ -1154,7 +1154,7 @@ function disegnaPromozione(box) {
   }
 
   const piede = crea("div", { classe: "piede-campagna" }, box);
-  pulsanteSalva(piede, p.id ? "Salva la promozione" : "Crea la promozione", salvaPromozione).classList.add("grande");
+  pulsanteSalva(piede, p.id ? "Salva la promozione" : "Salva e crea la promozione", salvaPromozione).classList.add("grande");
   if (p.id) {
     crea("button", {
       type: "button", classe: "pericolo", testo: "Elimina",
@@ -1303,6 +1303,7 @@ async function salvaPromozione() {
       // Solo per le voci ancora nella promozione.
       durate: Object.fromEntries(Object.entries(p.durate || {}).filter(([id]) => p.contenuti.includes(id))),
       audio: (p.audio || []).filter((id) => p.contenuti.includes(id)),
+      ripeti: Object.fromEntries(Object.entries(p.ripeti || {}).filter(([id]) => p.contenuti.includes(id))),
     };
     const salvata = p.id ? await api("PATCH", `/api/promozioni/${p.id}/`, dati) : await api("POST", "/api/promozioni/", dati);
     S.promozione = structuredClone(salvata);

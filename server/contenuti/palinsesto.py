@@ -100,6 +100,47 @@ def eventi_del_monitor(monitor):
     )
 
 
+def dirette_a_orari(pubblicazioni, adesso=None) -> tuple[list, dict]:
+    """Le dirette delle promozioni da mandare a certe ore («alle 12:00 per 5 minuti»): per oggi e
+    domani diventano interruzioni come gli eventi straordinari (il player ferma le slide, manda la
+    diretta e poi riprende). Valgono le date, i giorni e la fascia oraria della promozione."""
+    from django.utils import timezone
+
+    from .campagne import durata_voce
+    from .models import ContenutoPromozione
+
+    adesso = adesso or timezone.now()
+    locale = timezone.localtime(adesso)
+    # Le dirette vanno ai monitor (orizzontali): non dalla parte verticale (totem) della promozione.
+    attive = {p.promozione_id: p for p in pubblicazioni if p.attiva and p.promozione_id and p.orientamento != "verticale"}
+    if not attive:
+        return [], {}
+    voci = ContenutoPromozione.objects.filter(promozione_id__in=attive, ripeti__modo="orari").select_related("contenuto", "promozione__campagna")
+    eventi, contenuti = [], {}
+    for voce in voci:
+        promo, pubblicazione = voce.promozione, attive[voce.promozione_id]
+        durata = durata_voce(voce.contenuto, voce.durata, promo.campagna) or 300
+        for giorno in (locale.date(), locale.date() + timedelta(days=1)):
+            if not (promo.data_inizio <= giorno <= promo.data_fine) or (promo.giorni and giorno.weekday() not in promo.giorni):
+                continue
+            for orario in voce.ripeti.get("orari") or []:
+                ore, minuti = (int(x) for x in orario.split(":"))
+                inizio_ora = time(ore, minuti)
+                if (promo.ora_inizio and inizio_ora < promo.ora_inizio) or (promo.ora_fine and inizio_ora >= promo.ora_fine):
+                    continue
+                inizio = timezone.make_aware(datetime.combine(giorno, inizio_ora))
+                fine = inizio + timedelta(seconds=durata)
+                if fine <= adesso:
+                    continue
+                eventi.append({
+                    "id": f"diretta-{voce.id}-{giorno.isoformat()}-{orario}", "nome": f"{promo.nome} · diretta delle {orario}",
+                    "contenuto": str(voce.contenuto_id), "inizio": inizio.isoformat(), "fine": fine.isoformat(),
+                    "audio": voce.audio, "volume": 80, "schermo_intero": False, "playlist": str(pubblicazione.playlist_id),
+                })
+                contenuti[str(voce.contenuto_id)] = voce.contenuto
+    return sorted(eventi, key=lambda e: e["inizio"]), contenuti
+
+
 def in_onda(pubblicazioni, istante: datetime) -> list:
     """Le pubblicazioni che vanno in onda in quell'istante, già in ordine di riproduzione."""
     valide = [p for p in pubblicazioni if valida(p, istante)]
@@ -210,6 +251,8 @@ def manifest(monitor) -> dict:
     contenuti = {str(c.id): c for c in Contenuto.objects.filter(id__in=immagini_layout | ({riserva} if riserva else set()))}
     for evento in eventi:
         contenuti[str(evento.contenuto_id)] = evento.contenuto
+    interruzioni, contenuti_interruzioni = dirette_a_orari(pubblicazioni)
+    contenuti.update(contenuti_interruzioni)
     for elemento in elementi:
         voce = {"contenuto": str(elemento.contenuto_id), "durata": durata_effettiva(elemento)}
         if elemento.audio:
@@ -252,7 +295,7 @@ def manifest(monitor) -> dict:
                 "audio": e.audio, "volume": e.volume, "schermo_intero": e.schermo_intero,
             }
             for e in eventi
-        ],
+        ] + interruzioni,
         "contenuti": {chiave: _voce(contenuto) for chiave, contenuto in contenuti.items()},
         "code": code_del_monitor(monitor, layout),
         # La coda sul telefono: indirizzo per il QR sul biglietto; null se non attiva.

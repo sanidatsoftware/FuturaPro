@@ -223,3 +223,60 @@ class PubblicaTest(ConFile):
             400,
         )
         self.assertEqual(self.pubblica(contenuti=[contenuto], monitor=monitor, giorni=[7]).status_code, 400)
+
+
+class RipetiDiretteTest(ConFile):
+    """Una diretta in una promozione: al suo posto, ogni N immagini, ogni N minuti o a certe ore."""
+
+    def test_regole_della_diretta(self):
+        from datetime import date as giorno, timedelta as intervallo
+
+        from django.utils import timezone
+
+        from . import campagne
+        from .models import Campagna, Contenuto, Promozione
+
+        self.come(self.admin_a)
+        immagini = [self.carica(durata=10).json()["id"] for _ in range(5)]
+        with contesto_cliente(self.a.id):
+            diretta = Contenuto.objects.create(cliente=self.a, nome="Rai 1", tipo="diretta", url="https://esempio.it/live.m3u8", durata=300)
+            campagna = Campagna.objects.create(cliente=self.a, nome="Prova", durata=10)
+            campagna.monitor.add(self.mon_a_milano)
+        oggi = timezone.localdate()
+        base = {"campagna": str(campagna.id), "nome": "Promo", "data_inizio": oggi.isoformat(), "data_fine": (oggi + intervallo(days=3)).isoformat(),
+                "contenuti": [str(diretta.id), *immagini]}
+
+        # Ogni 2 immagini (e non più al suo posto in testa).
+        r = self.client.post("/api/promozioni/", {**base, "ripeti": {str(diretta.id): {"modo": "ogni_slide", "ogni": 2}}}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        promo = r.json()
+        self.assertEqual(promo["ripeti"], {str(diretta.id): {"modo": "ogni_slide", "ogni": 2}})
+        with contesto_cliente(self.a.id):
+            playlist = Promozione.objects.get(id=promo["id"]).pubblicazioni.get().playlist
+            sequenza = [str(e.contenuto_id) for e in playlist.elementi.order_by("ordine")]
+        d = str(diretta.id)
+        self.assertEqual(sequenza, [immagini[0], immagini[1], d, immagini[2], immagini[3], d, immagini[4]])
+
+        # Ogni minuto: 10 s per immagine, la sequenza è più corta → una volta, in fondo.
+        r = self.client.patch(f"/api/promozioni/{promo['id']}/", {"ripeti": {d: {"modo": "ogni_minuti", "ogni": 1}}}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        with contesto_cliente(self.a.id):
+            self.assertEqual([str(e.contenuto_id) for e in playlist.elementi.order_by("ordine")], [*immagini, d])
+
+        # A orari: fuori dalla sequenza, nel manifest come interruzione.
+        r = self.client.patch(f"/api/promozioni/{promo['id']}/", {"ripeti": {d: {"modo": "orari", "orari": ["23:59", "00:00"]}}}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        with contesto_cliente(self.a.id):
+            self.assertNotIn(d, [str(e.contenuto_id) for e in playlist.elementi.all()])
+            pubblicazioni = list(Promozione.objects.get(id=promo["id"]).pubblicazioni.all())
+            eventi, contenuti = __import__("contenuti.palinsesto", fromlist=["x"]).dirette_a_orari(pubblicazioni)
+        self.assertIn(d, contenuti)
+        self.assertTrue(eventi and all(e["contenuto"] == d and e["playlist"] == str(playlist.id) for e in eventi))
+        self.assertTrue(any(e["inizio"].startswith((oggi + intervallo(days=1)).isoformat() + "T00:00") for e in eventi))
+
+        # Regole non valide.
+        for regola in ({"modo": "ogni_slide", "ogni": 0}, {"modo": "orari", "orari": ["25:00"]}, {"modo": "boh"}):
+            self.assertEqual(self.client.patch(f"/api/promozioni/{promo['id']}/", {"ripeti": {d: regola}}, format="json").status_code, 400)
+        # Le immagini non si ripetono: la regola vale solo per le dirette.
+        self.client.patch(f"/api/promozioni/{promo['id']}/", {"ripeti": {immagini[0]: {"modo": "ogni_slide", "ogni": 1}}}, format="json")
+        self.assertEqual(self.client.get(f"/api/promozioni/{promo['id']}/").json()["ripeti"], {})

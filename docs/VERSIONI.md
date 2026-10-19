@@ -56,6 +56,13 @@ layout video, eliminacode, player per monitor e totem, teleassistenza, registro)
   mostrano l'elenco da toccare. Il lettore di codici a barre resta automatico: legge, cerca e
   mostra il prodotto senza toccare nulla, anche con la ricerca aperta. La ricerca per descrizione
   c'è con EvoPos, DIGI e le mappature; con una query scritta a mano si cerca solo per codice.
+- **Dirette nelle promozioni: quando ripeterle.** Selezionando la diretta nella sequenza,
+  «Ripeti»: una volta al suo posto, **ogni N immagini**, **ogni N minuti** (circa, sulla durata
+  delle voci) oppure **alle ore** indicate (es. 12:00, 18:30): a quell'ora le slide si fermano,
+  va la diretta per la sua durata e poi le slide riprendono (come un evento straordinario, nei
+  giorni e nella fascia oraria della promozione). Sul blocco della diretta si vede la regola.
+- **Date delle promozioni**: nel calendario si sceglie qualunque giorno; se la promozione esce
+  dalla validità della campagna, al salvataggio si propone di allungarla.
 - **Il servizio code del totem si aggiorna da solo** (dalla `1.8`): ogni 10 minuti guarda se sul
   server c'è una versione nuova (in HTTPS), la installa quando da due minuti nessuno prende un
   biglietto e si riavvia; se la nuova versione non risponde entro un minuto e mezzo torna a
