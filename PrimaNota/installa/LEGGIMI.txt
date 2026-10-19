@@ -5,7 +5,7 @@ PRIMA NOTA - INSTALLAZIONE AUTOMATICA
 
 2) Dalla cartella estratta lanciare:
 
-      sudo ./installa.sh
+      sudo python3 installa.py
 
    Lo script:
    - salva una copia di sicurezza di tutto cio' che tocca in
