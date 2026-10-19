@@ -279,3 +279,13 @@ class TestPagine(Base):
         self.assertEqual(uff.get(f"/primanota/sysspy/{f.id}/scarica/").status_code, 200)
         r = uff.get("/primanota/sysspy/", {"data_da": "2026-01-01", "data_a": "2026-05-28", "testo": "x"})
         self.assertIn("al massimo", r.context["error"])
+
+
+class TestMenu(Base):
+    def test_voce_di_menu_solo_per_chi_e_abilitato(self):
+        from django.template import Context, Template
+        t = Template("{% load primanota_menu %}{% primanota_visibile utente as v %}{{ v }}")
+        self.assertEqual(t.render(Context({"utente": baserow_layer.UTENTI["pv@x"]})), "True")
+        self.assertEqual(t.render(Context({"utente": baserow_layer.UTENTI["nomenu@x"]})), "False")
+        self.assertEqual(t.render(Context({"utente": None})), "False")
+

@@ -38,6 +38,7 @@ from .services.baserow_primanota import (
     leggi_scansione,
 )
 from .services.monitor import build_monitor
+from scansioni.services.baserow_scansioni import LOCAL_TZ
 
 # La ricerca nel testo legge i file dal disco: si limita il numero di giornate.
 MAX_GIORNI_RICERCA = 62
@@ -66,6 +67,8 @@ def _accesso(solo_ufficio=False, solo_gestione=False):
             if solo_gestione and not can_manage_primanota(user):
                 return HttpResponseForbidden("Funzione riservata a Direttore e Amministratore.")
             request.utente_primanota = user
+            # Il portale è configurato in UTC: date e orari della Prima Nota sono quelli italiani.
+            timezone.activate(LOCAL_TZ)
             return view(request, *args, **kwargs)
         return interna
     return decoratore

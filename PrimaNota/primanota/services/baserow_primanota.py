@@ -154,6 +154,7 @@ def leggi_scansione(scansione_id):
 def crea_scansione(user, negozio_id, data_documento, tipo_documento, documento_file, cassa=None, note=""):
     if tipo_documento not in TIPI_VALIDI:
         return {"error": "Tipo documento non valido."}
+    tabella = _tabella()  # prima di caricare il file, così senza configurazione non resta un allegato orfano
     dati = {
         CAMPO_DATA: data_documento,
         CAMPO_NEGOZIO: [int(negozio_id)],
@@ -167,7 +168,7 @@ def crea_scansione(user, negozio_id, data_documento, tipo_documento, documento_f
         CAMPO_LAVORATO: False,
         CAMPO_VERS_LAVORATO: False,
     }
-    return _richiesta("POST", _build_rows_endpoint(_tabella()), params={"user_field_names": "true"}, json=dati)
+    return _richiesta("POST", _build_rows_endpoint(tabella), params={"user_field_names": "true"}, json=dati)
 
 
 def aggiorna_lavorato(user, scansione_id, lavorato, versamento=False):

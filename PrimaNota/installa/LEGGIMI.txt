@@ -1,0 +1,40 @@
+PRIMA NOTA - INSTALLAZIONE AUTOMATICA
+=====================================
+
+1) Copiare questa cartella sul server (ad esempio in /tmp) ed estrarla.
+
+2) Dalla cartella estratta lanciare:
+
+      sudo ./installa.sh
+
+   Lo script:
+   - salva una copia di sicurezza di tutto cio' che tocca in
+     /opt/tocal/backup_primanota_<data_ora>/  (settings.py, urls.py, menu.html,
+     db.sqlite3, crontab ed eventuali cartelle primanota gia' presenti);
+   - mette la cartella primanota in /opt/tocal/primanota (e toglie quella messa per
+     errore in /opt/tocal/tocal/primanota, che resta nel backup);
+   - aggiunge Prima Nota a settings.py, urls.py e al menu del portale;
+   - crea in Baserow la tabella "Prima Nota Scansioni" con tutti i campi: chiede
+     email e password di un utente Baserow amministratore (Invio per saltare);
+   - installa smbprotocol e cryptography ed esegue "manage.py migrate primanota";
+   - controlla il portale con "manage.py check": se qualcosa non va rimette i file
+     come prima e si ferma;
+   - aggiunge al crontab l'importazione dei SysSpy ogni 30 minuti dalle 20 alle 23
+     e alle 6 (log in /opt/tocal/primanota_archivio/importazione.log).
+
+   Si puo' rilanciare senza problemi: quello che e' gia' fatto viene saltato.
+
+3) Riavviare il portale come di consueto.
+
+4) Dal portale, come Direttore o Amministratore:
+   Menu > Prima Nota > Condivisioni negozi: indicare per ogni negozio la cartella
+   dei SysSpy (\\server\condivisione\cartella oppure /mnt/negozi/5048) e premere
+   "Importa nuovi". La prima volta archivia tutto lo storico.
+
+Opzioni:  --portale /altra/cartella   se il portale non e' in /opt/tocal
+          --python /percorso/python   se lo script non trova il Python del portale
+          --senza-baserow             se la tabella Baserow la si crea a mano
+          --senza-cron                se non si vuole l'importazione automatica
+
+Per tornare indietro: ricopiare i file da /opt/tocal/backup_primanota_<data_ora>/
+nelle stesse posizioni e cancellare /opt/tocal/primanota.
