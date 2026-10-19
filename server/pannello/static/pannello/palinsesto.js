@@ -124,6 +124,7 @@ function avvisa(testo, tipo = "errore") {
 
 const isoLocale = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const data = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" }) : "");
+const giornoBreve = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
 const periodo = (c) => (c.data_inizio || c.data_fine ? `${data(c.data_inizio) || "…"} → ${data(c.data_fine) || "…"}` : "Senza date");
 const peso = (byte) => (byte > 1048576 ? `${(byte / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(byte / 1024))} KB`);
 const perId = (elenco) => new Map(elenco.map((v) => [v.id, v]));
@@ -1093,10 +1094,20 @@ function disegnaPromozione(box) {
   const campi = crea("div", { classe: "campi" }, box);
   const nome = campoIn(campi, "Nome della promozione", crea("input", { id: "nome-promozione", value: p.nome, placeholder: "es. Volantino 6-19 ottobre", maxLength: 200 }), "largo", "Il nome della promozione, es. il volantino del periodo.");
   nome.addEventListener("input", () => { p.nome = nome.value; segnaModificata(); });
-  const dal = campoIn(campi, "Dal", crea("input", { type: "date", value: p.data_inizio || "", required: true, min: c.data_inizio || "", max: c.data_fine || "" }), "", "Il primo giorno in cui la promozione va in onda.");
-  dal.addEventListener("change", () => { p.data_inizio = dal.value || null; segnaModificata(); });
-  const al = campoIn(campi, "Al (compreso)", crea("input", { type: "date", value: p.data_fine || "", required: true, min: c.data_inizio || "", max: c.data_fine || "" }), "", "L'ultimo giorno in onda, compreso. Dal giorno dopo la promozione è conclusa e sparisce dagli schermi da sola.");
-  al.addEventListener("change", () => { p.data_fine = al.value || null; segnaModificata(); });
+  // Nel calendario si sceglie qualunque giorno: se si esce dalla validità della campagna, al
+  // salvataggio si propone di allungarla (prima i giorni fuori non erano cliccabili).
+  const dal = campoIn(campi, "Dal", crea("input", { type: "date", value: p.data_inizio || "", required: true }), "", "Il primo giorno in cui la promozione va in onda.");
+  const al = campoIn(campi, "Al (compreso)", crea("input", { type: "date", value: p.data_fine || "", required: true, min: p.data_inizio || "" }), "", "L'ultimo giorno in onda, compreso. Dal giorno dopo la promozione è conclusa e sparisce dagli schermi da sola.");
+  const validita = crea("p", { classe: "tenue validita-campagna" }, campi);
+  const aggiornaValidita = () => {
+    const fuori = (c.data_inizio && p.data_inizio && p.data_inizio < c.data_inizio) || (c.data_fine && p.data_fine && p.data_fine > c.data_fine);
+    validita.textContent = !c.data_inizio && !c.data_fine ? ""
+      : `Campagna valida ${c.data_inizio ? `dal ${giornoBreve(c.data_inizio)} ` : ""}${c.data_fine ? `al ${giornoBreve(c.data_fine)}` : ""}${fuori ? " · le date della promozione escono dalla campagna: al salvataggio ti propongo di allungarla." : ""}`;
+    validita.classList.toggle("attenzione", Boolean(fuori));
+  };
+  dal.addEventListener("change", () => { p.data_inizio = dal.value || null; al.min = dal.value || ""; segnaModificata(); aggiornaValidita(); });
+  al.addEventListener("change", () => { p.data_fine = al.value || null; segnaModificata(); aggiornaValidita(); });
+  aggiornaValidita();
 
   const avanzate = crea("details", { classe: "avanzate", open: Boolean(p.ora_inizio || p.ora_fine || p.giorni.length) }, box);
   crea("summary", { testo: "Solo in certe ore o certi giorni", "data-aiuto": "Facoltativo: limita la promozione a una fascia oraria (es. 8-12) o ad alcuni giorni (es. sabato e domenica)." }, avanzate);
@@ -1257,7 +1268,26 @@ async function salvaPromozione() {
     avvisa("Indica le date di inizio e di fine della promozione.");
     return;
   }
+  if (p.data_fine < p.data_inizio) {
+    avvisa("La data di fine viene prima di quella di inizio.");
+    return;
+  }
+  // Promozione fuori dalla validità della campagna: si propone di allungare la campagna.
+  const inizio = c.data_inizio && p.data_inizio < c.data_inizio ? p.data_inizio : c.data_inizio;
+  const fine = c.data_fine && p.data_fine > c.data_fine ? p.data_fine : c.data_fine;
+  const allunga = inizio !== c.data_inizio || fine !== c.data_fine;
+  if (allunga && !confirm(`La campagna «${c.nome}» è valida ${c.data_inizio ? `dal ${giornoBreve(c.data_inizio)} ` : ""}${c.data_fine ? `al ${giornoBreve(c.data_fine)}` : ""}.\n`
+    + `La promozione va dal ${giornoBreve(p.data_inizio)} al ${giornoBreve(p.data_fine)}.\n\nAllungo la validità della campagna ${inizio ? `dal ${giornoBreve(inizio)} ` : ""}${fine ? `al ${giornoBreve(fine)}` : ""}?`)) {
+    avvisa("Promozione non salvata: le sue date devono stare dentro la validità della campagna.");
+    return;
+  }
   try {
+    if (allunga && c.id) {
+      await api("PATCH", `/api/campagne/${c.id}/`, { data_inizio: inizio || null, data_fine: fine || null });
+      Object.assign(c, { data_inizio: inizio, data_fine: fine });
+    } else if (allunga) {
+      Object.assign(c, { data_inizio: inizio, data_fine: fine });
+    }
     // Una campagna nuova si salva insieme alla sua prima promozione.
     if (!c.id) {
       if (!c.nome.trim()) {
