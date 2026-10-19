@@ -29,6 +29,7 @@ from pathlib import Path
 
 QUI = Path(__file__).resolve().parent
 NOME_TABELLA = "Prima Nota Scansioni"
+CAMPO_MENU = "Menu_PrimaNota"
 MARCATORE_CRON = "# primanota: importazione SysSpy"
 
 CARD_MENU = """        {% primanota_visibile utente as show_primanota %}
@@ -94,7 +95,7 @@ class Backup:
 
 # ---------------------------------------------------------------- modifiche ai file
 
-def modifica_settings(testo, table_id=None, archivio=None):
+def modifica_settings(testo, table_id=None, archivio=None, campo_menu=None):
     if not re.search(r"""['"]primanota['"]""", testo):
         m = re.search(r"INSTALLED_APPS\s*=\s*\[(.*?)\n\]", testo, re.S)
         if not m:
@@ -105,8 +106,16 @@ def modifica_settings(testo, table_id=None, archivio=None):
             "\n\n# Prima Nota\n"
             "BASEROW_PRIMANOTA_TABLE_ID = None\n"
             f'PRIMANOTA_ARCHIVIO_DIR = "{archivio}"\n')
+    if "BASEROW_UTENTE_MENU_PRIMANOTA_FIELD" not in testo:
+        testo = re.sub(r"^(BASEROW_PRIMANOTA_TABLE_ID\s*=.*)$",
+                       r"\1\nBASEROW_UTENTE_MENU_PRIMANOTA_FIELD = None   # casella Menu_PrimaNota della tabella Utenti",
+                       testo, count=1, flags=re.M)
     if table_id:
         testo = re.sub(r"^BASEROW_PRIMANOTA_TABLE_ID\s*=.*$", f"BASEROW_PRIMANOTA_TABLE_ID = {int(table_id)}",
+                       testo, flags=re.M)
+    if campo_menu:
+        testo = re.sub(r"^BASEROW_UTENTE_MENU_PRIMANOTA_FIELD\s*=.*$",
+                       f'BASEROW_UTENTE_MENU_PRIMANOTA_FIELD = "{campo_menu}"   # casella Menu_PrimaNota della tabella Utenti',
                        testo, flags=re.M)
     return testo
 
@@ -168,6 +177,14 @@ class Baserow:
         self.jwt = r.get("access_token") or r.get("token")
         if not self.jwt:
             raise RuntimeError("accesso a Baserow non riuscito")
+
+    def crea_campo_menu(self, utenti_id):
+        """Casella "Menu_PrimaNota" nella tabella Utenti (come Menu_Scansioni). Restituisce "field_<id>"."""
+        for c in self.chiama("GET", f"/api/database/fields/table/{utenti_id}/"):
+            if c["name"] == CAMPO_MENU:
+                return f"field_{c['id']}", False
+        c = self.chiama("POST", f"/api/database/fields/table/{utenti_id}/", {"name": CAMPO_MENU, "type": "boolean"})
+        return f"field_{c['id']}", True
 
     def crea_tabella(self, utenti_id, negozi_id):
         """Crea la tabella nello stesso database della tabella Utenti; se esiste già la riusa."""
@@ -311,28 +328,33 @@ def main():
         menu.write_text(modifica_menu(menu.read_text(encoding="utf-8")), encoding="utf-8")
         ok("modificati (solo aggiunte)")
 
-        titolo("Tabella Baserow")
+        titolo("Baserow: tabella Prima Nota e casella Menu_PrimaNota negli Utenti")
         table_id = valore_settings(testo_settings, "BASEROW_PRIMANOTA_TABLE_ID")
-        if table_id:
-            ok(f"già configurata: tabella {table_id}")
+        campo_menu = valore_settings(testo_settings, "BASEROW_UTENTE_MENU_PRIMANOTA_FIELD")
+        if table_id and campo_menu:
+            ok(f"già configurate: tabella {table_id}, casella {campo_menu}")
         elif args.senza_baserow:
-            avviso("saltata: indicare a mano BASEROW_PRIMANOTA_TABLE_ID in settings.py")
+            avviso("saltato: indicare a mano BASEROW_PRIMANOTA_TABLE_ID e BASEROW_UTENTE_MENU_PRIMANOTA_FIELD in settings.py")
         else:
             api = valore_settings(testo_settings, "BASEROW_API_URL")
             utenti_id = valore_settings(testo_settings, "BASEROW_UTENTI_TABLE_ID", "272")
             negozi_id = valore_settings(testo_settings, "BASEROW_NEGOZI_TABLE_ID", "880")
-            print(f"  Per creare la tabella serve un utente Baserow con permessi di amministrazione ({api}).")
+            print(f"  Serve un utente Baserow con permessi di amministrazione ({api}).")
             email = input("  Email Baserow (Invio per saltare): ").strip()
             if not email:
-                avviso("saltata: indicare a mano BASEROW_PRIMANOTA_TABLE_ID in settings.py")
+                avviso("saltato: indicare a mano BASEROW_PRIMANOTA_TABLE_ID e BASEROW_UTENTE_MENU_PRIMANOTA_FIELD in settings.py")
             else:
                 b = Baserow(api)
                 b.accedi(email, getpass.getpass("  Password Baserow: "))
-                table_id, creata = b.crea_tabella(utenti_id, negozi_id)
-                ok(f"tabella «{NOME_TABELLA}» {'creata' if creata else 'già esistente'}: id {table_id}")
-                settings.write_text(modifica_settings(settings.read_text(encoding="utf-8"), table_id=table_id),
-                                    encoding="utf-8")
-                ok("id scritto in settings.py")
+                if not table_id:
+                    table_id, creata = b.crea_tabella(utenti_id, negozi_id)
+                    ok(f"tabella «{NOME_TABELLA}» {'creata' if creata else 'già esistente'}: id {table_id}")
+                if not campo_menu:
+                    campo_menu, creato = b.crea_campo_menu(utenti_id)
+                    ok(f"casella «{CAMPO_MENU}» nella tabella Utenti {'creata' if creato else 'già esistente'}: {campo_menu}")
+                settings.write_text(modifica_settings(settings.read_text(encoding="utf-8"), table_id=table_id,
+                                                      campo_menu=campo_menu), encoding="utf-8")
+                ok("scritti in settings.py")
 
         if args.solo_file:
             titolo("Fatto (solo file)")
@@ -360,18 +382,19 @@ def main():
         errore("Installazione annullata. Il portale è come prima.")
 
     if not args.senza_cron and crontab_prima is not None:
-        titolo("Importazione automatica la sera")
-        if MARCATORE_CRON in crontab_prima:
+        titolo("Importazione automatica")
+        # Il crontab lancia il comando ogni 5 minuti; gli orari veri si decidono nel portale
+        # (Prima Nota > Condivisioni negozi). Le righe di una installazione precedente si sostituiscono.
+        log = (portale / "logs" if (portale / "logs").is_dir() else archivio) / "primanota_importazione.log"
+        riga = f"*/5 * * * * cd {portale} && {python} manage.py importa_sysspy --pianificato >> {log} 2>&1"
+        vecchie = crontab_prima.splitlines()
+        tenute = [r for r in vecchie if r != MARCATORE_CRON and "importa_sysspy" not in r]
+        nuovo = "\n".join(tenute + [MARCATORE_CRON, riga]) + "\n"
+        if nuovo.strip() == crontab_prima.strip():
             ok("già presente nel crontab")
         else:
-            # Accanto agli altri log del portale (cron_tocal.log, ...), se la cartella c'è.
-            log = (portale / "logs" if (portale / "logs").is_dir() else archivio) / "primanota_importazione.log"
-            righe = (f"{MARCATORE_CRON}\n"
-                     f"*/30 20-23 * * * cd {portale} && {python} manage.py importa_sysspy >> {log} 2>&1\n"
-                     f"0 6 * * * cd {portale} && {python} manage.py importa_sysspy >> {log} 2>&1\n")
-            nuovo = (crontab_prima.rstrip("\n") + "\n" if crontab_prima.strip() else "") + righe
             subprocess.run(cron + ["-"], input=nuovo, text=True, check=True)
-            ok("aggiunta: ogni 30 minuti dalle 20 alle 23 e alle 6")
+            ok("crontab aggiornato: gli orari si decidono in Prima Nota > Condivisioni negozi")
 
     titolo("Riavvio del portale")
     riavviato = False

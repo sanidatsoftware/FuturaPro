@@ -132,3 +132,37 @@ class Nota(models.Model):
 
     class Meta:
         ordering = ["-creata_il"]
+
+
+class Pianificazione(models.Model):
+    """
+    Orari dell'importazione automatica, decisi dall'Amministratore nel portale.
+    Il crontab lancia "importa_sysspy --pianificato" ogni 5 minuti: il comando
+    lavora solo quando è passato un orario non ancora eseguito.
+    """
+
+    GIORNI = [(0, "Lunedì"), (1, "Martedì"), (2, "Mercoledì"), (3, "Giovedì"), (4, "Venerdì"),
+              (5, "Sabato"), (6, "Domenica")]
+
+    attiva = models.BooleanField(default=True)
+    orari = models.CharField(max_length=200, default="20:30, 22:00, 06:00",
+                             help_text="Orari dell'importazione dei file nuovi, separati da virgola (HH:MM)")
+    ricostruzione_attiva = models.BooleanField(default=False)
+    ricostruzione_giorno = models.IntegerField(choices=GIORNI, default=6)
+    ricostruzione_ora = models.CharField(max_length=5, default="02:00")
+    ultima_importazione = models.DateTimeField(null=True, blank=True)
+    ultima_ricostruzione = models.DateTimeField(null=True, blank=True)
+    ultimo_esito = models.TextField(blank=True)
+
+    @classmethod
+    def corrente(cls):
+        return cls.objects.first() or cls.objects.create()
+
+    def elenco_orari(self):
+        out = []
+        for pezzo in self.orari.replace(";", ",").split(","):
+            pezzo = pezzo.strip()
+            if pezzo:
+                ore, minuti = pezzo.split(":")
+                out.append((int(ore), int(minuti)))
+        return sorted(set(out))

@@ -8,9 +8,37 @@
 <div class="card small">
     Per ogni negozio indicare la cartella da cui prelevare i file <code>SysSpy.AAAAMMGG.CASSA</code>:
     <code>\\server\condivisione\cartella</code> (SMB) oppure un percorso già montato sul server, ad esempio <code>/mnt/negozi/5048</code>.
-    La password resta cifrata; lasciandola vuota si mantiene quella salvata. L'importazione automatica gira con il comando
-    <code>python manage.py importa_sysspy</code> (vedi README).
+    La password resta cifrata; lasciandola vuota si mantiene quella salvata.
 </div>
+{% if salvato %}<div class="message-ok">Orari salvati.</div>{% endif %}
+{% if errore_orari %}<div class="message-error">{{ errore_orari }}</div>{% endif %}
+<div class="grid2">
+    <div class="card">
+        <h3>Tutti i negozi</h3>
+        <p class="small">Elabora uno dopo l'altro tutti i negozi con una condivisione attiva.
+            «Ricostruisci tutti» rilegge anche i file già archiviati e può richiedere molto tempo.</p>
+        <form method="post" action="/primanota/condivisioni/importa-tutti/" style="display:inline">{% csrf_token %}
+            <button class="btn btn-orange">Importa nuovi di tutti</button></form>
+        <form method="post" action="/primanota/condivisioni/importa-tutti/" style="display:inline"
+              onsubmit="return confirm('Rileggere e riarchiviare tutti i file di tutti i negozi? Può richiedere molto tempo.')">{% csrf_token %}
+            <input type="hidden" name="completa" value="1"><button class="btn btn-light">Ricostruisci tutti</button></form>
+    </div>
+    <div class="card">
+        <h3>Importazione automatica</h3>
+        <form method="post" class="filters">{% csrf_token %}
+            <input type="hidden" name="azione" value="pianificazione">
+            <label class="check"><input type="checkbox" name="attiva" {% if piano.attiva %}checked{% endif %}> Attiva</label>
+            <label class="field">Orari importazione file nuovi <input name="orari" value="{{ piano.orari }}" style="width:220px" placeholder="20:30, 22:00, 06:00"></label>
+            <label class="check"><input type="checkbox" name="ricostruzione_attiva" {% if piano.ricostruzione_attiva %}checked{% endif %}> Ricostruzione settimanale</label>
+            <label class="field">Giorno
+                <select name="ricostruzione_giorno">{% for n, nome in giorni %}<option value="{{ n }}" {% if piano.ricostruzione_giorno == n %}selected{% endif %}>{{ nome }}</option>{% endfor %}</select></label>
+            <label class="field">Ora <input name="ricostruzione_ora" value="{{ piano.ricostruzione_ora }}" style="width:80px"></label>
+            <button class="btn btn-dark">Salva orari</button>
+        </form>
+        <p class="small">Ultima esecuzione automatica: {{ piano.ultimo_esito|default:"nessuna" }}</p>
+    </div>
+</div>
+
 <div class="card">
     <table class="table">
         <thead><tr><th>Negozio</th><th>Percorso</th><th>Utente</th><th>Password</th><th>Attiva</th><th></th><th>Ultima importazione</th><th></th></tr></thead>

@@ -13,12 +13,16 @@
 {% block script %}
 <script>
 const url = "/primanota/importazione/{{ lavoro }}/";
+const esc = t => String(t).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 async function aggiorna(){
     const r = await fetch(url + "?formato=json", {cache:"no-store"});
     const s = await r.json();
     document.getElementById("stato").innerHTML =
-        `Stato: <b>${s.stato}</b><br>File esaminati: ${s.esaminati||0}<br>Importati: ${s.importati||0}<br>` +
-        `Già presenti: ${s.saltati||0}<br>Errori: ${s.errori||0}<br>${s.messaggio||""}`;
+        `Stato: <b>${s.stato}</b><br>` +
+        (s.negozi !== undefined ? `Negozi: ${s.negozi_fatti||0} di ${s.negozi}${s.negozio_corrente ? " · ora: " + esc(s.negozio_corrente) : ""}<br>` : "") +
+        `File esaminati: ${s.esaminati||0}<br>Importati: ${s.importati||0}<br>` +
+        `Già presenti: ${s.saltati||0}<br>Errori: ${s.errori||0}<br>${esc(s.messaggio||"")}` +
+        (s.esiti ? "<br><br>" + s.esiti.map(esc).join("<br>") : "");
     if(s.stato === "in corso") setTimeout(aggiorna, 1000);
 }
 document.getElementById("stop").addEventListener("click", () => postJson(url));

@@ -15,8 +15,12 @@ Stesso login, stessi utenti Negozio/Ufficio e stessi negozi Baserow di Scansioni
   con in più versamenti da lavorare, note aperte e casse SysSpy (in rosso se non quadrano).
 - **Archivio SysSpy** (`/primanota/sysspy/`): file archiviati per negozio, data e cassa; ricerca nel
   testo; testo completo e download dell'originale.
-- **Condivisioni negozi** (`/primanota/condivisioni/`, Direttore e Amministratore): cartella di ogni
-  negozio da cui prelevare i SysSpy, importazione manuale.
+- **Condivisioni negozi** (`/primanota/condivisioni/`, solo Amministratore): cartella di ogni
+  negozio da cui prelevare i SysSpy, importazione di un negozio o di tutti, ricostruzione, orari
+  dell'importazione automatica.
+
+Chi vede la Prima Nota: gli utenti con la casella **Menu_PrimaNota** spuntata nella tabella Utenti
+(Baserow) e sempre gli Amministratori.
 
 ## File SysSpy
 

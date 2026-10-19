@@ -31,3 +31,4 @@ DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memor
 STATIC_URL = "/static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 BASEROW_PRIMANOTA_TABLE_ID = 999
+BASEROW_UTENTE_MENU_PRIMANOTA_FIELD = "field_9000"

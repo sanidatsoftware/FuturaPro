@@ -14,23 +14,32 @@ PRIMA NOTA - INSTALLAZIONE AUTOMATICA
    - mette la cartella primanota in /opt/tocal/primanota, sostituendo quella gia'
      copiata a mano (che resta nel backup);
    - aggiunge Prima Nota a settings.py, urls.py e al menu del portale;
-   - crea in Baserow la tabella "Prima Nota Scansioni" con tutti i campi: chiede
-     email e password di un utente Baserow amministratore (Invio per saltare);
+   - crea in Baserow la tabella "Prima Nota Scansioni" con tutti i campi e, nella
+     tabella Utenti, la casella "Menu_PrimaNota": chiede email e password di un
+     utente Baserow amministratore (Invio per saltare);
    - installa smbprotocol e cryptography ed esegue "manage.py migrate primanota";
    - controlla il portale con "manage.py check": se qualcosa non va rimette i file
      come prima e si ferma;
-   - aggiunge al crontab l'importazione dei SysSpy ogni 30 minuti dalle 20 alle 23
-     e alle 6 (log in /opt/tocal/logs/primanota_importazione.log);
+   - aggiunge al crontab il controllo dell'importazione automatica ogni 5 minuti:
+     gli orari veri si decidono nel portale (log in
+     /opt/tocal/logs/primanota_importazione.log);
    - riavvia il servizio tocal.service e controlla che sia attivo.
 
    Si puo' rilanciare senza problemi: quello che e' gia' fatto viene saltato.
 
 3) Se lo script dice che non ha potuto riavviare il portale: sudo systemctl restart tocal
 
-4) Dal portale, come Direttore o Amministratore:
+4) CHI VEDE LA PRIMA NOTA: in Baserow, tabella Utenti, spuntare la casella
+   "Menu_PrimaNota" degli utenti autorizzati (negozi e ufficio). Gli
+   Amministratori la vedono sempre; tutti gli altri solo con la casella spuntata.
+
+5) Dal portale, come Amministratore:
    Menu > Prima Nota > Condivisioni negozi: indicare per ogni negozio la cartella
    dei SysSpy (\\server\condivisione\cartella oppure /mnt/negozi/5048) e premere
    "Importa nuovi". La prima volta archivia tutto lo storico.
+   Nella stessa pagina: "Importa nuovi di tutti", "Ricostruisci tutti" e gli orari
+   dell'importazione automatica (e della ricostruzione settimanale, se serve).
+   Condivisioni, importazioni e orari sono riservati all'Amministratore.
 
 Opzioni:  --portale /altra/cartella   se il portale non e' in /opt/tocal
           --python /percorso/python   se lo script non trova il Python del portale

@@ -17,5 +17,6 @@ urlpatterns = [
     path("sysspy/<int:file_id>/scarica/", views.sysspy_scarica, name="primanota_sysspy_scarica"),
     path("condivisioni/", views.condivisioni, name="primanota_condivisioni"),
     path("condivisioni/<int:negozio_id>/importa/", views.avvia_importazione, name="primanota_importa"),
+    path("condivisioni/importa-tutti/", views.importa_tutti, name="primanota_importa_tutti"),
     path("importazione/<str:lavoro>/", views.stato_importazione, name="primanota_importazione"),
 ]

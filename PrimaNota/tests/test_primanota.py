@@ -72,7 +72,8 @@ def negozio(id_, codice, descrizione):
 
 def utente(id_, tipo, negozio_id=None, ruolo="Dipendente", menu=True):
     return {"id": id_, "field_2250": f"Utente {id_}", "field_2253": {"value": ruolo}, "field_8146": {"value": tipo},
-            "field_8147": [{"id": negozio_id, "value": "x"}] if negozio_id else [], "field_8166": menu}
+            "field_8147": [{"id": negozio_id, "value": "x"}] if negozio_id else [], "field_8166": True,
+            "field_9000": menu}
 
 
 class Base(TestCase):
@@ -92,6 +93,7 @@ class Base(TestCase):
             "altro_pv@x": utente(4, "Negozio", negozio_id=11),
             "ufficio@x": utente(2, "Ufficio"),
             "direttore@x": utente(3, "Ufficio", ruolo="Direttore"),
+            "admin@x": utente(6, "Ufficio", ruolo="Amministratore", menu=False),
             "nomenu@x": utente(5, "Ufficio", menu=False),
         })
         self.baserow = BaserowFinto()
@@ -186,7 +188,9 @@ class TestPagine(Base):
         self.assertEqual(self.client_per("nomenu@x").get("/primanota/admin/").status_code, 403)
         self.assertRedirects(self.client_per("pv@x").get("/primanota/admin/"), "/primanota/upload/", fetch_redirect_response=False)
         self.assertEqual(self.client_per("ufficio@x").get("/primanota/condivisioni/").status_code, 403)
-        self.assertEqual(self.client_per("direttore@x").get("/primanota/condivisioni/").status_code, 200)
+        self.assertEqual(self.client_per("direttore@x").get("/primanota/condivisioni/").status_code, 403)
+        # L'Amministratore entra anche senza la casella Menu_PrimaNota.
+        self.assertEqual(self.client_per("admin@x").get("/primanota/condivisioni/").status_code, 200)
 
     def test_il_negozio_carica_per_genere(self):
         pv = self.client_per("pv@x")
@@ -263,7 +267,7 @@ class TestPagine(Base):
         self.assertEqual(next(c for c in altro["cells"] if c["date"] == ieri)["state"], "missing")
 
     def test_condivisione_password_vuota_resta_invariata(self):
-        d = self.client_per("direttore@x")
+        d = self.client_per("admin@x")
         d.post("/primanota/condivisioni/", {"negozio_id": 10, "percorso": "/mnt/x", "password": "segreta", "attiva": "on"})
         d.post("/primanota/condivisioni/", {"negozio_id": 10, "percorso": "/mnt/y", "password": "", "attiva": "on"})
         c = Condivisione.objects.get()
@@ -287,5 +291,71 @@ class TestMenu(Base):
         t = Template("{% load primanota_menu %}{% primanota_visibile utente as v %}{{ v }}")
         self.assertEqual(t.render(Context({"utente": baserow_layer.UTENTI["pv@x"]})), "True")
         self.assertEqual(t.render(Context({"utente": baserow_layer.UTENTI["nomenu@x"]})), "False")
+        self.assertEqual(t.render(Context({"utente": baserow_layer.UTENTI["admin@x"]})), "True")
+        # Senza la casella Menu_PrimaNota non basta essere abilitati a Scansioni PV.
+        with override_settings(BASEROW_UTENTE_MENU_PRIMANOTA_FIELD=""):
+            self.assertEqual(t.render(Context({"utente": baserow_layer.UTENTI["pv@x"]})), "False")
         self.assertEqual(t.render(Context({"utente": None})), "False")
+
+
+class TestPianificazione(Base):
+    def setUp(self):
+        super().setUp()
+        from primanota.models import Pianificazione
+        self.piano = Pianificazione.corrente()
+        self.piano.orari = "20:30, 06:00"
+        self.piano.save()
+        self.importa = mock.patch("primanota.services.importazione.importa_tutte",
+                                  return_value={"messaggio": "ok"}).start()
+        self.addCleanup(mock.patch.stopall)
+
+    def ora(self, testo):
+        from zoneinfo import ZoneInfo
+        from datetime import datetime
+        return datetime.fromisoformat(testo).replace(tzinfo=ZoneInfo("Europe/Rome"))
+
+    def test_orari(self):
+        esegui = importazione.esegui_pianificazione
+        esegui(self.ora("2026-10-19 07:00"))              # recupera le 06:00 di oggi
+        self.assertEqual(self.importa.call_count, 1)
+        self.assertEqual(esegui(self.ora("2026-10-19 12:00")), "niente da fare")
+        esegui(self.ora("2026-10-19 20:35"))              # 20:30
+        esegui(self.ora("2026-10-19 20:40"))              # già fatta
+        self.assertEqual(self.importa.call_count, 2)
+        self.assertEqual(self.importa.call_args.kwargs["completa"], False)
+
+    def test_ricostruzione_settimanale(self):
+        self.piano.ricostruzione_attiva = True
+        self.piano.ricostruzione_giorno = 6   # domenica
+        self.piano.ricostruzione_ora = "02:00"
+        self.piano.save()
+        importazione.esegui_pianificazione(self.ora("2026-10-25 02:05"))   # domenica
+        self.assertTrue(self.importa.call_args.kwargs["completa"])
+        importazione.esegui_pianificazione(self.ora("2026-10-25 06:05"))
+        self.assertFalse(self.importa.call_args.kwargs["completa"])
+
+    def test_disattivata(self):
+        self.piano.attiva = False
+        self.piano.save()
+        self.assertEqual(importazione.esegui_pianificazione(self.ora("2026-10-19 21:00")), "pianificazione disattivata")
+
+    def test_salvataggio_orari_solo_amministratore(self):
+        dati = {"azione": "pianificazione", "attiva": "on", "orari": "21:15,6:00", "ricostruzione_giorno": "0",
+                "ricostruzione_ora": "03:00"}
+        self.assertEqual(self.client_per("ufficio@x").post("/primanota/condivisioni/", dati).status_code, 403)
+        self.client_per("admin@x").post("/primanota/condivisioni/", dati)
+        self.piano.refresh_from_db()
+        self.assertEqual(self.piano.orari, "06:00, 21:15")
+        r = self.client_per("admin@x").post("/primanota/condivisioni/", {**dati, "orari": "25:00"})
+        self.assertContains(r, "Orari non validi")
+
+
+class TestImportaTutti(Base):
+    def test_importa_tutti_i_negozi(self):
+        cond, cartella, _ = self.importa_fixture()
+        Condivisione.objects.create(negozio_id=11, codice_negozio="5050", percorso="/non/esiste")
+        stato = importazione.importa_tutte(completa=True)
+        self.assertEqual((stato["negozi"], stato["negozi_fatti"], stato["importati"]), (2, 2, 1))
+        self.assertIn("5050: errore", "\n".join(stato["esiti"]))
+        self.assertEqual(self.client_per("ufficio@x").post("/primanota/condivisioni/importa-tutti/").status_code, 403)
 

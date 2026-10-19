@@ -1,4 +1,5 @@
 import json
+import re
 from collections import OrderedDict
 from datetime import date, timedelta
 from functools import wraps
@@ -9,7 +10,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .models import Condivisione, DocumentoSysSpy, FileSysSpy, Nota
+from .models import Condivisione, DocumentoSysSpy, FileSysSpy, Nota, Pianificazione
 from .services import importazione
 from .services.accesso import (
     can_access_primanota,
@@ -65,7 +66,7 @@ def _accesso(solo_ufficio=False, solo_gestione=False):
             if solo_ufficio and not is_office_user(user):
                 return redirect("/primanota/upload/")
             if solo_gestione and not can_manage_primanota(user):
-                return HttpResponseForbidden("Funzione riservata a Direttore e Amministratore.")
+                return HttpResponseForbidden("Funzione riservata all'Amministratore.")
             request.utente_primanota = user
             # Il portale è configurato in UTC: date e orari della Prima Nota sono quelli italiani.
             timezone.activate(LOCAL_TZ)
@@ -360,7 +361,28 @@ def sysspy_scarica(request, file_id):
 
 @_accesso(solo_ufficio=True, solo_gestione=True)
 def condivisioni(request):
-    if request.method == "POST":
+    piano = Pianificazione.corrente()
+    errore_orari = None
+    if request.method == "POST" and request.POST.get("azione") == "pianificazione":
+        orari = request.POST.get("orari", "").strip()
+        ora_ricostruzione = request.POST.get("ricostruzione_ora", "").strip()
+        prova = Pianificazione(orari=orari)
+        try:
+            prova.elenco_orari()
+            if not re.fullmatch(r"([01]?\d|2[0-3]):[0-5]\d", ora_ricostruzione) or \
+                    not all(0 <= o < 24 and 0 <= m < 60 for o, m in prova.elenco_orari()):
+                raise ValueError
+        except ValueError:
+            errore_orari = "Orari non validi: scriverli come 20:30, 22:00, 06:00."
+        else:
+            piano.attiva = request.POST.get("attiva") == "on"
+            piano.orari = ", ".join(f"{o:02d}:{m:02d}" for o, m in prova.elenco_orari())
+            piano.ricostruzione_attiva = request.POST.get("ricostruzione_attiva") == "on"
+            piano.ricostruzione_giorno = int(request.POST.get("ricostruzione_giorno", 6))
+            piano.ricostruzione_ora = ora_ricostruzione.zfill(5)
+            piano.save()
+            return redirect("/primanota/condivisioni/?salvato=1")
+    elif request.method == "POST":
         try:
             negozio_id = int(request.POST.get("negozio_id", ""))
         except ValueError:
@@ -379,7 +401,9 @@ def condivisioni(request):
         return redirect("/primanota/condivisioni/")
     esistenti = {c.negozio_id: c for c in Condivisione.objects.all()}
     righe = [(n, esistenti.get(n["id"])) for n in negozi_attivi_ordinati()]
-    return render(request, "primanota/condivisioni.html", _contesto(request, righe=righe))
+    return render(request, "primanota/condivisioni.html", _contesto(
+        request, righe=righe, piano=piano, giorni=Pianificazione.GIORNI, errore_orari=errore_orari,
+        salvato=request.GET.get("salvato") == "1"))
 
 
 @require_POST
@@ -387,6 +411,13 @@ def condivisioni(request):
 def avvia_importazione(request, negozio_id):
     cond = get_object_or_404(Condivisione, negozio_id=negozio_id)
     lavoro = importazione.avvia_in_background(cond, completa=request.POST.get("completa") == "1")
+    return redirect(f"/primanota/importazione/{lavoro}/")
+
+
+@require_POST
+@_accesso(solo_ufficio=True, solo_gestione=True)
+def importa_tutti(request):
+    lavoro = importazione.avvia_tutte_in_background(completa=request.POST.get("completa") == "1")
     return redirect(f"/primanota/importazione/{lavoro}/")
 
 

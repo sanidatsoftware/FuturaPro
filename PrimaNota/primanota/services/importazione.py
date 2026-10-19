@@ -9,11 +9,14 @@ I file già archiviati con la stessa dimensione e data di modifica si saltano.
 """
 
 import base64
+import fcntl
 import gzip
 import hashlib
 import logging
 import re
 import threading
+from contextlib import contextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -22,7 +25,7 @@ from django.db import close_old_connections, transaction
 from django.utils import timezone
 
 from .. import sysspy
-from ..models import DocumentoSysSpy, FileSysSpy
+from ..models import Condivisione, DocumentoSysSpy, FileSysSpy, Pianificazione
 
 log = logging.getLogger(__name__)
 
@@ -149,15 +152,47 @@ def archivia(cond, origine, nome, dimensione, mtime, dati):
     return f
 
 
+@contextmanager
+def _blocco_negozio(negozio_id):
+    """
+    Un solo import per negozio alla volta, sia tra i thread del portale sia tra il
+    portale e il comando lanciato dal crontab (lock su file). Restituisce False se occupato.
+    """
+    with _lock_globale:
+        lock = _lock_negozi.setdefault(negozio_id, threading.Lock())
+    if not lock.acquire(blocking=False):
+        yield False
+        return
+    try:
+        archivio_dir().mkdir(parents=True, exist_ok=True)
+        with open(archivio_dir() / f".importazione_{negozio_id}.lock", "w") as fh:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                yield False
+                return
+            yield True
+    finally:
+        lock.release()
+
+
 def importa_condivisione(cond, completa=False, lavoro=None, stop=None):
     """Importa i file nuovi o modificati di una condivisione. completa=True rilegge tutto."""
     stato = lavoro if lavoro is not None else {}
     stato.update(stato="in corso", esaminati=0, importati=0, saltati=0, errori=0, messaggio="")
-    with _lock_globale:
-        lock = _lock_negozi.setdefault(cond.negozio_id, threading.Lock())
-    if not lock.acquire(blocking=False):
-        stato.update(stato="errore", messaggio="Importazione già in corso per questo negozio")
-        return stato
+    with _blocco_negozio(cond.negozio_id) as libero:
+        if not libero:
+            stato.update(stato="errore", messaggio="Importazione già in corso per questo negozio")
+            return stato
+        _importa(cond, completa, stato, stop)
+    cond.ultima_importazione = timezone.now()
+    cond.ultimo_esito = (f"{stato['stato']}: {stato['importati']} importati, {stato['saltati']} già presenti, "
+                         f"{stato['errori']} errori. {stato['messaggio']}").strip()
+    cond.save(update_fields=["ultima_importazione", "ultimo_esito"])
+    return stato
+
+
+def _importa(cond, completa, stato, stop):
     try:
         noti = {} if completa else {
             o: (d, m) for o, d, m in FileSysSpy.objects.filter(negozio_id=cond.negozio_id)
@@ -180,13 +215,76 @@ def importa_condivisione(cond, completa=False, lavoro=None, stop=None):
     except Exception as exc:
         log.exception("Importazione negozio %s fallita", cond.codice_negozio)
         stato.update(stato="errore", messaggio=str(exc))
-    finally:
-        lock.release()
-    cond.ultima_importazione = timezone.now()
-    cond.ultimo_esito = (f"{stato['stato']}: {stato['importati']} importati, {stato['saltati']} già presenti, "
-                         f"{stato['errori']} errori. {stato['messaggio']}").strip()
-    cond.save(update_fields=["ultima_importazione", "ultimo_esito"])
+
+
+def importa_tutte(completa=False, lavoro=None, stop=None, scrivi=None):
+    """Tutti i negozi con una condivisione attiva, uno dopo l'altro."""
+    stato = lavoro if lavoro is not None else {}
+    condivisioni = list(Condivisione.objects.filter(attiva=True).exclude(percorso=""))
+    stato.update(stato="in corso", negozi=len(condivisioni), negozi_fatti=0, negozio_corrente="",
+                 esaminati=0, importati=0, saltati=0, errori=0, messaggio="", esiti=[])
+    for cond in condivisioni:
+        if stop is not None and stop.is_set():
+            break
+        stato["negozio_corrente"] = cond.codice_negozio
+        parziale = importa_condivisione(cond, completa, stop=stop)
+        for k in ("esaminati", "importati", "saltati", "errori"):
+            stato[k] += parziale[k]
+        stato["esiti"].append(f"{cond.codice_negozio}: {cond.ultimo_esito}")
+        stato["negozi_fatti"] += 1
+        if scrivi:
+            scrivi(f"{cond.codice_negozio}: {cond.ultimo_esito}")
+    stato["negozio_corrente"] = ""
+    stato["stato"] = "interrotta" if stop is not None and stop.is_set() else "completata"
+    stato["messaggio"] = (f"{stato['negozi_fatti']} negozi: {stato['importati']} file importati, "
+                          f"{stato['saltati']} già presenti, {stato['errori']} errori")
     return stato
+
+
+def _ultimo_orario_passato(adesso, orari):
+    """Il più recente tra gli orari (ore, minuti) di oggi e di ieri già passati."""
+    candidati = []
+    for giorni_fa in (0, 1):
+        giorno = (adesso - timedelta(days=giorni_fa)).date()
+        for ore, minuti in orari:
+            momento = datetime.combine(giorno, datetime.min.time(), adesso.tzinfo).replace(hour=ore, minute=minuti)
+            if momento <= adesso:
+                candidati.append(momento)
+    return max(candidati) if candidati else None
+
+
+def esegui_pianificazione(adesso=None, scrivi=None):
+    """
+    Chiamata dal crontab ogni pochi minuti. Esegue l'importazione (o la ricostruzione
+    settimanale) se è passato un orario non ancora eseguito. Restituisce cosa ha fatto.
+    """
+    from scansioni.services.baserow_scansioni import LOCAL_TZ
+
+    piano = Pianificazione.corrente()
+    if not piano.attiva:
+        return "pianificazione disattivata"
+    adesso = adesso or datetime.now(LOCAL_TZ)
+    completa = False
+    if piano.ricostruzione_attiva:
+        ore, minuti = (int(x) for x in piano.ricostruzione_ora.split(":"))
+        giorno = adesso.date() - timedelta(days=(adesso.weekday() - piano.ricostruzione_giorno) % 7)
+        momento = datetime.combine(giorno, datetime.min.time(), adesso.tzinfo).replace(hour=ore, minute=minuti)
+        if momento > adesso:
+            momento -= timedelta(days=7)
+        # Si recupera al massimo entro un giorno: una ricostruzione persa non parte giorni dopo.
+        if adesso - momento < timedelta(days=1) and (not piano.ultima_ricostruzione or piano.ultima_ricostruzione < momento):
+            completa = True
+    if not completa:
+        momento = _ultimo_orario_passato(adesso, piano.elenco_orari())
+        if not momento or (piano.ultima_importazione and piano.ultima_importazione >= momento):
+            return "niente da fare"
+    stato = importa_tutte(completa=completa, scrivi=scrivi)
+    if completa:
+        piano.ultima_ricostruzione = adesso
+    piano.ultima_importazione = adesso
+    piano.ultimo_esito = f"{adesso:%d/%m/%Y %H:%M} {'ricostruzione' if completa else 'importazione'}: {stato['messaggio']}"
+    piano.save()
+    return piano.ultimo_esito
 
 
 def avvia_in_background(cond, completa=False):
@@ -198,6 +296,22 @@ def avvia_in_background(cond, completa=False):
     def esegui():
         try:
             importa_condivisione(cond, completa, LAVORI[lavoro_id], stop)
+        finally:
+            close_old_connections()
+
+    threading.Thread(target=esegui, daemon=True).start()
+    return lavoro_id
+
+
+def avvia_tutte_in_background(completa=False):
+    """Importa o ricostruisce tutti i negozi in un thread; restituisce l'id del lavoro."""
+    lavoro_id = f"tutti-{int(timezone.now().timestamp())}"
+    stop = threading.Event()
+    LAVORI[lavoro_id] = {"stato": "in corso", "negozio": "tutti i negozi", "_stop": stop}
+
+    def esegui():
+        try:
+            importa_tutte(completa, LAVORI[lavoro_id], stop)
         finally:
             close_old_connections()
 

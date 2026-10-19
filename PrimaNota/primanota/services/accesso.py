@@ -6,7 +6,6 @@ funzioni già presenti nel portale. Qui c'è solo ciò che cambia per la Prima N
 from django.conf import settings
 
 from scansioni.services.baserow_scansioni import (  # noqa: F401  (riesportate per il modulo)
-    DUPLICATE_ALLOWED_ROLES,
     UTENTE_NOME,
     extract_bool,
     get_current_user_from_request,
@@ -16,22 +15,30 @@ from scansioni.services.baserow_scansioni import (  # noqa: F401  (riesportate p
     is_office_user,
     is_store_user,
     normalize_negozio,
-    user_menu_scansioni_enabled,
 )
 from incarichi.services.baserow_layer import get_user_role
 
 
+AMMINISTRATORE = "Amministratore"
+
+
+def is_amministratore(user):
+    return bool(user) and get_user_role(user) == AMMINISTRATORE
+
+
 def _menu_primanota_abilitato(user):
-    # Campo booleano "Menu_PrimaNota" della tabella Utenti. Finché non è configurato
-    # vale la stessa abilitazione di Scansioni PV.
+    # Casella "Menu_PrimaNota" della tabella Utenti, come "Menu_Scansioni" per Scansioni PV.
+    # Finché il campo non è configurato la Prima Nota la vede solo l'Amministratore.
     campo = getattr(settings, "BASEROW_UTENTE_MENU_PRIMANOTA_FIELD", "")
-    if campo:
-        return extract_bool(user.get(campo))
-    return user_menu_scansioni_enabled(user)
+    return bool(campo) and extract_bool(user.get(campo))
 
 
 def can_access_primanota(user):
-    if not user or not _menu_primanota_abilitato(user):
+    if not user:
+        return False
+    if is_amministratore(user):
+        return True
+    if not _menu_primanota_abilitato(user):
         return False
     if is_store_user(user):
         return bool(get_user_store_id(user))
@@ -39,8 +46,8 @@ def can_access_primanota(user):
 
 
 def can_manage_primanota(user):
-    """Configurazione delle condivisioni e importazione: Amministratore e Direttore."""
-    return bool(user) and is_office_user(user) and get_user_role(user) in DUPLICATE_ALLOWED_ROLES
+    """Condivisioni dei negozi, importazioni e orari: solo Amministratore."""
+    return is_amministratore(user)
 
 
 def nome_utente(user):
