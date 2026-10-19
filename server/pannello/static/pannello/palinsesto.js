@@ -187,6 +187,10 @@ function categoria(contenuto, uso) {
   return promo.every((p) => p.stato === "conclusa") ? "scaduti" : "attivi";
 }
 
+// Le dirette sono canali da riusare in più promozioni: restano sempre anche tra quelle da assegnare.
+const inVista = (contenuto, uso, vista) => vista === "tutti" || categoria(contenuto, uso) === vista
+  || (vista === "da_assegnare" && contenuto.tipo === "diretta");
+
 // --- Statistiche --------------------------------------------------------------------------
 
 function disegnaStatistiche() {
@@ -246,7 +250,10 @@ function disegnaSchedeLibreria(uso) {
   const box = document.getElementById("schede-libreria");
   box.replaceChildren();
   const conteggi = { da_assegnare: 0, attivi: 0, scaduti: 0, tutti: S.contenuti.length };
-  for (const c of S.contenuti) conteggi[categoria(c, uso)] += 1;
+  for (const c of S.contenuti) {
+    conteggi[categoria(c, uso)] += 1;
+    if (c.tipo === "diretta" && categoria(c, uso) !== "da_assegnare") conteggi.da_assegnare += 1;
+  }
   for (const [chiave, titolo] of Object.entries(VISTE_LIBRERIA)) {
     const b = crea("button", { type: "button", classe: `scheda-libreria${S.libreria === chiave ? " attiva" : ""}`, "data-aiuto": AIUTI_LIBRERIA[chiave] }, box);
     b.append(titolo);
@@ -323,7 +330,7 @@ function disegnaLibreria() {
     const contenuti = perId(S.contenuti);
     visibili = promo.contenuti.map((id) => contenuti.get(id)).filter((c) => c && corrisponde(c));
   } else {
-    visibili = S.contenuti.filter((c) => corrisponde(c) && (S.libreria === "tutti" || categoria(c, uso) === S.libreria));
+    visibili = S.contenuti.filter((c) => corrisponde(c) && inVista(c, uso, S.libreria));
   }
   if (!visibili.length) {
     const vuoto = crea("div", { classe: "galleria vuota" }, box);
@@ -1748,7 +1755,7 @@ function preparaDirette() {
         }
         const testi = crea("span", { classe: "testi-canale" }, voce);
         crea("strong", { testo: c.nome }, testi);
-        crea("small", { testo: [c.gruppo, c.presente ? "già in libreria" : ""].filter(Boolean).join(" · ") }, testi);
+        crea("small", { testo: [c.gruppo, c.presente ? "già in libreria: sceglilo per riusarlo" : ""].filter(Boolean).join(" · ") }, testi);
       }
       if (visibili.length > 400) crea("p", { classe: "nota", testo: `Mostrati 400 canali su ${visibili.length}: usa la ricerca.` }, lista);
     };
@@ -1799,17 +1806,22 @@ function preparaDirette() {
     const elencoScelti = [...scelti.values()].map((c) => ({ nome: c.nome, url: c.url, logo: c.logo }));
     const manuale = document.getElementById("url-diretta").value.trim();
     if (manuale) elencoScelti.push({ nome: document.getElementById("nome-diretta").value.trim() || manuale, url: manuale, logo: "" });
+    const gia = new Set(S.contenuti.filter((c) => c.tipo === "diretta").map((c) => c.url));
+    const riusate = elencoScelti.filter((c) => gia.has(c.url)).length;
     try {
       const creati = await api("POST", "/api/contenuti/dirette/", { canali: elencoScelti, autorizzazione: conferma.checked });
       finestra.close();
       document.getElementById("url-diretta").value = "";
       document.getElementById("nome-diretta").value = "";
-      S.libreria = "tutti";
+      S.libreria = "da_assegnare";
+      S.cartella = null;
       await ricarica();
       for (const c of creati) S.selezione.add(c.id);
       disegnaLibreria();
       disegnaSelezione();
-      avvisa(`${creati.length} dirette nella libreria e già selezionate: mettile in una promozione (da sole o tra le immagini).`, "ok");
+      avvisa(`${creati.length === 1 ? "Diretta selezionata" : `${creati.length} dirette selezionate`}${riusate ? " (già in libreria: si riusa la stessa)" : ""}: `
+        + (S.promozione ? "trascinala nella sequenza o premi «+» per aggiungerla alla promozione aperta." : "mettila in una promozione, da sola o tra le immagini."), "ok");
+      document.querySelector("#gallerie .galleria.diretta")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     } catch (errore) {
       avvisa(errore.message);
     }
