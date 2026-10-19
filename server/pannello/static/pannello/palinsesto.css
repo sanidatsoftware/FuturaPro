@@ -644,5 +644,10 @@ body.trascina-libreria .pista { outline: 2px dashed color-mix(in srgb, var(--acc
 .menu .gruppo-menu .tendina { background: var(--fondo); }
 
 .testata .versione-app { font-size: 11px; font-weight: 500; line-height: 1; padding: 3px 7px; border-radius: 999px; background: var(--fondo); color: var(--tenue); border: 1px solid var(--linea); white-space: nowrap; }
+/* La diretta con una regola: il blocco è il punto dove si regola, le ripetizioni sono in trasparenza. */
+.blocco.con-regola { outline: 2px dashed color-mix(in srgb, var(--accento) 70%, transparent); outline-offset: -2px; }
+.blocco.con-regola .maniglia { display: none; }
+.blocco.ripetuta { opacity: .55; cursor: pointer; border: 2px dashed color-mix(in srgb, var(--accento) 70%, transparent); }
+.blocco.ripetuta:hover, .blocco.ripetuta.scelto { opacity: .85; }
 .blocco .ripeti { position: absolute; left: 4px; bottom: 22px; z-index: 2; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 99px;
   background: rgba(0, 0, 0, .65); color: #fff; white-space: nowrap; max-width: calc(100% - 8px); overflow: hidden; text-overflow: ellipsis; }

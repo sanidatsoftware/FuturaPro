@@ -48,6 +48,51 @@ function vociCorsia(chiave) {
 
 // Quanto resta in onda una voce, come la calcola il server: la sua durata se indicata,
 // altrimenti i minuti della diretta, la lunghezza del video, i secondi della campagna.
+// La sequenza come andrà in onda, come la calcola il server (campagne.con_ripetizioni): le
+// dirette «ogni N immagini» o «ogni N minuti» si ripetono al loro ritmo invece di stare nella
+// loro posizione; quelle «alle ore» escono dalla sequenza (interrompono le slide a quell'ora).
+// Restituisce le voci in onda, ognuna con ``ritmo: true`` se è una ripetizione di una diretta.
+export function inOnda(voci, ripeti, secondiDi) {
+  const modo = (x) => ripeti?.[x.id]?.modo;
+  const conRegola = (x) => ["ogni_slide", "ogni_minuti", "orari"].includes(modo(x));
+  if (!voci.some(conRegola)) return voci.map((voce) => ({ voce }));
+  const ritmate = voci.filter((x) => ["ogni_slide", "ogni_minuti"].includes(modo(x)));
+  const base = voci.filter((x) => !conRegola(x));
+  if (!base.length) return ritmate.map((voce) => ({ voce, ritmo: true }));
+  const risultato = [];
+  const secondi = new Map(ritmate.map((d) => [d.id, 0]));
+  const inserite = new Set();
+  base.forEach((x, i) => {
+    risultato.push({ voce: x });
+    const durata = secondiDi(x);
+    for (const d of ritmate) {
+      const regola = ripeti[d.id];
+      const ogni = Math.max(1, parseInt(regola.ogni, 10) || 1);
+      if (regola.modo === "ogni_slide" && (i + 1) % ogni === 0) {
+        risultato.push({ voce: d, ritmo: true });
+        inserite.add(d.id);
+      } else if (regola.modo === "ogni_minuti") {
+        secondi.set(d.id, secondi.get(d.id) + durata);
+        if (secondi.get(d.id) >= ogni * 60) {
+          risultato.push({ voce: d, ritmo: true });
+          inserite.add(d.id);
+          secondi.set(d.id, 0);
+        }
+      }
+    }
+  });
+  // Sequenza più corta del ritmo: la diretta va comunque una volta a ogni giro.
+  for (const d of ritmate) if (!inserite.has(d.id)) risultato.push({ voce: d, ritmo: true });
+  return risultato;
+}
+
+// Le dirette con una regola: nella timeline il loro blocco è solo il punto dove si regola,
+// ciò che va in onda sono le ripetizioni.
+const conRegola = (x) => x.tipo === "diretta" && ["ogni_slide", "ogni_minuti", "orari"].includes(H.S.promozione.ripeti?.[x.id]?.modo);
+const LARGHEZZA_REGOLA = 120;
+
+const sequenzaCorsia = (chiave) => inOnda(vociCorsia(chiave), H.S.promozione.ripeti, (x) => durata(x).secondi).map((s) => s.voce);
+
 function durata(x) {
   const propria = H.S.promozione.durate?.[x.id];
   if (propria) return { secondi: propria, propria: true };
@@ -192,11 +237,29 @@ export function disegnaSequenza() {
   const corsie = CORSIE.map((c) => ({ ...c, voci: vociCorsia(c.chiave) }));
   for (const c of corsie) {
     c.durate = c.voci.map(durata);
-    c.totale = c.durate.reduce((somma, d) => somma + d.secondi, 0);
+    // I blocchi della timeline: le voci nel loro ordine e, dopo quelle che le precedono, le
+    // ripetizioni delle dirette a ritmo (in trasparenza: si regolano dal blocco originale).
+    const onda = inOnda(c.voci, p.ripeti, (x) => durata(x).secondi);
+    const dopo = new Map();
+    let precedente = null;
+    for (const s of onda) {
+      if (s.ritmo) {
+        if (!dopo.has(precedente)) dopo.set(precedente, []);
+        dopo.get(precedente).push(s.voce);
+      } else precedente = s.voce.id;
+    }
+    c.segmenti = [];
+    for (const voce of dopo.get(null) || []) c.segmenti.push({ voce, d: durata(voce), fantasma: true });
+    c.voci.forEach((voce, i) => {
+      c.segmenti.push({ voce, d: c.durate[i], indice: i, regola: conRegola(voce) });
+      if (!conRegola(voce)) for (const ripetuta of dopo.get(voce.id) || []) c.segmenti.push({ voce: ripetuta, d: durata(ripetuta), fantasma: true });
+    });
+    c.inOnda = onda.length;
+    c.totale = onda.reduce((somma, s) => somma + durata(s.voce).secondi, 0);
   }
   const riassunto = crea("div", { classe: "riassunto-sequenza" }, testa);
   for (const c of corsie) {
-    if (c.voci.length) crea("span", { classe: "chip", testo: `${c.simbolo} ${c.titolo}: ${c.voci.length} · giro ${testoDurata(c.totale)}` }, riassunto);
+    if (c.voci.length) crea("span", { classe: "chip", testo: `${c.simbolo} ${c.titolo}: ${c.inOnda} · giro ${testoDurata(c.totale)}` }, riassunto);
   }
   crea("span", { classe: "spazio" }, testa);
   if (!Q.ridotta) {
@@ -236,10 +299,12 @@ export function disegnaSequenza() {
 function adattata(corsie, larghezza) {
   // La scala più grande con cui la corsia più lunga entra tutta (tenendo conto dei minimi).
   for (let i = SCALE.length - 1; i >= 0; i -= 1) {
-    if (corsie.every((c) => c.durate.reduce((somma, d) => somma + Math.max(LARGHEZZA_MINIMA, d.secondi * SCALE[i]) + 4, 0) <= larghezza)) return SCALE[i];
+    if (corsie.every((c) => c.segmenti.reduce((somma, s) => somma + larghezzaDi(s, SCALE[i]) + 4, 0) <= larghezza)) return SCALE[i];
   }
   return SCALE[0];
 }
+
+const larghezzaDi = (s, scala) => (s.regola ? LARGHEZZA_REGOLA : Math.max(LARGHEZZA_MINIMA, s.d.secondi * scala));
 
 function zoom(passo) {
   const dock = document.getElementById("sequenza");
@@ -380,7 +445,10 @@ function disegnaCorsia(area, corsia, scala) {
   crea("span", { classe: "simbolo", testo: corsia.simbolo }, testa);
   const testi = crea("div", {}, testa);
   crea("strong", { testo: corsia.titolo }, testi);
-  crea("small", { testo: corsia.voci.length ? `${corsia.voci.length} voci · ${testoDurata(corsia.totale)}` : "vuota" }, testi);
+  crea("small", {
+    testo: !corsia.voci.length ? "vuota"
+      : `${corsia.inOnda !== corsia.voci.length ? `${corsia.inOnda} in onda` : `${corsia.voci.length} voci`} · ${testoDurata(corsia.totale)}`,
+  }, testi);
 
   const pista = crea("div", { classe: "pista" }, riga);
   pista.dataset.scala = String(scala);
@@ -391,14 +459,15 @@ function disegnaCorsia(area, corsia, scala) {
   let x = 0;
   let inizio = 0;
   const posizioni = [];
-  corsia.voci.forEach((voce, i) => {
-    const d = corsia.durate[i];
-    const larghezza = Math.max(LARGHEZZA_MINIMA, d.secondi * scala);
-    posizioni.push({ x, larghezza, inizio, secondi: d.secondi });
-    blocchi.appendChild(blocco(voce, d, i, larghezza, corsia, scala));
+  for (const s of corsia.segmenti) {
+    const larghezza = larghezzaDi(s, scala);
+    // Il blocco di una diretta con una regola non va in onda lì: non occupa tempo.
+    const secondi = s.regola ? 0 : s.d.secondi;
+    posizioni.push({ x, larghezza, inizio, secondi, id: s.fantasma ? null : s.voce.id });
+    blocchi.appendChild(s.fantasma ? ripetizione(s.voce, s.d, larghezza) : blocco(s.voce, s.d, s.indice, larghezza, corsia, scala, s.regola));
     x += larghezza + 4;
-    inizio += d.secondi;
-  });
+    inizio += secondi;
+  }
   if (!corsia.voci.length) crea("div", { classe: "pista-vuota", testo: `Trascina qui le immagini ${corsia.chiave === "verticale" ? "verticali (totem)" : "orizzontali e le dirette (monitor)"}` }, blocchi);
   const fine = Math.max(x, 200);
   pista.style.width = `${fine + 60}px`;
@@ -407,7 +476,7 @@ function disegnaCorsia(area, corsia, scala) {
   const totale = inizio;
   const passo = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800].find((s) => s * scala >= 70) || 3600;
   const xDi = (t) => {
-    const p = posizioni.find((q) => t >= q.inizio && t < q.inizio + q.secondi) || posizioni[posizioni.length - 1];
+    const p = posizioni.find((q) => t >= q.inizio && t < q.inizio + q.secondi) || posizioni.findLast((q) => q.secondi) || posizioni[posizioni.length - 1];
     return p ? p.x + ((t - p.inizio) / p.secondi) * p.larghezza : 0;
   };
   for (let t = 0; t <= totale; t += passo) {
@@ -424,7 +493,7 @@ function disegnaCorsia(area, corsia, scala) {
   // Trascinamento: da questa corsia (spostare) o dalla libreria (aggiungere).
   const indiceDa = (clientX) => {
     const sinistra = blocchi.getBoundingClientRect().left;
-    const fermi = posizioni.filter((_, i) => !trascinate.has(corsia.voci[i].id));
+    const fermi = posizioni.filter((q) => q.id && !trascinate.has(q.id));
     const xRel = clientX - sinistra;
     let indice = 0;
     for (const q of fermi) if (xRel > q.x + q.larghezza / 2) indice += 1;
@@ -474,15 +543,41 @@ function disegnaCorsia(area, corsia, scala) {
 let trascinate = new Set();
 const trascinamento = { corsia: null };
 
-function blocco(x, d, indice, larghezza, corsia, scala) {
+// Una ripetizione automatica di una diretta: si vede dove andrà in onda; un clic seleziona
+// la diretta (si regola lì), non si trascina.
+function ripetizione(x, d, larghezza) {
+  const crea = H.crea;
+  const el = crea("div", { classe: `blocco diretta ripetuta${Q.selezione.has(x.id) ? " scelto" : ""}` });
+  el.style.width = `${larghezza}px`;
+  el.title = `${x.nome} · ${testoDurata(d.secondi)} · ripetizione automatica (la regola è sul blocco della diretta)`;
+  const segno = crea("div", { classe: "segno-diretta" }, el);
+  if (x.logo_url) {
+    const logo = crea("img", { src: x.logo_url, alt: "", referrerPolicy: "no-referrer", draggable: false }, segno);
+    logo.addEventListener("error", () => logo.remove());
+  }
+  crea("span", { classe: "live", testo: "LIVE" }, segno);
+  crea("span", { classe: "numero", testo: "🔁" }, el);
+  const piede = crea("div", { classe: "piede-blocco" }, el);
+  crea("span", { classe: "nome", testo: x.nome }, piede);
+  crea("span", { classe: "durata", testo: `📡 ${testoDurata(d.secondi)}` }, piede);
+  el.addEventListener("click", () => {
+    Q.selezione = new Set([x.id]);
+    Q.ancora = x.id;
+    disegnaSequenza();
+  });
+  return el;
+}
+
+function blocco(x, d, indice, larghezza, corsia, scala, regola = false) {
   const crea = H.crea;
   const el = crea("div", {
-    classe: `blocco ${x.tipo}${Q.selezione.has(x.id) ? " scelto" : ""}${d.propria ? " propria" : ""}`,
+    classe: `blocco ${x.tipo}${Q.selezione.has(x.id) ? " scelto" : ""}${d.propria ? " propria" : ""}${regola ? " con-regola" : ""}`,
     draggable: true, tabIndex: 0,
   });
   el.style.width = `${larghezza}px`;
   el.dataset.id = x.id;
-  el.title = `${x.nome} · ${testoDurata(d.secondi)}${d.intero ? (d.stimata ? " (video: lunghezza in lettura)" : " (video intero)") : d.propria ? "" : " (durata standard)"}`;
+  el.title = `${x.nome} · ${testoDurata(d.secondi)}${d.intero ? (d.stimata ? " (video: lunghezza in lettura)" : " (video intero)") : d.propria ? "" : " (durata standard)"}`
+    + (regola ? "\nQui si regola: va in onda dove la regola la ripete, non in questa posizione." : "");
   if (x.tipo === "immagine") {
     // Come una pellicola: la miniatura si ripete per tutta la lunghezza del blocco.
     el.style.backgroundImage = `url("${H.conCliente(`/api/contenuti/${x.id}/miniatura/`)}")`;
@@ -504,11 +599,11 @@ function blocco(x, d, indice, larghezza, corsia, scala) {
   const badge = crea("span", { classe: "durata", testo: `${x.tipo === "video" ? "▶ " : x.tipo === "diretta" ? "📡 " : ""}${testoDurata(d.secondi)}${d.stimata ? "?" : ""}` }, piede);
   if (x.tipo === "diretta" && (H.S.promozione.audio || []).includes(x.id)) crea("span", { classe: "audio", testo: "🔊" }, el);
   // La regola di ripetizione della diretta, ben visibile sul blocco.
-  const regola = x.tipo === "diretta" ? H.S.promozione.ripeti?.[x.id] : null;
-  if (regola) {
+  const ritmo = x.tipo === "diretta" ? H.S.promozione.ripeti?.[x.id] : null;
+  if (ritmo) {
     crea("span", {
       classe: "ripeti",
-      testo: regola.modo === "orari" ? `🕒 ${regola.orari.join(" · ")}` : `🔁 ogni ${regola.ogni} ${regola.modo === "ogni_minuti" ? "min" : "imm."}`,
+      testo: ritmo.modo === "orari" ? `🕒 ${ritmo.orari.join(" · ")}` : `🔁 ogni ${ritmo.ogni} ${ritmo.modo === "ogni_minuti" ? "min" : "imm."}`,
     }, el);
   }
 
@@ -646,10 +741,12 @@ const R = { corsia: "orizzontale", indice: 0, velocita: 1, pausa: false, timer: 
 
 export function apriAnteprima(corsia, indice = 0) {
   const finestra = document.getElementById("anteprima-sequenza");
-  const disponibili = CORSIE.filter((c) => vociCorsia(c.chiave).length);
+  const disponibili = CORSIE.filter((c) => sequenzaCorsia(c.chiave).length);
   if (!disponibili.length) return;
   R.corsia = disponibili.some((c) => c.chiave === corsia) ? corsia : disponibili[0].chiave;
-  R.indice = Math.max(0, indice);
+  // «Anteprima da qui» indica una voce della promozione: si parte dalla sua prima messa in onda.
+  const scelta = corsia && indice > 0 ? vociCorsia(R.corsia)[indice] : null;
+  R.indice = scelta ? Math.max(0, sequenzaCorsia(R.corsia).findIndex((x) => x.id === scelta.id)) : Math.max(0, indice);
   R.pausa = false;
   disegnaAnteprima();
   if (!finestra.open) finestra.showModal();
@@ -677,7 +774,7 @@ function disegnaAnteprima() {
   crea("h2", { testo: `Anteprima · «${p.nome || "nuova promozione"}»` }, testa);
   const schede = crea("div", { classe: "schede-anteprima" }, testa);
   for (const c of CORSIE) {
-    if (!vociCorsia(c.chiave).length) continue;
+    if (!sequenzaCorsia(c.chiave).length) continue;
     crea("button", {
       type: "button", classe: `chip${R.corsia === c.chiave ? " attivo" : ""}`, testo: `${c.simbolo} ${c.titolo}`,
       onclick: () => { fermaAnteprima(); R.corsia = c.chiave; R.indice = 0; disegnaAnteprima(); vaiA(0); },
@@ -706,7 +803,7 @@ function disegnaAnteprima() {
   }
 
   // La barra: un segmento per voce, lungo quanto la sua durata. Clic: si salta lì.
-  const voci = vociCorsia(R.corsia);
+  const voci = sequenzaCorsia(R.corsia);
   const durate = voci.map((x) => durata(x).secondi);
   const totale = durate.reduce((a, b) => a + b, 0) || 1;
   const barra = crea("div", { classe: "barra-anteprima" }, finestra);
@@ -744,7 +841,7 @@ function pausa(ferma) {
 }
 
 async function vaiA(indice, stessa = false) {
-  const voci = vociCorsia(R.corsia);
+  const voci = sequenzaCorsia(R.corsia);
   if (!voci.length) return;
   clearTimeout(R.timer);
   R.indice = ((indice % voci.length) + voci.length) % voci.length;
@@ -771,7 +868,7 @@ async function vaiA(indice, stessa = false) {
 function programma() {
   clearTimeout(R.timer);
   // Video e dirette scorrono alla loro velocità: l'accelerazione vale solo per le immagini.
-  const voce = vociCorsia(R.corsia)[R.indice];
+  const voce = sequenzaCorsia(R.corsia)[R.indice];
   const velocita = voce && voce.tipo === "immagine" ? R.velocita : 1;
   const resto = Math.max(0, R.secondi * 1000 - R.trascorso) / velocita;
   R.velocitaCorrente = velocita;

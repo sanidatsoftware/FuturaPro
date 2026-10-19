@@ -11,7 +11,7 @@ import { attivaAiuti } from "./aiuto.js";
 import { AIUTI_PALINSESTO, osservaAiutiPagina } from "./aiuti-campi.js";
 import { clienteRicordato, disegnaMenu, ricordaCliente } from "./menu.js";
 import { apriEventi, caricaEventi, eventiCaricati, preparaEventi } from "./eventi.js";
-import { FORMATO_LIBRERIA, apriAnteprima, apriSequenza, disegnaSequenza, preparaSequenza } from "./sequenza.js";
+import { FORMATO_LIBRERIA, apriAnteprima, apriSequenza, disegnaSequenza, inOnda, preparaSequenza } from "./sequenza.js";
 
 const cliente = clienteRicordato();
 const MESI = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
@@ -1190,8 +1190,11 @@ function disegnaPromozione(box) {
 
 // Che cosa ripete ogni schermo, nell'ordine, e quanto dura un giro: così si vede subito
 // se la diretta è l'unica voce per i monitor (in quel caso resta in onda di continuo).
-function descriviGiro(voci, p, c) {
+function descriviGiro(elenco, p, c) {
   const secondiImmagine = c.durata || 10;
+  // Come andrà in onda: le dirette con una regola si ripetono al loro ritmo.
+  const voci = inOnda(elenco, p.ripeti, (x) => (x.tipo === "diretta" ? (p.durate?.[x.id] || x.durata || 300)
+    : x.tipo === "video" ? (p.durate?.[x.id] || x.durata || 30) : (p.durate?.[x.id] || secondiImmagine))).map((s) => s.voce);
   const testo = voci.map((x) => (x.tipo === "diretta"
     ? `📡 ${x.nome} ${minuti(p.durate?.[x.id] || x.durata)} min`
     : x.tipo === "video" ? "▶ video" : "🖼"));
