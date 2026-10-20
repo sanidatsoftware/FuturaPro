@@ -35,10 +35,10 @@ table.matrice td.tot{background:#eef1f4;font-weight:bold;color:#2d4055}
     {% if puo_gestire %}indicarlo in <a href="/primanota/buoni-pasto/collegamento/">Collegamento database</a>.{% else %}lo imposta il Direttore o l'Amministratore.{% endif %}</div>{% endif %}
 
 <div class="card">
-    <form method="get" class="filters" id="filtriFasce">
+    <form method="get" class="filters" id="filtriFasce" data-attesa="Ricerca delle vendite per fasce orarie in corso…">
         <div class="field">Vista
             <div style="display:flex;gap:12px;padding:8px 0">{% for k, v in viste.items %}
-                <label class="check"><input type="radio" name="vista" value="{{ k }}" {% if vista == k %}checked{% endif %} onchange="this.form.submit()"> {{ v }}</label>{% endfor %}</div>
+                <label class="check"><input type="radio" name="vista" value="{{ k }}" {% if vista == k %}checked{% endif %} onchange="this.form.requestSubmit()"> {{ v }}</label>{% endfor %}</div>
         </div>
         <label class="field">Dal <input type="date" name="data_da" value="{{ data_da }}" required></label>
         <label class="field">Al <input type="date" name="data_a" value="{{ data_a }}" required></label>

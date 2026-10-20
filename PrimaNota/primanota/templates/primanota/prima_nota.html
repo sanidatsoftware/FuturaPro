@@ -38,7 +38,7 @@ table.riepilogo td,table.riepilogo th{padding:6px 10px}
 <div class="grid2">
     <div class="card">
         <h3>Consulta un punto vendita</h3>
-        <form method="get" class="filters">
+        <form method="get" class="filters" data-attesa="Ricerca della prima nota in corso…">
             <label class="field">Punto vendita
                 <select name="pv" required><option value="">Scegli...</option>
                     {% for n in negozi %}<option value="{{ n.codice }}" {% if pv == n.codice|stringformat:"s" %}selected{% endif %}>{{ n.codice }} - {{ n.descrizione }}</option>{% endfor %}

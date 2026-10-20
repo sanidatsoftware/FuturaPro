@@ -41,7 +41,7 @@
     {% include "primanota/_menu.html" with attivo="statistiche" %}
 </div>
 <div class="card">
-    <form method="get" class="filters">
+    <form method="get" class="filters" data-attesa="Calcolo delle statistiche in corso…">
         <label class="field">Negozio
             <select name="negozio"><option value="">Tutti</option>
                 {% for n in negozi %}<option value="{{ n.id }}" {% if filtro_negozio == n.id|stringformat:"s" %}selected{% endif %}>{{ n.codice }} - {{ n.descrizione }}</option>{% endfor %}

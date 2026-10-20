@@ -993,3 +993,16 @@ class TestMenuStatistiche(Base):
         r = self.client_per("direttore@x").get("/primanota/statistiche/", {"data_da": "2026-05-01", "data_a": "2026-05-31"})
         self.assertRedirects(r, "/primanota/statistiche/finanziarie/?data_da=2026-05-01&data_a=2026-05-31",
                              fetch_redirect_response=False)
+
+
+class TestElaborazioneInCorso(Base):
+    def test_ricerche_con_indicatore_di_attesa(self):
+        d = self.client_per("direttore@x")
+        with mock.patch("primanota.services.cassa_centrale.configurazione", return_value=None):
+            for url, testo in (("/primanota/statistiche/finanziarie/", "Calcolo delle statistiche in corso"),
+                               ("/primanota/fasce-orarie/", "Ricerca delle vendite per fasce orarie in corso"),
+                               ("/primanota/buoni-pasto/", "Ricerca dei buoni pasto in corso"),
+                               ("/primanota/prima-nota/", "Ricerca della prima nota in corso")):
+                r = d.get(url)
+                self.assertContains(r, f'data-attesa="{testo}…"')
+                self.assertContains(r, "function mostraAttesa(")

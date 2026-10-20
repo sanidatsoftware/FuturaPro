@@ -52,6 +52,15 @@ textarea{min-height:80px;resize:vertical;width:100%}
 .sezione-card p{margin:0;color:#667085;font-size:14px}
 .sezione-card .badge{margin-top:12px}
 .stampa-attesa{flex:1;display:flex;align-items:center;justify-content:center;color:#667085}
+/* Elaborazione in corso: pannello con indicatore e secondi trascorsi durante le ricerche lunghe. */
+.attesa-overlay{position:fixed;inset:0;z-index:9998;background:rgba(36,59,85,.45);display:flex;align-items:center;justify-content:center}
+.attesa-box{background:#fff;border-radius:14px;padding:26px 30px;min-width:320px;max-width:90vw;text-align:center;box-shadow:0 12px 35px rgba(0,0,0,.25)}
+.attesa-box strong{display:block;color:#2d4055;font-size:17px;margin-top:14px}
+.attesa-tempo{font-size:30px;font-weight:bold;color:#2d4055;font-variant-numeric:tabular-nums;margin:6px 0}
+.attesa-nota{font-size:12px;color:#667085;min-height:16px}
+.attesa-ruota{width:42px;height:42px;border:4px solid #cde2fb;border-top-color:#2a78d6;border-radius:50%;margin:0 auto;animation:attesa-giro .9s linear infinite}
+@keyframes attesa-giro{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.attesa-ruota{animation-duration:3s}}
 </style>
 {% block style %}{% endblock %}
 </head>
@@ -113,7 +122,11 @@ function apriStampa(url){
     overlay.querySelector("iframe")?.remove();
     const attesa = document.getElementById("stampaAttesa");
     attesa.style.display = "flex";
-    attesa.textContent = "Preparazione del PDF in corso…";
+    const inizio = Date.now();
+    const aggiorna = () => { attesa.textContent = `Preparazione del PDF in corso… ${durata(Date.now() - inizio)}`; };
+    aggiorna();
+    clearInterval(window.timerStampa);
+    window.timerStampa = setInterval(aggiorna, 1000);
     document.getElementById("stampaStampa").disabled = true;
     document.getElementById("stampaScarica").style.display = "none";
     // Il PDF si scarica prima e poi si mostra: così si sa quando è pronto e si vedono gli errori.
@@ -133,11 +146,12 @@ function apriStampa(url){
             scarica.download = nome;
             scarica.style.display = "inline-block";
             overlay.querySelector(".stampa-barra strong").textContent = nome;
+            clearInterval(window.timerStampa);
             attesa.style.display = "none";
             box.appendChild(frame);
             document.getElementById("stampaStampa").disabled = false;
         })
-        .catch(err => { attesa.textContent = "Stampa non riuscita: " + err.message; });
+        .catch(err => { clearInterval(window.timerStampa); attesa.textContent = "Stampa non riuscita: " + err.message; });
     overlay.style.display = "flex";
     return false;
 }
@@ -151,6 +165,49 @@ function deleteScansione(id){
     if(!confirm("Confermi l'eliminazione del documento?")) return;
     postJson(`/primanota/delete/${id}/`).then(data => { if(data.error) alert(data.error); else location.reload(); });
 }
+// Moduli con data-attesa: all'invio si mostra «Elaborazione in corso» con i secondi trascorsi,
+// finché arriva la pagina con i risultati. «Interrompi» ferma il caricamento.
+function durata(ms){
+    const s = Math.floor(ms / 1000);
+    return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s`;
+}
+function mostraAttesa(testo){
+    let overlay = document.getElementById("attesaOverlay");
+    if(!overlay){
+        overlay = document.createElement("div");
+        overlay.id = "attesaOverlay";
+        overlay.className = "attesa-overlay";
+        overlay.setAttribute("role", "status");
+        overlay.innerHTML = `<div class="attesa-box"><div class="attesa-ruota"></div><strong id="attesaTesto"></strong>
+            <div class="attesa-tempo" id="attesaTempo">0 s</div><div class="attesa-nota" id="attesaNota"></div>
+            <button type="button" class="btn btn-light" style="margin-top:12px" id="attesaStop">Interrompi</button></div>`;
+        document.body.appendChild(overlay);
+        document.getElementById("attesaStop").addEventListener("click", () => { window.stop(); nascondiAttesa(); });
+    }
+    document.getElementById("attesaTesto").textContent = testo || "Elaborazione in corso…";
+    document.getElementById("attesaNota").textContent = "";
+    overlay.style.display = "flex";
+    const inizio = Date.now();
+    clearInterval(window.timerAttesa);
+    window.timerAttesa = setInterval(() => {
+        const ms = Date.now() - inizio;
+        document.getElementById("attesaTempo").textContent = durata(ms);
+        if(ms > 20000) document.getElementById("attesaNota").textContent =
+            "Con molti giorni o punti vendita la ricerca può richiedere qualche minuto.";
+    }, 1000);
+}
+function nascondiAttesa(){
+    clearInterval(window.timerAttesa);
+    const overlay = document.getElementById("attesaOverlay");
+    if(overlay) overlay.style.display = "none";
+}
+document.addEventListener("submit", e => {
+    const form = e.target;
+    if(!form.dataset || form.dataset.attesa === undefined) return;
+    setTimeout(() => { if(!e.defaultPrevented) mostraAttesa(form.dataset.attesa); }, 0);
+});
+// Tornando indietro col browser la pagina può riapparire dalla cache: niente pannello rimasto aperto.
+window.addEventListener("pageshow", nascondiAttesa);
 </script>
 {% block script %}{% endblock %}
 </body>
