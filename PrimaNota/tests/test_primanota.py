@@ -412,7 +412,7 @@ class TestDivisioneEControlli(Base):
         f.totale_pos = Decimal("1212.00")  # il terminale ha incassato più di cassa e scontrini
         c = {x["nome"]: x for x in f.controlli}
         self.assertEqual(c["POS"]["esito"], "attenzione")
-        self.assertIn("terminale POS ha incassato 1.194,00 € in più", c["POS"]["spiegazione"])
+        self.assertIn("terminale ha incassato 1.194,00 € in più", c["POS"]["spiegazione"])
         f.totale_giornaliero = Decimal("16.01")
         c = {x["nome"]: x for x in f.controlli}
         self.assertIn("1,99 € in più", c["Scontrini"]["spiegazione"])
@@ -460,4 +460,38 @@ class TestCampoMenu(Base):
             self.assertEqual(accesso.campo_menu_primanota(), "field_7001")
             self.assertIn("/api/database/fields/table/272/", get.call_args.args[0])
         accesso._campo_menu.update(valore=None, scade=0)
+
+
+class TestCasiReali(TestCase):
+    """Situazioni trovate nei SysSpy di Adrano (5031), ridotte all'essenziale."""
+
+    RESO = """8232                 TO.CAL. SRL
+8232                                         Euro
+8233    SOLE SOLARETTO GR.27                 1,99
+8232              FIRMA DIRETTORE
+8232              MOTIVO DEL RESO
+8236 --------------------------------------------
+8236 TOTALE EURO                             1,99
+8232 17/10/2026 12:36               DOC.1094-0234
+8232                 TO.CAL. SRL
+8232                                         Euro
+8233    PANINI                              44,62
+8236 TOTALE EURO                            44,62
+8238 Credito                                44,62
+8241 RESTO                                   0,00
+8232 17/10/2026 12:40               DOC.1094-0235
+"""
+
+    def test_buono_di_reso_escluso_e_credito_come_pagamento(self):
+        g = sysspy.analizza("SysSpy.20261017.3", self.RESO.replace("\n", "\r\n").encode())["giornate"][0]
+        self.assertTrue(g["scontrini"][0]["reso"])
+        self.assertEqual(g["totale_scontrini"], Decimal("44.62"))
+        self.assertEqual(g["pagamenti"], {"Credito": Decimal("44.62")})
+
+    def test_configurazione_non_riscosso(self):
+        carte = FileSysSpy(corrisp_non_riscosso=Decimal("10"), scontrini_trovati=3, totale_giornaliero=Decimal("50"),
+                           pagamenti={"Carta Credito": "6", "Bancomat": "4", "Buoni Pasto": "8"})
+        buoni = FileSysSpy(corrisp_non_riscosso=Decimal("8"), scontrini_trovati=3, totale_giornaliero=Decimal("50"),
+                           pagamenti={"Carta Credito": "6", "Bancomat": "4", "Buoni Pasto": "8"})
+        self.assertEqual((carte.configurazione_non_riscosso, buoni.configurazione_non_riscosso), ("carte", "buoni"))
 

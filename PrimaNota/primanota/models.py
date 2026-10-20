@@ -95,6 +95,26 @@ class FileSysSpy(models.Model):
         return sum((Decimal(str(v)) for k, v in self.pagamenti.items() if k in PAGAMENTI_POS), Decimal("0"))
 
     @property
+    def buoni_e_crediti(self):
+        """Buoni pasto + Credito registrati negli scontrini."""
+        from .sysspy import PAGAMENTI_NON_RISCOSSI
+        if not self.pagamenti:
+            return None
+        return sum((Decimal(str(v)) for k, v in self.pagamenti.items() if k in PAGAMENTI_NON_RISCOSSI), Decimal("0"))
+
+    @property
+    def configurazione_non_riscosso(self):
+        """Cosa la cassa mette nel CORRISP. NON RISCOSSI: "carte", "buoni" o "" se non si riconosce."""
+        nr = self.corrisp_non_riscosso
+        if nr is None or self.cassa_vuota:
+            return ""
+        if self.pagato_pos is not None and nr == self.pagato_pos:
+            return "carte"
+        if self.buoni_e_crediti is not None and nr == self.buoni_e_crediti:
+            return "buoni"
+        return ""
+
+    @property
     def cassa_vuota(self):
         """Cassa non usata: chiusura a zero e nessuno scontrino."""
         return self.scontrini_trovati == 0 and not self.totale_giornaliero

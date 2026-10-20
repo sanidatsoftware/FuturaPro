@@ -24,6 +24,7 @@ NOME_FILE_RE = re.compile(r"^SysSpy\.(\d{8})\.(\d+)$", re.I)
 TIMESTAMP_RE = re.compile(r"^\s*(\d{2}/\d{2}/\d{4}) (\d{2}:\d{2})")
 DOC_RE = re.compile(r"^\s*(\d{2}/\d{2}/\d{4}) (\d{2}:\d{2})\s+DOC\.(\S+)")
 IMPORTO_RE = re.compile(r"(-?\d{1,3}(?:\.\d{3})*,\d{2}|-?\d+,\d{2}|-?\d+)\s*$")
+# Il buono di reso stampato dalla cassa ha "MOTIVO DEL RESO" e le firme: non entra nel totale giornaliero.
 RESO_RE = re.compile(r"\bRESO\b")
 
 # Righe della chiusura fiscale da memorizzare come valori, con il nome del campo.
@@ -219,10 +220,13 @@ def scontrini(elenco):
     return out
 
 
-CODICE_PAGAMENTO = "8239"   # Carta Credito, Bancomat, Buoni Pasto, ...
+CODICI_PAGAMENTO = {"8239", "8238"}   # 8239 Carta Credito, Bancomat, Buoni Pasto...; 8238 Credito
 # Pagamenti che passano dal POS bancario: la loro somma deve coincidere con la chiusura POS
 # e con il "CORRISP. NON RISCOSSI" della chiusura fiscale (verificato sui file di Motta).
 PAGAMENTI_POS = ("Carta Credito", "Bancomat")
+# Su alcune casse il "CORRISP. NON RISCOSSI" è invece la somma di buoni pasto e crediti
+# (Adrano cassa 3, 17-18/10/2026): la cassa è configurata in modo diverso.
+PAGAMENTI_NON_RISCOSSI = ("Buoni Pasto", "Credito")
 
 
 def _pagamenti(blocco, totale):
@@ -233,11 +237,12 @@ def _pagamenti(blocco, totale):
     """
     out = {}
     for c, t in blocco:
-        if c != CODICE_PAGAMENTO:
+        if c not in CODICI_PAGAMENTO:
             continue
         valore = importo(t)
         if valore is not None:
-            voce = IMPORTO_RE.sub("", t).strip() or "Altro"
+            # "3 x 8,00 Buoni Pasto" -> "Buoni Pasto"
+            voce = re.sub(r"^\d+\s*x\s*[\d.,]+\s*", "", IMPORTO_RE.sub("", t).strip()) or "Altro"
             out[voce] = out.get(voce, Decimal("0")) + valore
     if totale is not None:
         contanti = totale - sum(out.values(), Decimal("0"))
@@ -250,7 +255,7 @@ def somma_pagamenti(docs):
     """Totale per tipo di pagamento degli scontrini validi (esclusi gli abortiti)."""
     out = {}
     for d in docs:
-        if d["abortito"]:
+        if d["abortito"] or d["reso"]:
             continue
         for voce, valore in d["pagamenti"].items():
             out[voce] = out.get(voce, Decimal("0")) + valore
@@ -340,8 +345,9 @@ def analizza_giornata(elenco):
         "chiusura_fiscale": fiscale,
         "valori_fiscali": fiscale["valori"] if fiscale else {},
         "scontrini": docs,
-        # Gli scontrini abortiti non entrano nel totale giornaliero della cassa.
-        "totale_scontrini": sum((d["totale"] for d in docs if d["totale"] is not None and not d["abortito"]), Decimal("0")),
+        # Abortiti e buoni di reso non entrano nel totale giornaliero della cassa.
+        "totale_scontrini": sum((d["totale"] for d in docs if d["totale"] is not None and not d["abortito"] and not d["reso"]),
+                                Decimal("0")),
         "pagamenti": somma_pagamenti(docs),
         "pos_negate": pos_negate(elenco),
     }

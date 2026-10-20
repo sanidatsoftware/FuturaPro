@@ -5,8 +5,9 @@ Sul SysSpy si confrontano tre fonti indipendenti:
 - la chiusura POS (stampata dal terminale bancario: quanto ha incassato con le carte);
 - la chiusura fiscale (stampata dalla cassa: totale giornaliero, corrispettivo non riscosso);
 - gli scontrini emessi nella giornata (somma dei totali e come sono stati pagati).
-Sui file verificati (Motta, 28/05/2026) Carta Credito + Bancomat negli scontrini =
-chiusura POS = CORRISP. NON RISCOSSI, e la somma degli scontrini = TOTALE GIORNALIERO.
+Sui file verificati (Motta, Adrano, Librino) Carta Credito + Bancomat negli scontrini =
+chiusura POS, e la somma degli scontrini (esclusi abortiti e buoni di reso) = TOTALE GIORNALIERO.
+Il CORRISP. NON RISCOSSI dipende da come è configurata la cassa: carte, oppure buoni pasto + crediti.
 """
 
 from decimal import Decimal
@@ -52,40 +53,49 @@ def controlli(f, dettagli=True):
                                 "(il numero scontrini fiscali 1 è la chiusura stessa).", "valori": []}]
     out = []
 
-    # 1. POS: terminale bancario, cassa (fiscale) e scontrini devono dire la stessa cifra.
-    pos, fiscale, scontrini = f.totale_pos, f.corrisp_non_riscosso, f.pagato_pos
-    valori = [("Chiusura POS (terminale bancario)", pos),
-              ("Corrisp. non riscosso (chiusura fiscale)", fiscale),
-              ("Carta Credito + Bancomat negli scontrini", scontrini)]
+    # 1. POS: quanto ha incassato il terminale bancario = Carta Credito + Bancomat negli scontrini.
+    pos, scontrini = f.totale_pos, f.pagato_pos
+    valori = [("Chiusura POS (terminale bancario)", pos), ("Carta Credito + Bancomat negli scontrini", scontrini)]
     if pos is None:
-        out.append({"nome": "POS", "esito": INFO, "titolo": "Chiusura POS non trovata",
-                    "spiegazione": "Nel SysSpy di questa giornata non c'è la stampa «CHIUSURA ... TOTALE POS EUR». "
-                                   "Può essere stata fatta il giorno dopo (controllare la giornata successiva) "
-                                   "o direttamente sul terminale senza stampa in cassa.", "valori": valori})
-    elif fiscale is None:
-        out.append({"nome": "POS", "esito": INFO, "titolo": "Chiusura fiscale non trovata",
-                    "spiegazione": "Senza chiusura fiscale non si può confrontare il POS.", "valori": valori})
-    elif pos == fiscale and (scontrini is None or scontrini == pos):
+        out.append({"nome": "POS", "esito": INFO, "titolo": "Chiusura POS non nel SysSpy",
+                    "spiegazione": "In questa giornata la cassa non ha stampato la chiusura del terminale "
+                                   "(«CHIUSURA ... TOTALE POS EUR»): può essere stata fatta direttamente sul terminale, "
+                                   "il giorno dopo, o da un'altra cassa. Le carte registrate negli scontrini sono "
+                                   f"{_euro(scontrini)}: confrontarle con la scansione della chiusura POS.",
+                    "valori": valori})
+    elif scontrini is None or pos == scontrini:
         out.append({"nome": "POS", "esito": OK, "titolo": "POS quadrato",
-                    "spiegazione": "Terminale bancario, chiusura fiscale e scontrini riportano lo stesso importo "
-                                   "pagato con carte.", "valori": valori})
+                    "spiegazione": "Il terminale bancario ha incassato esattamente le carte registrate negli scontrini.",
+                    "valori": valori})
     else:
-        diff = pos - fiscale
-        if scontrini is not None and scontrini == pos:
-            causa = ("Gli scontrini confermano l'importo del terminale: è la chiusura fiscale a riportare un "
-                     "«non riscosso» diverso. Verificare che la chiusura fiscale sia stata fatta dopo l'ultima "
-                     "vendita e che le forme di pagamento della cassa siano configurate correttamente.")
-        elif scontrini is not None and scontrini == fiscale:
-            causa = (f"Cassa e scontrini sono d'accordo tra loro, ma il terminale POS ha incassato "
-                     f"{_euro(abs(diff))} {'in più' if diff > 0 else 'in meno'}. Cause tipiche: il terminale è "
-                     "condiviso con un'altra cassa, una carta è stata passata senza registrarla in cassa "
-                     "(o registrata come contanti), oppure la chiusura POS comprende anche il giorno prima.")
-            causa += _indizio(f, diff, 3, dettagli)
-        else:
-            causa = ("Le tre cifre sono tutte diverse: confrontare la chiusura POS con le singole transazioni "
-                     "nel testo completo del SysSpy.")
+        diff = pos - scontrini
         out.append({"nome": "POS", "esito": ATTENZIONE, "titolo": f"Differenza POS {_euro(diff)}",
-                    "spiegazione": causa, "valori": valori})
+                    "spiegazione": f"Il terminale ha incassato {_euro(abs(diff))} {'in più' if diff > 0 else 'in meno'} "
+                                   "delle carte registrate negli scontrini. Cause tipiche: terminale usato anche da "
+                                   "un'altra cassa, carta passata senza registrarla in cassa (o registrata come "
+                                   "contanti), chiusura POS che comprende anche il giorno prima." + _indizio(f, diff, 3, dettagli),
+                    "valori": valori})
+
+    # 2. Corrispettivo non riscosso della chiusura fiscale: le casse sono configurate in due modi.
+    nr = f.corrisp_non_riscosso
+    if nr is not None:
+        valori = [("Corrisp. non riscosso (chiusura fiscale)", nr),
+                  ("Carta Credito + Bancomat negli scontrini", f.pagato_pos),
+                  ("Buoni Pasto + Credito negli scontrini", f.buoni_e_crediti)]
+        configurazione = f.configurazione_non_riscosso
+        if configurazione == "carte":
+            out.append({"nome": "Non riscosso", "esito": OK, "titolo": "Non riscosso = carte",
+                        "spiegazione": "Questa cassa registra come «non riscosso» i pagamenti con carta "
+                                       "(i buoni pasto sono conteggiati come riscosso).", "valori": valori})
+        elif configurazione == "buoni":
+            out.append({"nome": "Non riscosso", "esito": OK, "titolo": "Non riscosso = buoni e crediti",
+                        "spiegazione": "Questa cassa registra come «non riscosso» buoni pasto e vendite a credito "
+                                       "(le carte sono conteggiate come riscosso).", "valori": valori})
+        else:
+            out.append({"nome": "Non riscosso", "esito": ATTENZIONE, "titolo": f"Non riscosso {_euro(nr)} non spiegato",
+                        "spiegazione": "Il corrispettivo non riscosso della chiusura fiscale non corrisponde né alle carte né "
+                                       "a buoni pasto + crediti registrati negli scontrini: verificare le forme di "
+                                       "pagamento usate nella giornata.", "valori": valori})
 
     # 2. Somma degli scontrini = TOTALE GIORNALIERO della chiusura fiscale.
     totale, somma = f.totale_giornaliero, f.totale_scontrini
@@ -101,7 +111,7 @@ def controlli(f, dettagli=True):
             out.append({"nome": "Scontrini", "esito": ATTENZIONE, "titolo": f"Scontrini +{_euro(diff)}",
                         "spiegazione": f"Nel file ci sono scontrini per {_euro(diff)} in più del totale fiscale: "
                                        "di solito uno scontrino che la cassa non conta nel giornaliero (annullato "
-                                       "dopo l'emissione, documento di annullo/reso, o stampato dopo la chiusura)."
+                                       "dopo l'emissione o stampato dopo la chiusura). I buoni di reso sono già esclusi dalla somma."
                                        + _indizio(f, diff, 2, dettagli), "valori": valori})
         else:
             out.append({"nome": "Scontrini", "esito": ATTENZIONE, "titolo": f"Scontrini {_euro(diff)}",
@@ -109,19 +119,6 @@ def controlli(f, dettagli=True):
                                        "il SysSpy è incompleto oppure una parte della giornata è in un altro file.",
                         "valori": valori})
 
-    # 3. Numero di documenti: la chiusura fiscale conta anche se stessa.
-    if f.num_scontrini_fiscali:
-        attesi = f.num_scontrini_fiscali - 1
-        if f.scontrini_trovati != attesi:
-            out.append({"nome": "Documenti", "esito": ATTENZIONE,
-                        "titolo": f"Documenti {f.scontrini_trovati} su {attesi}",
-                        "spiegazione": f"La chiusura fiscale indica {f.num_scontrini_fiscali} documenti "
-                                       f"(chiusura compresa), cioè {attesi} scontrini; nel file ne risultano "
-                                       f"{f.scontrini_trovati}. "
-                                       + ("C'è uno scontrino in più nel file: probabilmente quello che spiega la "
-                                          "differenza sugli scontrini." if f.scontrini_trovati > attesi else
-                                          "Mancano scontrini nel file."),
-                        "valori": []})
     return out
 
 

@@ -241,9 +241,16 @@ def giornata(request, negozio_id, giorno):
             "contanti": (f.pagamenti or {}).get("Contanti"),
             "buoni": (f.pagamenti or {}).get("Buoni Pasto"),
         })
+    # Casse dello stesso negozio che registrano il "non riscosso" in modo diverso.
+    configurazioni = {}
+    for f in files:
+        if f.configurazione_non_riscosso:
+            configurazioni.setdefault(f.configurazione_non_riscosso, []).append(str(f.cassa))
+    configurazioni_diverse = len(configurazioni) > 1 and {
+        "carte": ", ".join(configurazioni["carte"]), "buoni": ", ".join(configurazioni["buoni"])}
     corrente = date.fromisoformat(giorno)
     return render(request, "primanota/giornata.html", _contesto(
-        request, negozio=n, negozio_label=etichetta_negozio(n), negozio_id=negozio_id,
+        request, configurazioni_diverse=configurazioni_diverse, negozio=n, negozio_label=etichetta_negozio(n), negozio_id=negozio_id,
         giorno=giorno, giorno_fmt=corrente.strftime("%d/%m/%Y"),
         precedente=(corrente - timedelta(days=1)).isoformat(), successivo=(corrente + timedelta(days=1)).isoformat(),
         sezioni=sezioni, altre=altre, files=files, casse=casse, error=error,
