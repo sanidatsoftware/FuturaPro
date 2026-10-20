@@ -23,7 +23,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
-from django.db import close_old_connections, transaction
+from django.db import OperationalError, close_old_connections, transaction
 from django.utils import timezone
 
 from .. import sr_file, sri, sysspy
@@ -37,6 +37,22 @@ NOME_RE = re.compile(r"^SysSpy\.\d{8}\.\d+$", re.I)
 def _da_leggere(nome):
     """I file della condivisione che interessano: SysSpy e scontrini sospesi (CPaammgg.SRI.CassaN)."""
     return bool(NOME_RE.match(nome) or sri.NOME_RE.match(nome))
+
+
+def _con_riprova(funzione, tentativi=8):
+    """
+    Esegue funzione() ripetendola se SQLite risponde «database is locked»: succede quando l'importazione
+    pianificata, quella lanciata dal portale e la rielaborazione scrivono nello stesso momento.
+    """
+    for n in range(tentativi):
+        try:
+            return funzione()
+        except OperationalError as exc:
+            if "locked" not in str(exc) or n == tentativi - 1:
+                raise
+            log.warning("Database occupato, nuovo tentativo tra %s s", 2 ** min(n, 4))
+            time.sleep(2 ** min(n, 4))
+
 
 _lock_negozi = {}
 _lock_globale = threading.Lock()
@@ -288,7 +304,7 @@ def importa_condivisione(cond, completa=False, lavoro=None, stop=None):
                          f"{stato['errori']} errori. {stato['messaggio']}").strip()
     if stato.get("sospesi_sr"):
         cond.ultimo_esito += f" · {stato['sospesi_sr']}"
-    cond.save(update_fields=["ultima_importazione", "ultimo_esito"])
+    _con_riprova(lambda: cond.save(update_fields=["ultima_importazione", "ultimo_esito"]))
     return stato
 
 
@@ -338,7 +354,8 @@ def importa_file_sr(cond, completa=False):
         ident, richiamato = sr_file.identificativo(voce[1])
         if ident not in per_ident or richiamato:
             per_ident[ident] = voce
-    visti, nuovi = set(per_ident), 0
+    visti, letti = set(per_ident), []
+    # Prima si leggono e si archiviano i file (rete e disco), poi si scrive nel DB tutto insieme e in fretta.
     for ident, (origine, nome, dimensione, mtime, leggi) in per_ident.items():
         richiamato = sr_file.identificativo(nome)[1]
         f = noti.get(ident)
@@ -350,21 +367,28 @@ def importa_file_sr(cond, completa=False):
         cartella.mkdir(parents=True, exist_ok=True)
         copia = cartella / ident
         copia.write_bytes(dati)
-        FileSR.objects.update_or_create(negozio_id=cond.negozio_id, identificativo=ident, defaults={
+        letti.append((ident, {
             "codice_negozio": cond.codice_negozio, "nome": nome, "richiamato": richiamato, "presente": True,
             "dimensione": dimensione, "modificato_il": mtime, "percorso_archivio": str(copia),
-            "articoli": a["articoli"], "totale_lordo": a["totale_lordo"], "visto_il": adesso, "scomparso_il": None})
-        nuovi += 1
-    # Quelli che la cassa ha cancellato restano nell'archivio, segnati come non più presenti.
-    spariti = FileSR.objects.filter(negozio_id=cond.negozio_id, presente=True).exclude(identificativo__in=visti)
-    n_spariti = spariti.update(presente=False, scomparso_il=adesso)
-    # Stato «in cassa» dei sospesi, per identificativo (è lo stesso del file SRI).
-    stati = {f.identificativo: f.stato_in_cassa for f in FileSR.objects.filter(negozio_id=cond.negozio_id)}
-    for s in ScontrinoSospeso.objects.filter(negozio_id=cond.negozio_id, identificativo__in=list(stati)):
-        if s.in_cassa != stati[s.identificativo]:
-            s.in_cassa = stati[s.identificativo]
-            s.save(update_fields=["in_cassa"])
-    return f"file SR: {len(visti)} in cassa, {nuovi} aggiornati, {n_spariti} non più presenti"
+            "articoli": a["articoli"], "totale_lordo": a["totale_lordo"], "visto_il": adesso, "scomparso_il": None}))
+
+    def registra():
+        with transaction.atomic():
+            for ident, valori in letti:
+                FileSR.objects.update_or_create(negozio_id=cond.negozio_id, identificativo=ident, defaults=valori)
+            # Quelli che la cassa ha cancellato restano nell'archivio, segnati come non più presenti.
+            spariti = FileSR.objects.filter(negozio_id=cond.negozio_id, presente=True).exclude(identificativo__in=visti)
+            n_spariti = spariti.update(presente=False, scomparso_il=adesso)
+            # Stato «in cassa» dei sospesi, per identificativo (è lo stesso del file SRI).
+            stati = {f.identificativo: f.stato_in_cassa for f in FileSR.objects.filter(negozio_id=cond.negozio_id)}
+            for s in ScontrinoSospeso.objects.filter(negozio_id=cond.negozio_id, identificativo__in=list(stati)):
+                if s.in_cassa != stati[s.identificativo]:
+                    s.in_cassa = stati[s.identificativo]
+                    s.save(update_fields=["in_cassa"])
+            return n_spariti
+
+    n_spariti = _con_riprova(registra)
+    return f"file SR: {len(visti)} in cassa, {len(letti)} aggiornati, {n_spariti} non più presenti"
 
 
 def _importa(cond, completa, stato, stop):
@@ -384,10 +408,11 @@ def _importa(cond, completa, stato, stop):
                 stato["saltati"] += 1
                 continue
             try:
+                dati = leggi()
                 if sri.NOME_RE.match(nome):
-                    giorni_letti.add(archivia_sri(cond, origine, nome, dimensione, mtime, leggi())["data_file"])
+                    giorni_letti.add(_con_riprova(lambda: archivia_sri(cond, origine, nome, dimensione, mtime, dati))["data_file"])
                 else:
-                    giorni_letti.update(f.data for f in archivia(cond, origine, nome, dimensione, mtime, leggi()))
+                    giorni_letti.update(f.data for f in _con_riprova(lambda: archivia(cond, origine, nome, dimensione, mtime, dati)))
                 stato["importati"] += 1
             except Exception as exc:  # un file illeggibile non blocca gli altri
                 log.exception("Errore archiviando %s", origine)
@@ -406,7 +431,7 @@ def _importa(cond, completa, stato, stop):
             # (dal giorno prima del più vecchio: il ribattuto può essere del giorno dopo la sospensione).
             from .sospesi import abbina_ribattuti
             try:
-                abbina_ribattuti(cond.negozio_id, dal=min(giorni_letti) - timedelta(days=1))
+                _con_riprova(lambda: abbina_ribattuti(cond.negozio_id, dal=min(giorni_letti) - timedelta(days=1)))
             except Exception:  # l'abbinamento non deve far fallire l'importazione
                 log.exception("Abbinamento dei ribattuti del negozio %s non riuscito", cond.codice_negozio)
     except Exception as exc:

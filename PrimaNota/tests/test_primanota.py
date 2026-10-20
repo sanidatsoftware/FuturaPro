@@ -8,7 +8,7 @@ from unittest import mock
 from urllib.parse import urlparse
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import Client, TestCase, override_settings
+from django.test import Client, SimpleTestCase, TestCase, override_settings
 
 from incarichi.services import baserow_client, baserow_layer
 from primanota import sysspy
@@ -1363,3 +1363,30 @@ class TestFileSR(Base):
         f.refresh_from_db()
         self.assertEqual((f.presente, f.stato_in_cassa), (False, "richiamato"))
         self.assertEqual(ScontrinoSospeso.objects.get(identificativo="SR010051105.289").in_cassa, "richiamato")
+
+
+class TestRiprovaDatabaseOccupato(SimpleTestCase):
+    def test_riprova_se_locked(self):
+        from django.db import OperationalError
+        from primanota.services import importazione
+        chiamate = []
+
+        def funzione():
+            chiamate.append(1)
+            if len(chiamate) < 3:
+                raise OperationalError("database is locked")
+            return "ok"
+
+        with mock.patch.object(importazione.time, "sleep"):
+            self.assertEqual(importazione._con_riprova(funzione), "ok")
+        self.assertEqual(len(chiamate), 3)
+
+    def test_altri_errori_subito(self):
+        from django.db import OperationalError
+        from primanota.services import importazione
+
+        def funzione():
+            raise OperationalError("no such table")
+
+        with self.assertRaises(OperationalError):
+            importazione._con_riprova(funzione)
