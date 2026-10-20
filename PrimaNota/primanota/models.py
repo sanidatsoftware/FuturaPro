@@ -284,3 +284,65 @@ class CollegamentoBuoniPasto(models.Model):
     @classmethod
     def corrente(cls):
         return cls.objects.first() or cls()
+
+
+class FileSRI(models.Model):
+    """File degli scontrini sospesi di una cassa (CPaammgg.SRI.CassaN), letto dalla condivisione del negozio."""
+
+    negozio_id = models.IntegerField(db_index=True)
+    codice_negozio = models.CharField(max_length=20)
+    percorso_origine = models.CharField(max_length=500)
+    nome = models.CharField(max_length=100)
+    data = models.DateField(null=True, blank=True)
+    cassa = models.IntegerField(null=True, blank=True)
+    dimensione = models.BigIntegerField(default=0)
+    modificato_il = models.FloatField(default=0)
+    testo = models.TextField(blank=True)
+    righe_non_lette = models.IntegerField(default=0)
+    importato_il = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["negozio_id", "percorso_origine"], name="sri_unico_per_origine")]
+        ordering = ["-data", "cassa"]
+
+
+class ScontrinoSospeso(models.Model):
+    """Uno scontrino sospeso e, se avvenuti, il suo richiamo e l'emissione fiscale (FINE RISTAMPA)."""
+
+    SOSPESO, RICHIAMATO, EMESSO = "sospeso", "richiamato", "emesso"
+
+    negozio_id = models.IntegerField(db_index=True)
+    codice_negozio = models.CharField(max_length=20)
+    identificativo = models.CharField(max_length=40)
+    cassa = models.IntegerField(null=True, blank=True)
+    data = models.DateField(null=True, blank=True, db_index=True)
+    ora = models.TimeField(null=True, blank=True)
+    numero = models.IntegerField(null=True, blank=True)
+    importo = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    richiamato_data = models.DateField(null=True, blank=True)
+    richiamato_ora = models.TimeField(null=True, blank=True)
+    cassa_richiamo = models.IntegerField(null=True, blank=True)
+    emesso_data = models.DateField(null=True, blank=True)
+    emesso_ora = models.TimeField(null=True, blank=True)
+    cassa_emissione = models.IntegerField(null=True, blank=True)
+    numero_emesso = models.IntegerField(null=True, blank=True)
+    importo_emesso = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["negozio_id", "identificativo"], name="sospeso_unico")]
+        ordering = ["-data", "-ora"]
+
+    @property
+    def stato(self):
+        if self.emesso_data:
+            return self.EMESSO
+        if self.richiamato_data:
+            return self.RICHIAMATO
+        return self.SOSPESO
+
+    @property
+    def differenza(self):
+        """Importo emesso meno importo sospeso (articoli aggiunti o tolti dopo il richiamo)."""
+        if self.importo is None or self.importo_emesso is None:
+            return None
+        return self.importo_emesso - self.importo

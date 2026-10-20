@@ -1081,3 +1081,61 @@ class TestFattureSpese(Base):
         self.assertContains(r, "Dati prima nota")
         self.assertContains(r, "Importo: 27,20 €")
         self.assertContains(r, "cassone elettronica acquisto interruttori")
+
+
+class TestScontriniSospesi(Base):
+    def importa_sri(self, *extra):
+        cartella = Path(self.archivio) / "share_sri"
+        cartella.mkdir(exist_ok=True)
+        for f in (DATI / "sri").iterdir():
+            shutil.copy(f, cartella)
+        for nome, testo in extra:
+            (cartella / nome).write_text(testo)
+        cond, _ = Condivisione.objects.get_or_create(negozio_id=10, codice_negozio="5048", defaults={"percorso": str(cartella)})
+        return importazione.importa_condivisione(cond)
+
+    def test_lettura_dei_file(self):
+        from primanota import sri
+        a = sri.analizza("CP261016.SRI.Cassa3", (DATI / "sri" / "CP261016.SRI.Cassa3").read_bytes())
+        self.assertEqual((a["data_file"], a["cassa"], a["non_lette"]), (date(2026, 10, 16), 3, 0))
+        self.assertEqual([e["tipo"] for e in a["eventi"]], ["sospeso", "richiamato", "emesso"])
+        self.assertEqual((a["eventi"][0]["importo"], a["eventi"][0]["numero"], str(a["eventi"][0]["ora"])),
+                         (Decimal("14.68"), 159, "18:38:47"))
+        self.assertEqual(a["eventi"][2]["numero"], 169)   # nuovo numero dello scontrino emesso
+        self.assertEqual(sri.data_sospensione("SR030159225.289", date(2026, 10, 16)), date(2026, 10, 16))   # 289° giorno
+        self.assertEqual(sri.data_sospensione("SR010001001.365", date(2027, 1, 2)), date(2026, 12, 31))
+
+    def test_importazione_e_stati(self):
+        from primanota.models import FileSRI, ScontrinoSospeso
+        self.importa_sri()
+        self.assertEqual(FileSRI.objects.count(), 5)
+        self.assertEqual(ScontrinoSospeso.objects.count(), 8)
+        emesso = ScontrinoSospeso.objects.get(identificativo="SR030159225.289")
+        self.assertEqual((emesso.stato, emesso.numero_emesso, emesso.importo_emesso, emesso.differenza),
+                         ("emesso", 169, Decimal("14.68"), Decimal("0")))
+        self.assertEqual(ScontrinoSospeso.objects.filter(richiamato_data__isnull=True).count(), 7)
+        # Un richiamo nel file di un altro giorno e di un'altra cassa completa lo scontrino sospeso il 19.
+        self.importa_sri(("CP261020.SRI.Cassa2",
+                          "RICH.SOSPENSIONE: SR010172326.292 Ora: 090510 Cassa: 2 \n"
+                          "FINE RISTAMPA   : SR010172326.292 Ora: 090530 Cassa: 2 Sct: 12 Eur.: 70,00\n"))
+        s = ScontrinoSospeso.objects.get(identificativo="SR010172326.292")
+        self.assertEqual((s.stato, s.data, s.cassa, s.cassa_emissione, s.emesso_data, s.differenza),
+                         ("emesso", date(2026, 10, 19), 1, 2, date(2026, 10, 20), Decimal("1.55")))
+        # Rileggere tutto non duplica niente.
+        cond = Condivisione.objects.get(negozio_id=10)
+        importazione.importa_condivisione(cond, completa=True)
+        self.assertEqual(ScontrinoSospeso.objects.count(), 8)
+
+    def test_pagina(self):
+        self.importa_sri()
+        uff = self.client_per("ufficio@x")
+        r = uff.get("/primanota/sospesi/", {"data_da": "2026-10-01", "data_a": "2026-10-31"})
+        self.assertEqual(r.context["riepilogo"]["sospeso"]["numero"], 7)
+        self.assertEqual(r.context["riepilogo"]["emesso"]["importo"], Decimal("14.68"))
+        self.assertContains(r, "⚠ Ancora sospeso")
+        r = uff.get("/primanota/sospesi/", {"data_da": "2026-10-01", "data_a": "2026-10-31", "stato": "emesso"})
+        self.assertEqual([s.identificativo for s in r.context["righe"]], ["SR030159225.289"])
+        r = uff.get("/primanota/giornata/10/2026-10-16/")
+        self.assertContains(r, "Scontrini sospesi (4)")
+        self.assertContains(r, "✓ Emesso 16/10 18:47 · scontrino 169")
+        self.assertEqual(self.client_per("pv@x").get("/primanota/sospesi/").status_code, 302)

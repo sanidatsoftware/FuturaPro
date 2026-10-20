@@ -137,6 +137,21 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
 <div class="card"><h2>Altri documenti</h2>{% for s in altre %}<p><strong>{{ s.tipo_documento }}</strong></p>{% include "primanota/_scansione.html" %}{% endfor %}</div>
 {% endif %}
 
+{% if sospesi %}
+<div class="card">
+    <h2>Scontrini sospesi ({{ sospesi|length }})</h2>
+    <table class="table">
+        <thead><tr><th>Ora</th><th>Cassa</th><th>Scontrino</th><th class="num">Importo</th><th>Stato</th></tr></thead>
+        <tbody>{% for s in sospesi %}
+            <tr><td>{{ s.ora|time:"H:i:s" }}</td><td>{{ s.cassa }}</td><td>{{ s.numero }}</td><td class="num">{{ s.importo }}</td>
+                <td>{% if s.stato == "emesso" %}<span class="badge badge-ok">✓ Emesso {{ s.emesso_data|date:"d/m" }} {{ s.emesso_ora|time:"H:i" }} · scontrino {{ s.numero_emesso }}</span>
+                    {% elif s.stato == "richiamato" %}<span class="badge badge-no">Richiamato, non emesso</span>
+                    {% else %}<span class="badge badge-red">⚠ Ancora sospeso</span>{% endif %}</td></tr>
+        {% endfor %}</tbody>
+    </table>
+</div>
+{% endif %}
+
 {% if storni %}
 <div class="card">
     <details><summary>Storni e annullamenti di riga ({{ storni|length }})</summary>

@@ -13,6 +13,7 @@ urlpatterns = [
     path("note/", views.note, name="primanota_note"),
     path("note/<int:nota_id>/chiudi/", views.chiudi_nota, name="primanota_chiudi_nota"),
     path("sysspy/", views.sysspy_archivio, name="primanota_sysspy"),
+    path("sospesi/", views.sospesi, name="primanota_sospesi"),
     path("sysspy/<int:file_id>/", views.sysspy_dettaglio, name="primanota_sysspy_dettaglio"),
     path("sysspy/<int:file_id>/scarica/", views.sysspy_scarica, name="primanota_sysspy_scarica"),
     path("condivisioni/", views.condivisioni, name="primanota_condivisioni"),

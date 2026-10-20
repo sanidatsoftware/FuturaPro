@@ -26,12 +26,17 @@ from django.conf import settings
 from django.db import close_old_connections, transaction
 from django.utils import timezone
 
-from .. import sysspy
-from ..models import Condivisione, DocumentoSysSpy, FileSysSpy, Pianificazione
+from .. import sri, sysspy
+from ..models import Condivisione, DocumentoSysSpy, FileSRI, FileSysSpy, Pianificazione, ScontrinoSospeso
 
 log = logging.getLogger(__name__)
 
 NOME_RE = re.compile(r"^SysSpy\.\d{8}\.\d+$", re.I)
+
+
+def _da_leggere(nome):
+    """I file della condivisione che interessano: SysSpy e scontrini sospesi (CPaammgg.SRI.CassaN)."""
+    return bool(NOME_RE.match(nome) or sri.NOME_RE.match(nome))
 
 _lock_negozi = {}
 _lock_globale = threading.Lock()
@@ -63,7 +68,7 @@ def decifra(valore):
 
 
 def _file_condivisione(cond):
-    """(percorso, nome, dimensione, mtime, lettore) per ogni SysSpy della condivisione."""
+    """(percorso, nome, dimensione, mtime, lettore) per ogni SysSpy e file dei sospesi della condivisione."""
     percorso = cond.percorso.strip()
     if percorso.startswith("\\\\") or percorso.startswith("//"):
         import smbclient
@@ -72,7 +77,7 @@ def _file_condivisione(cond):
         smbclient.register_session(server, username=cond.utente or None, password=decifra(cond.password_cifrata) or None)
         for radice, _, nomi in smbclient.walk(percorso):
             for nome in nomi:
-                if not NOME_RE.match(nome):
+                if not _da_leggere(nome):
                     continue
                 completo = radice.rstrip("\\/") + "\\" + nome
                 st = smbclient.stat(completo)
@@ -86,8 +91,8 @@ def _file_condivisione(cond):
         radice = Path(percorso)
         if not radice.is_dir():
             raise RuntimeError(f"Percorso non raggiungibile: {percorso}")
-        for f in radice.rglob("SysSpy.*"):
-            if f.is_file() and NOME_RE.match(f.name):
+        for f in radice.rglob("*"):
+            if f.is_file() and _da_leggere(f.name):
                 st = f.stat()
                 yield str(f), f.name, st.st_size, st.st_mtime, f.read_bytes
 
@@ -281,11 +286,43 @@ def importa_condivisione(cond, completa=False, lavoro=None, stop=None):
     return stato
 
 
+def archivia_sri(cond, origine, nome, dimensione, mtime, dati):
+    """
+    Salva il file dei sospesi e aggiorna gli scontrini: la sospensione crea lo scontrino, il richiamo e
+    la FINE RISTAMPA (emissione fiscale) lo completano, anche se arrivano dal file di un altro giorno o cassa.
+    Rileggere lo stesso file non cambia niente.
+    """
+    a = sri.analizza(nome, dati)
+    with transaction.atomic():
+        FileSRI.objects.update_or_create(
+            negozio_id=cond.negozio_id, percorso_origine=origine,
+            defaults={"codice_negozio": cond.codice_negozio, "nome": nome, "data": a["data_file"], "cassa": a["cassa"],
+                      "dimensione": dimensione, "modificato_il": mtime, "testo": a["testo"],
+                      "righe_non_lette": a["non_lette"]})
+        for e in a["eventi"]:
+            s, _ = ScontrinoSospeso.objects.get_or_create(
+                negozio_id=cond.negozio_id, identificativo=e["id"], defaults={"codice_negozio": cond.codice_negozio})
+            if e["tipo"] == "sospeso":
+                s.cassa, s.data, s.ora, s.numero, s.importo = e["cassa"], e["data"], e["ora"], e["numero"], e["importo"]
+            elif e["tipo"] == "richiamato":
+                s.richiamato_data, s.richiamato_ora, s.cassa_richiamo = e["data"], e["ora"], e["cassa"]
+            else:
+                s.emesso_data, s.emesso_ora, s.cassa_emissione = e["data"], e["ora"], e["cassa"]
+                s.numero_emesso, s.importo_emesso = e["numero"], e["importo"]
+            if s.data is None:   # richiamo letto prima della sospensione: data dall'identificativo
+                s.data = sri.data_sospensione(e["id"], e["data"])
+            s.save()
+    return a
+
+
 def _importa(cond, completa, stato, stop):
     try:
         noti = {} if completa else {
             o: (d, m) for o, d, m in FileSysSpy.objects.filter(negozio_id=cond.negozio_id)
             .values_list("percorso_origine", "dimensione", "modificato_il")}
+        if not completa:
+            noti.update({o: (d, m) for o, d, m in FileSRI.objects.filter(negozio_id=cond.negozio_id)
+                         .values_list("percorso_origine", "dimensione", "modificato_il")})
         for origine, nome, dimensione, mtime, leggi in _file_condivisione(cond):
             if stop is not None and stop.is_set():
                 break
@@ -294,7 +331,10 @@ def _importa(cond, completa, stato, stop):
                 stato["saltati"] += 1
                 continue
             try:
-                archivia(cond, origine, nome, dimensione, mtime, leggi())
+                if sri.NOME_RE.match(nome):
+                    archivia_sri(cond, origine, nome, dimensione, mtime, leggi())
+                else:
+                    archivia(cond, origine, nome, dimensione, mtime, leggi())
                 stato["importati"] += 1
             except Exception as exc:  # un file illeggibile non blocca gli altri
                 log.exception("Errore archiviando %s", origine)

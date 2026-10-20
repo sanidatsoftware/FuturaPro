@@ -12,7 +12,7 @@ from django.utils import timezone
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_POST
 
-from .models import (Condivisione, DestinatarioEmail, DocumentoSysSpy, FileSysSpy, Nota,
+from .models import (Condivisione, DestinatarioEmail, DocumentoSysSpy, FileSysSpy, Nota, ScontrinoSospeso,
                      Pianificazione, RegolaDocumento)
 from .services.regole import NON_RICHIESTA, obbligatoria, stato_giornate
 from .services import importazione
@@ -415,6 +415,7 @@ def giornata(request, negozio_id, giorno):
         precedente=(corrente - timedelta(days=1)).isoformat(), successivo=(corrente + timedelta(days=1)).isoformat(),
         sezioni=sezioni, altre=altre, files=files, casse=casse, error=error,
         storni=docs(DocumentoSysSpy.STORNO, DocumentoSysSpy.ANNULLAMENTO), pos_negate=docs(DocumentoSysSpy.POS_NEGATO),
+        sospesi=ScontrinoSospeso.objects.filter(negozio_id=negozio_id, data=giorno).order_by("ora"),
         note=Nota.objects.filter(negozio_id=negozio_id, data=giorno, versamento=False), tipi_nota=Nota.TIPI))
 
 
@@ -522,6 +523,42 @@ def sysspy_archivio(request):
     return render(request, "primanota/sysspy.html", _contesto(
         request, files=files, risultati=risultati, testo=testo, negozi=negozi, error=error,
         filtro_negozio=filtro_negozio, data_da=data_da, data_a=data_a))
+
+
+STATI_SOSPESI = OrderedDict([("", "Tutti"), ("sospeso", "Ancora sospesi"), ("richiamato", "Richiamati ma non emessi"),
+                              ("emesso", "Richiamati ed emessi")])
+
+
+@_accesso(solo_ufficio=True)
+def sospesi(request):
+    """Scontrini sospesi dalle casse: quelli ancora sospesi e quelli richiamati ed emessi fiscalmente."""
+    from .models import FileSRI
+
+    oggi = timezone.localdate()
+    data_a = _data(request.GET.get("data_a"), oggi.isoformat())
+    data_da = _data(request.GET.get("data_da"), (oggi - timedelta(days=30)).isoformat())
+    filtro_negozio = request.GET.get("negozio", "")
+    stato = request.GET.get("stato", "") if request.GET.get("stato", "") in STATI_SOSPESI else ""
+    elenco = ScontrinoSospeso.objects.filter(data__range=(data_da, data_a))
+    if filtro_negozio.isdigit():
+        elenco = elenco.filter(negozio_id=int(filtro_negozio))
+    tutti = list(elenco)
+    riepilogo = OrderedDict((k, {"etichetta": v, "numero": 0, "importo": Decimal("0")})
+                            for k, v in STATI_SOSPESI.items() if k)
+    for s in tutti:
+        riepilogo[s.stato]["numero"] += 1
+        riepilogo[s.stato]["importo"] += s.importo or 0
+    negozi = negozi_attivi_ordinati()
+    etichette = {n["id"]: etichetta_negozio(n) for n in negozi}
+    righe = [s for s in tutti if not stato or s.stato == stato]
+    for s in righe:
+        s.negozio_label = etichette.get(s.negozio_id, s.codice_negozio)
+    file_letti = FileSRI.objects.filter(data__range=(data_da, data_a))
+    if filtro_negozio.isdigit():
+        file_letti = file_letti.filter(negozio_id=int(filtro_negozio))
+    return render(request, "primanota/sospesi.html", _contesto(
+        request, righe=righe[:2000], riepilogo=riepilogo, stati=STATI_SOSPESI, stato=stato, negozi=negozi,
+        filtro_negozio=filtro_negozio, data_da=data_da, data_a=data_a, file_letti=file_letti.count()))
 
 
 @_accesso()
