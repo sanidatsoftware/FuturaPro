@@ -7,6 +7,7 @@ emesso dopo il richiamo è il documento con il numero della riga FINE RISTAMPA.
 """
 
 import re
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 
@@ -169,12 +170,16 @@ SOGLIA_TOTALE_DIVERSO = 0.6    # totale diverso ma almeno il 60% di articoli in 
 
 
 def _articoli(doc):
-    """Descrizioni degli articoli (senza importi) come multinsieme, per il confronto."""
+    """Descrizione → (quantità di righe, importo) degli articoli, per il confronto. Sconti e righe senza importo esclusi."""
     out = {}
     for riga in doc.get("articoli") or []:
-        descrizione = " ".join(re.sub(r"-?\d+,\d{2}\s*$", "", riga).split()).upper()
-        if descrizione:
-            out[descrizione] = out.get(descrizione, 0) + 1
+        m = re.search(r"(-?[\d.]*\d,\d{2})\s*$", riga)
+        importo = Decimal(m.group(1).replace(".", "").replace(",", ".")) if m else None
+        descrizione = " ".join(riga[:m.start()].split() if m else riga.split()).upper()
+        if not descrizione or importo is None or importo <= 0:
+            continue
+        n, totale = out.get(descrizione, (0, Decimal("0")))
+        out[descrizione] = (n + 1, totale + importo)
     return out
 
 
@@ -186,17 +191,24 @@ def _articoli_sr(negozio_id, identificativo):
     out = {}
     for a in (f.articoli if f else []):
         descrizione = " ".join(a["descrizione"].split()).upper()
-        if descrizione:
-            out[descrizione] = out.get(descrizione, 0) + 1
+        importo = Decimal(str(a.get("importo") or "0"))
+        if descrizione and importo > 0:
+            n, totale = out.get(descrizione, (0, Decimal("0")))
+            out[descrizione] = (n + 1, totale + importo)
     return out
 
 
 def _somiglianza(a, b):
-    """Articoli in comune sul totale del più lungo dei due scontrini (0-1); None se uno dei due non ne ha."""
+    """
+    Quanto dei due scontrini è in comune, pesato sugli importi (0-1): per ogni articolo uguale conta il
+    minore dei due importi, sul totale del più grande. Così 6 mazzi di prezzemolo e un mazzo solo non
+    risultano uguali. None se uno dei due non ha articoli leggibili.
+    """
     if not a or not b:
         return None
-    comuni = sum(min(n, b.get(k, 0)) for k, n in a.items())
-    return comuni / max(sum(a.values()), sum(b.values()))
+    comuni = sum(min(v[1], b[k][1]) for k, v in a.items() if k in b)
+    grande = max(sum(v[1] for v in a.values()), sum(v[1] for v in b.values()))
+    return float(comuni / grande) if grande else None
 
 
 def _ora_minuti(testo):

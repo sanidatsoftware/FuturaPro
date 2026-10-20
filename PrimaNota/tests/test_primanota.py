@@ -1258,8 +1258,14 @@ class TestRibattuti(Base):
             (11, "09:10", [("FINDUS 18 BAST.NUOVA", "5,40")])])))   # stesso totale ma nessun articolo in comune
         # Lo scontrino con lo stesso totale ma senza articoli in comune non è un candidato.
         self.assertEqual((s.stato, s.rib_numero, s.rib_importo), ("probabile", 10, Decimal("5.50")))
-        self.assertEqual(s.rib_motivo, "totale diverso, 100% di articoli in comune")
+        self.assertEqual(s.rib_motivo, "totale diverso, 98% di articoli in comune")
         self.assertEqual(s.rib_altri, [])
+
+    def test_stesso_articolo_in_quantita_diversa(self):
+        # Sospesi 6 pezzi (5,40), il giorno dopo uno solo dello stesso articolo (0,90): non è ribattuto.
+        s = self.importa(("SysSpy.20260529.2", sysspy_scontrini("29/05/2026", 2, [
+            (10, "18:26", [("TEPELENE ACQUA NAT.P", "0,90")])])))
+        self.assertEqual((s.stato, s.ribattuto), ("sospeso", ""))
 
     def test_niente_di_simile(self):
         s = self.importa(("SysSpy.20260529.2", sysspy_scontrini("29/05/2026", 2, [
