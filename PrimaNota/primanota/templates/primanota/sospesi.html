@@ -53,7 +53,7 @@ table.sospesi tr.dettaglio td{background:#f6f8fb}
 
 <div class="card">
     <table class="table sospesi">
-        <thead><tr><th>Negozio</th><th>Sospeso il</th><th>Cassa</th><th>Cassiere</th><th>Scontrino</th><th class="num">Importo</th><th>Stato</th>
+        <thead><tr><th>Negozio</th><th>Sospeso il</th><th>Cassa</th><th>Cassiere</th><th>Scontrino</th><th class="num">Importo</th><th>Stato</th><th>In cassa</th>
             <th>Richiamato</th><th>Emesso</th><th class="num">Importo emesso</th><th></th><th></th></tr></thead>
         <tbody>
         {% for s in righe %}
@@ -69,19 +69,24 @@ table.sospesi tr.dettaglio td{background:#f6f8fb}
                     {% elif s.stato == "probabile" %}<span class="badge badge-blu">↻? Probabilmente ribattuto</span>
                     {% elif s.stato == "richiamato" %}<span class="badge badge-no">Richiamato, non emesso</span>
                     {% else %}<span class="badge badge-red">⚠ Ancora sospeso</span>{% endif %}</td>
+                <td>{% if s.in_cassa == "attesa" %}<span class="badge badge-red" title="Il file SR è ancora nella cartella della cassa">in attesa</span>
+                    {% elif s.in_cassa == "richiamato" %}<span class="badge badge-ok" title="Il file SR ha l'estensione .RICH">richiamato</span>
+                    {% elif s.in_cassa == "rimosso" %}<span class="badge badge-grey" title="Il file SR non è più nella cartella della cassa">non più presente</span>
+                    {% else %}<span class="small">—</span>{% endif %}</td>
                 <td>{% if s.richiamato_data %}{{ s.richiamato_data|date:"d/m/Y" }} {{ s.richiamato_ora|time:"H:i:s" }}{% if s.cassa_richiamo != s.cassa %} · cassa {{ s.cassa_richiamo }}{% endif %}{% else %}—{% endif %}</td>
                 <td>{% if s.emesso_data %}{{ s.emesso_data|date:"d/m/Y" }} {{ s.emesso_ora|time:"H:i:s" }} · scontrino {{ s.numero_emesso|default:"—" }}{% if s.cassa_emissione != s.cassa %} · cassa {{ s.cassa_emissione }}{% endif %}{% if s.cassiere_emissione and s.cassiere_emissione != s.cassiere %}<br><span class="small">da {{ s.cassiere_emissione }}</span>{% endif %}{% elif s.ribattuto %}{{ s.rib_data|date:"d/m/Y" }} {{ s.rib_ora }} · cassa {{ s.rib_cassa }} · scontrino {{ s.rib_numero }}{% if s.cassiere_emissione %}<br><span class="small">da {{ s.cassiere_emissione }}</span>{% endif %}<br><span class="small">{{ s.rib_motivo }}{% if s.rib_altri %} · altri {{ s.rib_altri|length }} candidati{% endif %}</span>{% else %}—{% endif %}</td>
                 <td class="num">{% if s.importo_emesso is not None %}{{ s.importo_emesso|euro }}{% if s.differenza %}<br><span class="badge badge-no">{% if s.differenza > 0 %}+{% endif %}{{ s.differenza|euro }}</span>{% endif %}{% elif s.rib_importo is not None %}{{ s.rib_importo|euro }}{% if s.rib_importo != s.importo %}<br><span class="badge badge-no">diverso</span>{% endif %}{% else %}—{% endif %}</td>
                 <td><button class="btn btn-light" type="button" onclick="mostraScontrini(this, {{ s.id }})">Scontrini</button></td>
                 <td><a href="/primanota/giornata/{{ s.negozio_id }}/{{ s.data|date:'Y-m-d' }}/">Giornata</a></td>
             </tr>
-            <tr class="dettaglio" id="dettaglio-{{ s.id }}" hidden><td colspan="12"><div class="affiancati"></div></td></tr>
+            <tr class="dettaglio" id="dettaglio-{{ s.id }}" hidden><td colspan="13"><div class="affiancati"></div></td></tr>
         {% empty %}
-            <tr><td colspan="12">Nessuno scontrino sospeso per i filtri scelti.</td></tr>
+            <tr><td colspan="13">Nessuno scontrino sospeso per i filtri scelti.</td></tr>
         {% endfor %}
         </tbody>
     </table>
-    <p class="small">«Ancora sospeso»: nei file letti non c'è il richiamo. «Richiamato, non emesso»: richiamato in cassa ma senza la FINE RISTAMPA
+    <p class="small">«Ancora sospeso»: nei file letti non c'è il richiamo. «In cassa»: dal file SR della cassa (se la cartella è impostata),
+        «in attesa» il file c'è ancora, «richiamato» ha l'estensione .RICH, «non più presente» la cassa l'ha cancellato. «Richiamato, non emesso»: richiamato in cassa ma senza la FINE RISTAMPA
         (emissione fiscale). La differenza in giallo indica articoli aggiunti o tolti dopo il richiamo.
         «Scontrini» affianca il documento sospeso e quello emesso dopo il richiamo, presi dai SysSpy archiviati.
         «Ribattuto a mano»: senza richiamo, nei SysSpy dello stesso negozio (giorno della sospensione o successivo, qualsiasi cassa)
@@ -114,6 +119,12 @@ function mostraScontrini(bottone, id){
             div.append(h);
             if(v && v.motivo){ const p = document.createElement("p"); p.className = "small"; p.textContent = "Abbinato per: " + v.motivo; div.append(p); }
             if(v) div.append(pre);
+            if(v && v.file_sr){ const p = document.createElement("p"); p.className = "small";
+                p.textContent = `File SR della cassa: ${v.file_sr.stato} · ${v.file_sr.articoli} articoli · ${v.file_sr.totale_lordo.replace(".", ",")} € a prezzo pieno (senza promozioni)`;
+                div.append(p);
+                if(v.file_sr.testo){ const d2 = document.createElement("details"); const sm = document.createElement("summary");
+                    sm.textContent = "Articoli dal file SR"; const pr = document.createElement("div"); pr.className = "mono"; pr.textContent = v.file_sr.testo;
+                    d2.append(sm, pr); div.append(d2); } }
             if(v && v.altri && v.altri.length){ const p = document.createElement("p"); p.className = "small";
                 p.textContent = "Altri candidati: " + v.altri.map(a => `${a.data.split("-").reverse().join("/")} ${a.ora} cassa ${a.cassa} n. ${a.numero} (${a.importo.replace(".", ",")} €, ${a.motivo})`).join(" · ");
                 div.append(p); }

@@ -572,7 +572,8 @@ def sospesi(request):
                           + (f" · {s.cassiere}" if s.cassiere else "") + f" · documento {s.numero} · "
                           f"{str(s.importo).replace('.', ',')} EUR · {stato_testo}")   # il carattere della stampa non ha l'euro
             voci.append((s.negozio_label, didascalia, "testo",
-                         servizio.testo_scontrino(s.negozio_id, s.data, s.cassa, s.numero) or servizio.NON_TROVATO))
+                         servizio.testo_scontrino(s.negozio_id, s.data, s.cassa, s.numero)
+                         or servizio.testo_da_file_sr(s) or servizio.NON_TROVATO))
         try:
             per_pagina = int(request.GET.get("per_pagina", 4))
         except ValueError:
@@ -672,6 +673,7 @@ def condivisioni(request):
             cond, _ = Condivisione.objects.get_or_create(negozio_id=negozio_id, defaults={"codice_negozio": n["codice"]})
             cond.codice_negozio = str(n["codice"])
             cond.percorso = request.POST.get("percorso", "").strip()
+            cond.percorso_sospesi = request.POST.get("percorso_sospesi", "").strip()
             cond.utente = request.POST.get("utente", "").strip()
             cond.attiva = request.POST.get("attiva") == "on"
             # Password lasciata vuota = resta quella salvata.

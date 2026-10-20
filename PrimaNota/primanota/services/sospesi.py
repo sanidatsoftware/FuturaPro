@@ -55,11 +55,32 @@ def testo_scontrino(negozio_id, giorno, cassa, numero):
     return None
 
 
+def file_sr(s):
+    from ..models import FileSR
+    return FileSR.objects.filter(negozio_id=s.negozio_id, identificativo=s.identificativo).first()
+
+
+def testo_da_file_sr(s):
+    """Lo scontrino sospeso ricostruito dal file SR della cassa (se il SysSpy non lo contiene)."""
+    from .. import sr_file
+    f = file_sr(s)
+    return sr_file.testo(f.articoli, "Dal file SR della cassa") if f and f.articoli else None
+
+
 def scontrini(s):
     """Il documento sospeso e (se c'è) quello emesso dopo il richiamo, con didascalia e testo."""
+    from .. import sr_file
+    f = file_sr(s)
+    testo = testo_scontrino(s.negozio_id, s.data, s.cassa, s.numero)
     out = {"sospeso": {"titolo": f"Sospeso · cassa {s.cassa} · documento {s.numero} · {s.data:%d/%m/%Y} {s.ora:%H:%M}"
                                  if s.data and s.ora else "Sospeso",
-                       "testo": testo_scontrino(s.negozio_id, s.data, s.cassa, s.numero)}}
+                       "testo": testo or (sr_file.testo(f.articoli, "Dal file SR della cassa") if f and f.articoli else None)}}
+    if f:
+        out["sospeso"]["file_sr"] = {
+            "stato": {"attesa": "in attesa di richiamo", "richiamato": "richiamato (.RICH)",
+                      "rimosso": "non più presente in cassa"}[f.stato_in_cassa],
+            "articoli": len(f.articoli), "totale_lordo": str(f.totale_lordo or ""),
+            "testo": sr_file.testo(f.articoli) if testo and f.articoli else ""}
     if s.ribattuto and not s.emesso_data:
         etichetta = "Ribattuto" if s.ribattuto == s.RIBATTUTO else "Probabilmente ribattuto"
         out["emesso"] = {"titolo": f"{etichetta} · cassa {s.rib_cassa} · scontrino {s.rib_numero} · "
@@ -157,6 +178,19 @@ def _articoli(doc):
     return out
 
 
+def _articoli_sr(negozio_id, identificativo):
+    """Gli articoli dal file SR della cassa, se il documento sospeso non è nei SysSpy."""
+    from ..models import FileSR
+
+    f = FileSR.objects.filter(negozio_id=negozio_id, identificativo=identificativo).first()
+    out = {}
+    for a in (f.articoli if f else []):
+        descrizione = " ".join(a["descrizione"].split()).upper()
+        if descrizione:
+            out[descrizione] = out.get(descrizione, 0) + 1
+    return out
+
+
 def _somiglianza(a, b):
     """Articoli in comune sul totale del più lungo dei due scontrini (0-1); None se uno dei due non ne ha."""
     if not a or not b:
@@ -204,7 +238,7 @@ def abbina_ribattuti(negozio_id, dal=None):
                 s.save(update_fields=["ribattuto"])
             continue
         originale = next((d for c, d in del_giorno(s.data) if c == s.cassa and _numero_coincide(d["numero"], s.numero)), None)
-        articoli = _articoli(originale) if originale else {}
+        articoli = _articoli(originale) if originale else _articoli_sr(negozio_id, s.identificativo)
         ora_sospensione = s.ora.hour * 60 + s.ora.minute if s.ora else 0
         candidati = []
         for giorno in (s.data, s.data + timedelta(days=1)):

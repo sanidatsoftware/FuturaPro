@@ -63,14 +63,15 @@
 
 <div class="card">
     <table class="table">
-        <thead><tr><th>Negozio</th><th>Percorso</th><th>Utente</th><th>Password</th><th>Attiva</th><th></th><th>Ultima importazione</th><th></th></tr></thead>
+        <thead><tr><th>Negozio</th><th>Percorso SysSpy</th><th title="Cartella dei file SR degli scontrini sospesi, con le stesse credenziali">Cartella sospesi (SR)</th><th>Utente</th><th>Password</th><th>Attiva</th><th></th><th>Ultima importazione</th><th></th></tr></thead>
         <tbody>
         {% for n, c in righe %}
             <tr>
                 {# Un form non può avvolgere celle di tabella: i campi lo indicano con form="...". #}
                 <td><form method="post" id="cond-{{ n.id }}">{% csrf_token %}<input type="hidden" name="negozio_id" value="{{ n.id }}"></form>
                     <strong>{{ n.codice }}</strong> {{ n.descrizione }}</td>
-                <td><input form="cond-{{ n.id }}" name="percorso" value="{{ c.percorso|default:'' }}" style="width:300px"></td>
+                <td><input form="cond-{{ n.id }}" name="percorso" value="{{ c.percorso|default:'' }}" style="width:260px"></td>
+                <td><input form="cond-{{ n.id }}" name="percorso_sospesi" value="{{ c.percorso_sospesi|default:'' }}" style="width:220px" placeholder="facoltativa"></td>
                 <td><input form="cond-{{ n.id }}" name="utente" value="{{ c.utente|default:'' }}" style="width:140px"></td>
                 <td><input form="cond-{{ n.id }}" type="password" name="password" placeholder="{% if c.password_cifrata %}(salvata){% endif %}" style="width:120px" autocomplete="new-password"></td>
                 <td><input form="cond-{{ n.id }}" type="checkbox" name="attiva" {% if not c or c.attiva %}checked{% endif %}></td>

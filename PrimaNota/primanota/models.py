@@ -18,6 +18,8 @@ class Condivisione(models.Model):
     negozio_id = models.IntegerField(unique=True, help_text="Id della riga nella tabella Baserow Negozi")
     codice_negozio = models.CharField(max_length=20)
     percorso = models.CharField(max_length=500, help_text=r"\\server\share\cartella oppure /mnt/negozi/5048")
+    percorso_sospesi = models.CharField(max_length=500, blank=True,
+                                        help_text="Cartella dei file SR degli scontrini sospesi (stesse credenziali)")
     utente = models.CharField(max_length=200, blank=True)
     password_cifrata = models.TextField(blank=True)
     attiva = models.BooleanField(default=True)
@@ -339,6 +341,9 @@ class ScontrinoSospeso(models.Model):
     rib_somiglianza = models.FloatField(null=True, blank=True, help_text="Quota di articoli in comune (0-1)")
     rib_motivo = models.CharField(max_length=200, blank=True)
     rib_altri = models.JSONField(default=list, blank=True, help_text="Altri scontrini candidati")
+    # Dalla cartella dei file SR della cassa: «attesa» (file presente), «richiamato» (.RICH), «rimosso»
+    # (il file non c'è più), vuoto se la cartella non è configurata o il file non è mai stato visto.
+    in_cassa = models.CharField(max_length=12, blank=True)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["negozio_id", "identificativo"], name="sospeso_unico")]
@@ -350,7 +355,7 @@ class ScontrinoSospeso(models.Model):
             return self.EMESSO
         if self.ribattuto:
             return self.ribattuto
-        if self.richiamato_data:
+        if self.richiamato_data or self.in_cassa == "richiamato":
             return self.RICHIAMATO
         return self.SOSPESO
 
@@ -360,3 +365,30 @@ class ScontrinoSospeso(models.Model):
         if self.importo is None or self.importo_emesso is None:
             return None
         return self.importo_emesso - self.importo
+
+
+class FileSR(models.Model):
+    """Copia di un file SR della cassa (il carrello di uno scontrino sospeso), conservata anche dopo che la cassa lo cancella."""
+
+    negozio_id = models.IntegerField(db_index=True)
+    codice_negozio = models.CharField(max_length=20)
+    identificativo = models.CharField(max_length=40)
+    nome = models.CharField(max_length=60)
+    richiamato = models.BooleanField(default=False)
+    presente = models.BooleanField(default=True, help_text="Il file c'era nell'ultima lettura della cartella")
+    dimensione = models.BigIntegerField(default=0)
+    modificato_il = models.FloatField(default=0)
+    percorso_archivio = models.CharField(max_length=700, blank=True)
+    articoli = models.JSONField(default=list, blank=True)
+    totale_lordo = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    visto_il = models.DateTimeField(null=True, blank=True)
+    scomparso_il = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["negozio_id", "identificativo"], name="file_sr_unico")]
+
+    @property
+    def stato_in_cassa(self):
+        if self.richiamato:
+            return "richiamato"
+        return "attesa" if self.presente else "rimosso"

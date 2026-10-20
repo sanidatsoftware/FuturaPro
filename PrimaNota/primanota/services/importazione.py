@@ -26,8 +26,8 @@ from django.conf import settings
 from django.db import close_old_connections, transaction
 from django.utils import timezone
 
-from .. import sri, sysspy
-from ..models import Condivisione, DocumentoSysSpy, FileSRI, FileSysSpy, Pianificazione, ScontrinoSospeso
+from .. import sr_file, sri, sysspy
+from ..models import Condivisione, DocumentoSysSpy, FileSR, FileSRI, FileSysSpy, Pianificazione, ScontrinoSospeso
 
 log = logging.getLogger(__name__)
 
@@ -67,9 +67,13 @@ def decifra(valore):
         return ""
 
 
-def _file_condivisione(cond):
-    """(percorso, nome, dimensione, mtime, lettore) per ogni SysSpy e file dei sospesi della condivisione."""
-    percorso = cond.percorso.strip()
+def _file_condivisione(cond, percorso=None, accetta=None):
+    """
+    (percorso, nome, dimensione, mtime, lettore) per ogni SysSpy e file dei sospesi della condivisione,
+    oppure, con percorso e accetta, per i file di un'altra cartella (stesse credenziali).
+    """
+    percorso = (percorso or cond.percorso).strip()
+    accetta = accetta or _da_leggere
     if percorso.startswith("\\\\") or percorso.startswith("//"):
         import smbclient
 
@@ -77,7 +81,7 @@ def _file_condivisione(cond):
         smbclient.register_session(server, username=cond.utente or None, password=decifra(cond.password_cifrata) or None)
         for radice, _, nomi in smbclient.walk(percorso):
             for nome in nomi:
-                if not _da_leggere(nome):
+                if not accetta(nome):
                     continue
                 completo = radice.rstrip("\\/") + "\\" + nome
                 st = smbclient.stat(completo)
@@ -92,7 +96,7 @@ def _file_condivisione(cond):
         if not radice.is_dir():
             raise RuntimeError(f"Percorso non raggiungibile: {percorso}")
         for f in radice.rglob("*"):
-            if f.is_file() and _da_leggere(f.name):
+            if f.is_file() and accetta(f.name):
                 st = f.stat()
                 yield str(f), f.name, st.st_size, st.st_mtime, f.read_bytes
 
@@ -282,6 +286,8 @@ def importa_condivisione(cond, completa=False, lavoro=None, stop=None):
     cond.ultima_importazione = timezone.now()
     cond.ultimo_esito = (f"{stato['stato']}: {stato['importati']} importati, {stato['saltati']} già presenti, "
                          f"{stato['errori']} errori. {stato['messaggio']}").strip()
+    if stato.get("sospesi_sr"):
+        cond.ultimo_esito += f" · {stato['sospesi_sr']}"
     cond.save(update_fields=["ultima_importazione", "ultimo_esito"])
     return stato
 
@@ -315,6 +321,47 @@ def archivia_sri(cond, origine, nome, dimensione, mtime, dati):
     return a
 
 
+def importa_file_sr(cond, completa=False):
+    """
+    Legge la cartella dei file SR (scontrini sospesi ancora in cassa, .RICH se richiamati), ne archivia
+    una copia, segna quelli spariti e aggiorna lo stato «in cassa» dei sospesi. Restituisce un messaggio.
+    """
+    from django.utils import timezone
+
+    if not cond.percorso_sospesi.strip():
+        return ""
+    adesso = timezone.now()
+    noti = {f.identificativo: f for f in FileSR.objects.filter(negozio_id=cond.negozio_id)}
+    visti, nuovi = set(), 0
+    for origine, nome, dimensione, mtime, leggi in _file_condivisione(cond, cond.percorso_sospesi, sr_file.nome_valido):
+        ident, richiamato = sr_file.identificativo(nome)
+        visti.add(ident)
+        f = noti.get(ident)
+        if f and not completa and (f.dimensione, f.modificato_il, f.richiamato, f.presente) == (dimensione, mtime, richiamato, True):
+            continue
+        dati = leggi()
+        a = sr_file.analizza(nome, dati)
+        cartella = archivio_dir() / cond.codice_negozio / "sospesi_sr"
+        cartella.mkdir(parents=True, exist_ok=True)
+        copia = cartella / ident
+        copia.write_bytes(dati)
+        FileSR.objects.update_or_create(negozio_id=cond.negozio_id, identificativo=ident, defaults={
+            "codice_negozio": cond.codice_negozio, "nome": nome, "richiamato": richiamato, "presente": True,
+            "dimensione": dimensione, "modificato_il": mtime, "percorso_archivio": str(copia),
+            "articoli": a["articoli"], "totale_lordo": a["totale_lordo"], "visto_il": adesso, "scomparso_il": None})
+        nuovi += 1
+    # Quelli che la cassa ha cancellato restano nell'archivio, segnati come non più presenti.
+    spariti = FileSR.objects.filter(negozio_id=cond.negozio_id, presente=True).exclude(identificativo__in=visti)
+    n_spariti = spariti.update(presente=False, scomparso_il=adesso)
+    # Stato «in cassa» dei sospesi, per identificativo (è lo stesso del file SRI).
+    stati = {f.identificativo: f.stato_in_cassa for f in FileSR.objects.filter(negozio_id=cond.negozio_id)}
+    for s in ScontrinoSospeso.objects.filter(negozio_id=cond.negozio_id, identificativo__in=list(stati)):
+        if s.in_cassa != stati[s.identificativo]:
+            s.in_cassa = stati[s.identificativo]
+            s.save(update_fields=["in_cassa"])
+    return f"file SR: {len(visti)} in cassa, {nuovi} aggiornati, {n_spariti} non più presenti"
+
+
 def _importa(cond, completa, stato, stop):
     try:
         noti = {} if completa else {
@@ -343,6 +390,12 @@ def _importa(cond, completa, stato, stop):
                 stato["messaggio"] = f"{nome}: {exc}"
         stato["stato"] = "interrotta" if stop is not None and stop.is_set() else "completata"
         giorni_letti.discard(None)
+        if cond.percorso_sospesi.strip() and not (stop is not None and stop.is_set()):
+            try:
+                stato["sospesi_sr"] = importa_file_sr(cond, completa)
+            except Exception as exc:  # la cartella dei sospesi non deve bloccare i SysSpy
+                log.exception("File SR del negozio %s non letti", cond.codice_negozio)
+                stato["sospesi_sr"] = f"file SR non letti: {exc}"
         if stato["stato"] == "completata" and giorni_letti:
             # Sospesi senza richiamo: si cercano gli scontrini ribattuti a mano nei file appena letti
             # (dal giorno prima del più vecchio: il ribattuto può essere del giorno dopo la sospensione).

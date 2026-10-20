@@ -1280,3 +1280,66 @@ class TestComandoRibattuti(Base):
             call_command("importa_sysspy", "--ribattuti", stdout=uscita)
         self.assertIn("5048: ribattuti ricalcolati", uscita.getvalue())
         self.assertEqual(ScontrinoSospeso.objects.get(pk=s.pk).stato, "ribattuto")
+
+
+class TestFileSR(Base):
+    def test_lettura(self):
+        from primanota import sr_file
+        a = sr_file.analizza("SR010127317.289", (DATI / "sr_cassa" / "SR010127317.289").read_bytes())
+        self.assertEqual((a["identificativo"], a["richiamato"], len(a["articoli"]), a["totale_lordo"]),
+                         ("SR010127317.289", False, 9, Decimal("26.47")))   # il file SRI dice 25,77: 0,70 di promozioni
+        salsiccia = a["articoli"][4]
+        self.assertEqual((salsiccia["descrizione"], salsiccia["reparto"], salsiccia["importo"], salsiccia["peso"], salsiccia["unita"]),
+                         ("SALSICCIA COND.PROV/", "CARNE", "3.82", 0.386, "KG"))
+        self.assertEqual(sr_file.identificativo("SR030159225.289.RICH"), ("SR030159225.289", True))
+        self.assertFalse(sr_file.nome_valido("CP261016.SRI.Cassa1"))
+
+    def prepara(self):
+        share, cartella_sr = Path(self.archivio) / "share", Path(self.archivio) / "sr"
+        share.mkdir()
+        shutil.copytree(DATI / "sr_cassa", cartella_sr)
+        for f in (DATI / "sri").iterdir():
+            shutil.copy(f, share)
+        cond = Condivisione.objects.create(negozio_id=10, codice_negozio="5034", percorso=str(share), percorso_sospesi=str(cartella_sr))
+        return cond, cartella_sr
+
+    def test_importazione_stato_in_cassa_e_contenuto(self):
+        from primanota.models import FileSR, ScontrinoSospeso
+        cond, cartella_sr = self.prepara()
+        importazione.importa_condivisione(cond)
+        cond.refresh_from_db()
+        self.assertIn("file SR: 3 in cassa", cond.ultimo_esito)
+        stati = dict(ScontrinoSospeso.objects.values_list("identificativo", "in_cassa"))
+        self.assertEqual((stati["SR010127317.289"], stati["SR030159225.289"], stati["SR010083341.289"]), ("attesa", "richiamato", ""))
+        # La cassa cancella un file: resta nell'archivio del portale, segnato come non più presente.
+        (cartella_sr / "SR010127317.289").unlink()
+        importazione.importa_condivisione(cond)
+        f = FileSR.objects.get(identificativo="SR010127317.289")
+        self.assertEqual((f.presente, f.stato_in_cassa, bool(f.scomparso_il), Path(f.percorso_archivio).is_file()),
+                         (False, "rimosso", True, True))
+        self.assertEqual(ScontrinoSospeso.objects.get(identificativo="SR010127317.289").in_cassa, "rimosso")
+        # Senza SysSpy di quel giorno lo scontrino sospeso si ricostruisce dal file SR.
+        s = ScontrinoSospeso.objects.get(identificativo="SR010051105.289")
+        uff = self.client_per("ufficio@x")
+        d = uff.get(f"/primanota/sospesi/{s.id}/scontrini/").json()
+        self.assertTrue(d["sospeso"]["trovato"])
+        self.assertIn("Dal file SR della cassa", d["sospeso"]["testo"])
+        self.assertIn("SALSICCIA COND.PROV/", d["sospeso"]["testo"])
+        self.assertEqual(d["sospeso"]["file_sr"]["stato"], "in attesa di richiamo")
+        r = uff.get("/primanota/sospesi/", {"data_da": "2026-10-01", "data_a": "2026-10-31"})
+        self.assertContains(r, "<th>In cassa</th>")
+        self.assertContains(r, "non più presente")
+
+    def test_richiamato_in_cassa_senza_riga_nel_sri(self):
+        from primanota.models import ScontrinoSospeso
+        cond, cartella_sr = self.prepara()
+        (cartella_sr / "SR010051105.289").rename(cartella_sr / "SR010051105.289.RICH")
+        importazione.importa_condivisione(cond)
+        s = ScontrinoSospeso.objects.get(identificativo="SR010051105.289")
+        self.assertEqual((s.richiamato_data, s.in_cassa, s.stato), (None, "richiamato", "richiamato"))
+
+    def test_impostazione_della_cartella(self):
+        self.client_per("admin@x").post("/primanota/condivisioni/", {"negozio_id": 10, "percorso": r"\\192.168.1.50\SysSpy",
+                                                                      "percorso_sospesi": r"\\192.168.1.50\Sospesi", "attiva": "on"})
+        self.assertEqual(Condivisione.objects.get(negozio_id=10).percorso_sospesi, r"\\192.168.1.50\Sospesi")
+        self.assertContains(self.client_per("admin@x").get("/primanota/condivisioni/"), "Cartella sospesi (SR)")
