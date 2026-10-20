@@ -4,7 +4,7 @@ from django.core.management.base import BaseCommand
 
 from primanota.models import Condivisione
 from primanota.services.importazione import (
-    archivio_dir, esegui_pianificazione, importa_condivisione, importa_tutte, rielabora_archivio)
+    archivio_dir, blocco_rielaborazione, esegui_pianificazione, importa_condivisione, importa_tutte, rielabora_archivio)
 
 
 class Command(BaseCommand):
@@ -24,7 +24,11 @@ class Command(BaseCommand):
             if opzioni["negozio"]:
                 cond = Condivisione.objects.filter(codice_negozio=opzioni["negozio"]).first()
                 negozio_id = cond.negozio_id if cond else -1
-            esito = rielabora_archivio(negozio_id, scrivi=self.stdout.write)
+            with blocco_rielaborazione() as libero:
+                if not libero:
+                    self.stdout.write("Rielaborazione già in corso: questa non parte.")
+                    return
+                esito = rielabora_archivio(negozio_id, scrivi=lambda t: (self.stdout.write(t), self.stdout.flush()))
             self.stdout.write(f"Rielaborati {esito['file']} file, {esito['errori']} errori")
             return
         if opzioni["pianificato"]:

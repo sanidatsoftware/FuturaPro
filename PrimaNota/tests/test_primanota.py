@@ -401,8 +401,10 @@ class TestDivisioneEControlli(Base):
     def test_rielabora_archivio(self):
         self.importa_fixture()
         f = FileSysSpy.objects.get()
-        FileSysSpy.objects.filter(pk=f.pk).update(pagamenti={}, data_file=None)
-        self.assertEqual(importazione.rielabora_archivio(), {"file": 1, "errori": 0})
+        FileSysSpy.objects.filter(pk=f.pk).update(pagamenti={}, data_file=None, versione_analisi=0)
+        self.assertEqual(importazione.rielabora_archivio(processi=1), {"file": 1, "errori": 0})
+        # Riprende da dove era arrivata: i file già con la versione attuale non si rifanno.
+        self.assertEqual(importazione.rielabora_archivio(processi=1), {"file": 0, "errori": 0})
         f = FileSysSpy.objects.get()
         self.assertEqual((f.data_file, f.pagamenti), (date(2026, 5, 28), {"Carta Credito": "18.00"}))
 

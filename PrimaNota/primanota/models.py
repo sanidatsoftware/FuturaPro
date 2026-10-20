@@ -63,6 +63,7 @@ class FileSysSpy(models.Model):
     scontrini_trovati = models.IntegerField(default=0)
     totale_scontrini = models.DecimalField(max_digits=12, decimal_places=2, null=True)
     pagamenti = models.JSONField(default=dict, blank=True, help_text="Totale per tipo di pagamento negli scontrini")
+    versione_analisi = models.IntegerField(default=0, help_text="Versione delle regole con cui è stato letto il file")
     elenco_scontrini = models.JSONField(default=list, blank=True,
                                         help_text="[numero, ora, totale, pagato con POS] per spiegare le differenze")
 

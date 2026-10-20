@@ -20,6 +20,10 @@ import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
+# Da aumentare quando cambia il modo di leggere i file: la rielaborazione dell'archivio
+# rifà solo i file analizzati con una versione precedente.
+VERSIONE_ANALISI = 2
+
 NOME_FILE_RE = re.compile(r"^SysSpy\.(\d{8})\.(\d+)$", re.I)
 TIMESTAMP_RE = re.compile(r"^\s*(\d{2}/\d{2}/\d{4}) (\d{2}:\d{2})")
 DOC_RE = re.compile(r"^\s*(\d{2}/\d{2}/\d{4}) (\d{2}:\d{2})\s+DOC\.(\S+)")

@@ -372,14 +372,6 @@ def main():
         if not esegui([python, "manage.py", "check"], portale):
             raise RuntimeError("il controllo del portale ha trovato errori")
 
-        titolo("Rielaborazione dei SysSpy già archiviati")
-        # Divide per giornata i file già importati (es. la giornata del 12 finita nel file del 13)
-        # e calcola pagamenti e controlli nuovi. Legge solo l'archivio sul server: può durare qualche minuto.
-        print("  Può richiedere qualche minuto se l'archivio è grande…")
-        if esegui([python, "manage.py", "importa_sysspy", "--rielabora"], portale):
-            ok("archivio rielaborato")
-        else:
-            avviso("rielaborazione non riuscita: ripeterla dal portale (Condivisioni negozi > Rielabora archivio)")
         dai_a(utente, archivio)
     except Exception as exc:
         print(f"\n  ✗ {exc}\n  Rimetto a posto i file dalla copia di sicurezza…")
@@ -390,6 +382,19 @@ def main():
         if archivio.is_dir() and not any(archivio.iterdir()):
             archivio.rmdir()
         errore("Installazione annullata. Il portale è come prima.")
+
+    titolo("Rielaborazione dei SysSpy già archiviati (in background)")
+    # Divide per giornata i file già importati e ricalcola pagamenti e controlli. Con uno storico
+    # grande richiede tempo: gira in background con l'utente del portale e riprende da dove era
+    # arrivata se viene interrotta. L'installazione intanto prosegue.
+    log_rielabora = (portale / "logs" if (portale / "logs").is_dir() else archivio) / "primanota_rielaborazione.log"
+    comando = [python, "manage.py", "importa_sysspy", "--rielabora"]
+    if os.geteuid() == 0 and utente != "root":
+        comando = ["sudo", "-u", utente] + comando
+    with open(log_rielabora, "a") as uscita:
+        subprocess.Popen(comando, cwd=portale, stdout=uscita, stderr=subprocess.STDOUT, start_new_session=True)
+    dai_a(utente, log_rielabora)
+    ok(f"avviata: per seguirla  tail -f {log_rielabora}")
 
     if not args.senza_cron and crontab_prima is not None:
         titolo("Importazione automatica")

@@ -13,8 +13,10 @@ import fcntl
 import gzip
 import hashlib
 import logging
+import os
 import re
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -90,20 +92,30 @@ def _file_condivisione(cond):
                 yield str(f), f.name, st.st_size, st.st_mtime, f.read_bytes
 
 
-def archivia(cond, origine, nome, dimensione, mtime, dati):
+def _analizza_archiviato(percorso, nome):
+    """Per la rielaborazione in parallelo: legge e analizza un originale già archiviato."""
+    dati = Path(percorso).read_bytes()
+    return sysspy.analizza(nome, dati), hashlib.sha256(dati).hexdigest()
+
+
+def archivia(cond, origine, nome, dimensione, mtime, dati=None, analisi=None, sha=None, originale=None):
     """
-    Archivia un file già letto: l'originale una volta sola, poi una riga per ogni
-    giornata contenuta nel file (con il suo testo pulito). Restituisce le righe salvate.
+    Archivia un file: l'originale una volta sola, poi una riga per ogni giornata contenuta
+    nel file (con il suo testo pulito). Restituisce le righe salvate. Nella rielaborazione
+    si passano l'analisi già fatta e il percorso dell'originale, che non si riscrive.
     """
-    a = sysspy.analizza(nome, dati)
+    a = analisi or sysspy.analizza(nome, dati)
     data_file = a["data_file"]
-    cartella = archivio_dir() / cond.codice_negozio
-    cartella = cartella / (data_file.strftime("%Y/%m/%d") if data_file else "senza_data") / f"cassa_{a['cassa'] or 0}"
-    cartella.mkdir(parents=True, exist_ok=True)
-    originale = cartella / nome
-    if not originale.exists() or originale.read_bytes() != dati:
-        originale.write_bytes(dati)
-    sha = hashlib.sha256(dati).hexdigest()
+    if originale is None:
+        cartella = archivio_dir() / cond.codice_negozio
+        cartella = cartella / (data_file.strftime("%Y/%m/%d") if data_file else "senza_data") / f"cassa_{a['cassa'] or 0}"
+        cartella.mkdir(parents=True, exist_ok=True)
+        originale = cartella / nome
+        if not originale.exists() or originale.read_bytes() != dati:
+            originale.write_bytes(dati)
+    originale = Path(originale)
+    cartella = originale.parent
+    sha = sha or hashlib.sha256(dati).hexdigest()
 
     salvati = []
     with transaction.atomic():
@@ -113,7 +125,8 @@ def archivia(cond, origine, nome, dimensione, mtime, dati):
             giorno = g["data"]
             suffisso = "" if giorno == data_file else f".{giorno:%Y%m%d}"
             testo = cartella / f"{nome}{suffisso}.txt.gz"
-            with gzip.open(testo, "wt", encoding="utf-8") as fh:
+            # Compressione leggera: il testo compresso resta piccolo e si scrive molto più in fretta.
+            with gzip.open(testo, "wt", encoding="utf-8", compresslevel=3) as fh:
                 fh.write(g["testo"])
             v = g["valori_fiscali"]
             pos = g["chiusure_pos"]
@@ -146,6 +159,7 @@ def archivia(cond, origine, nome, dimensione, mtime, dati):
                 scontrini_trovati=len(g["scontrini"]),
                 totale_scontrini=g["totale_scontrini"],
                 pagamenti={k: str(val) for k, val in g["pagamenti"].items()},
+                versione_analisi=sysspy.VERSIONE_ANALISI,
                 elenco_scontrini=[
                     [d["numero"], d["ora"], str(d["totale"]) if d["totale"] is not None else None,
                      str(sum((v for k, v in d["pagamenti"].items() if k in sysspy.PAGAMENTI_POS), start=0)),
@@ -170,34 +184,59 @@ def archivia(cond, origine, nome, dimensione, mtime, dati):
     return salvati
 
 
-def rielabora_archivio(negozio_id=None, scrivi=None):
+def rielabora_archivio(negozio_id=None, scrivi=None, stato=None, stop=None, processi=None):
     """
-    Rilegge i SysSpy già archiviati (senza andare sulle condivisioni) con le regole
-    attuali: serve dopo un aggiornamento, ad esempio per dividere i file per giornata.
+    Rilegge i SysSpy già archiviati (senza andare sulle condivisioni) con le regole attuali.
+    Lavora solo sui file analizzati con una versione precedente: se viene interrotta,
+    alla ripartenza continua da dove era arrivata. L'analisi gira su più processi.
     """
-    righe = FileSysSpy.objects.order_by("negozio_id", "percorso_origine")
+    from concurrent.futures import ProcessPoolExecutor
+
+    righe = (FileSysSpy.objects.filter(versione_analisi__lt=sysspy.VERSIONE_ANALISI)
+             .order_by("negozio_id", "percorso_origine")
+             .values("negozio_id", "percorso_origine", "percorso_archivio", "nome_file", "dimensione",
+                     "modificato_il", "codice_negozio"))
     if negozio_id:
         righe = righe.filter(negozio_id=negozio_id)
-    visti, fatti, errori = set(), 0, 0
+    da_fare, visti = [], set()
+    for f in righe:
+        if (f["negozio_id"], f["percorso_origine"]) not in visti:
+            visti.add((f["negozio_id"], f["percorso_origine"]))
+            da_fare.append(f)
+    stato = stato if stato is not None else {}
+    stato.update(totale=len(da_fare), fatti=0, errori=0)
     condivisioni = {c.negozio_id: c for c in Condivisione.objects.all()}
-    for f in righe.values("negozio_id", "percorso_origine", "percorso_archivio", "nome_file", "dimensione",
-                          "modificato_il", "codice_negozio"):
-        chiave = (f["negozio_id"], f["percorso_origine"])
-        if chiave in visti:
-            continue
-        visti.add(chiave)
-        cond = condivisioni.get(f["negozio_id"]) or Condivisione(negozio_id=f["negozio_id"],
-                                                                 codice_negozio=f["codice_negozio"])
-        try:
-            dati = Path(f["percorso_archivio"]).read_bytes()
-            archivia(cond, f["percorso_origine"], f["nome_file"], f["dimensione"], f["modificato_il"], dati)
-            fatti += 1
-        except Exception as exc:
-            log.exception("Rielaborazione di %s", f["percorso_archivio"])
-            errori += 1
-            if scrivi:
-                scrivi(f"{f['percorso_archivio']}: {exc}")
-    return {"file": fatti, "errori": errori}
+    inizio = time.monotonic()
+    processi = processi or max(1, min(4, (os.cpu_count() or 2) - 1))
+    if scrivi:
+        scrivi(f"File da rielaborare: {len(da_fare)} (con {processi} processi)")
+
+    with ProcessPoolExecutor(max_workers=processi) as pool:
+        # Si mandano ai processi blocchi di file e si salvano man mano nel DB (un solo scrittore).
+        for blocco in range(0, len(da_fare), 200):
+            if stop is not None and stop.is_set():
+                break
+            gruppo = da_fare[blocco:blocco + 200]
+            futuri = [pool.submit(_analizza_archiviato, f["percorso_archivio"], f["nome_file"]) for f in gruppo]
+            for f, futuro in zip(gruppo, futuri):
+                cond = condivisioni.get(f["negozio_id"]) or Condivisione(
+                    negozio_id=f["negozio_id"], codice_negozio=f["codice_negozio"])
+                try:
+                    analisi, sha = futuro.result()
+                    archivia(cond, f["percorso_origine"], f["nome_file"], f["dimensione"], f["modificato_il"],
+                             analisi=analisi, sha=sha, originale=f["percorso_archivio"])
+                    stato["fatti"] += 1
+                except Exception as exc:
+                    log.exception("Rielaborazione di %s", f["percorso_archivio"])
+                    stato["errori"] += 1
+                    if scrivi:
+                        scrivi(f"{f['percorso_archivio']}: {exc}")
+            fatti = stato["fatti"] + stato["errori"]
+            if scrivi and fatti:
+                trascorsi = time.monotonic() - inizio
+                mancano = trascorsi / fatti * (len(da_fare) - fatti)
+                scrivi(f"{fatti} di {len(da_fare)} file, mancano circa {int(mancano // 60)} minuti")
+    return {"file": stato["fatti"], "errori": stato["errori"]}
 
 
 @contextmanager
@@ -367,17 +406,37 @@ def avvia_tutte_in_background(completa=False):
     return lavoro_id
 
 
+@contextmanager
+def blocco_rielaborazione():
+    """Una sola rielaborazione alla volta (comando, installazione o pulsante del portale)."""
+    archivio_dir().mkdir(parents=True, exist_ok=True)
+    with open(archivio_dir() / ".rielaborazione.lock", "w") as fh:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        yield True
+
+
 def avvia_rielaborazione_in_background():
     lavoro_id = f"rielabora-{int(timezone.now().timestamp())}"
-    LAVORI[lavoro_id] = {"stato": "in corso", "negozio": "archivio (rielaborazione)", "_stop": threading.Event()}
+    stop = threading.Event()
+    stato = LAVORI[lavoro_id] = {"stato": "in corso", "negozio": "archivio (rielaborazione)", "_stop": stop}
 
     def esegui():
         try:
-            esito = rielabora_archivio()
-            LAVORI[lavoro_id].update(stato="completata", importati=esito["file"], errori=esito["errori"],
-                                     messaggio=f"Rielaborati {esito['file']} file già archiviati")
+            with blocco_rielaborazione() as libero:
+                if not libero:
+                    stato.update(stato="errore", messaggio="Rielaborazione già in corso (comando o installazione)")
+                    return
+                # Nel portale un solo processo: il comando da terminale usa più processi ed è più veloce.
+                esito = rielabora_archivio(stato=stato, stop=stop, processi=1,
+                                           scrivi=lambda t: stato.update(messaggio=t))
+                stato.update(stato="interrotta" if stop.is_set() else "completata", importati=esito["file"],
+                             errori=esito["errori"])
         except Exception as exc:
-            LAVORI[lavoro_id].update(stato="errore", messaggio=str(exc))
+            stato.update(stato="errore", messaggio=str(exc))
         finally:
             close_old_connections()
 

@@ -23,6 +23,10 @@ PRIMA NOTA - INSTALLAZIONE AUTOMATICA
    - aggiunge al crontab il controllo dell'importazione automatica ogni 5 minuti:
      gli orari veri si decidono nel portale (log in
      /opt/tocal/logs/primanota_importazione.log);
+   - avvia in background la rielaborazione dei SysSpy gia' archiviati (divisione per
+     giornata, pagamenti, controlli): con uno storico grande dura a lungo, ma non blocca
+     ne' l'installazione ne' il portale e, se interrotta, riprende da dove era arrivata.
+     Per seguirla:  tail -f /opt/tocal/logs/primanota_rielaborazione.log
    - riavvia il servizio tocal.service e controlla che sia attivo.
 
    Si puo' rilanciare senza problemi: quello che e' gia' fatto viene saltato.
