@@ -22,29 +22,66 @@
 {% endif %}
 <div class="card">
     <h3>Testo completo <span class="small">(senza le prime 4 colonne)</span></h3>
-    <input id="cerca" placeholder="Cerca nella pagina e premi Invio" value="{{ request.GET.cerca }}" style="margin-bottom:10px;width:340px">
+    <div class="filters barra-cerca">
+        <input id="cerca" placeholder="Cerca nel testo" value="{{ request.GET.cerca }}" style="width:340px">
+        <button class="btn btn-dark" type="button" id="cercaPrec" title="Precedente (Maiusc+Invio)">▲ Precedente</button>
+        <button class="btn btn-orange" type="button" id="cercaSucc" title="Successivo (Invio)">▼ Successivo</button>
+        <span class="small" id="cercaConteggio"></span>
+    </div>
     <div class="mono" id="testo" style="max-height:900px">{{ testo }}</div>
 </div>
 {% endblock %}
+{% block style %}<style>
+#testo mark{background:#fff3a0}#testo mark.corrente{background:#ff9800;color:#fff}
+/* La barra di ricerca resta in vista mentre si scorre tra i risultati. */
+.barra-cerca{position:sticky;top:0;z-index:5;background:#fff;padding:8px 0;margin-bottom:6px;border-bottom:1px solid #e1e7ee}
+</style>{% endblock %}
 {% block script %}
 <script>
-// Evidenzia e porta in vista la prima riga che contiene il testo cercato.
+// Evidenzia tutte le occorrenze; Invio o «Successivo» passa alla seguente, Maiusc+Invio o «Precedente» torna indietro.
 (function(){
-    const box = document.getElementById("testo"), input = document.getElementById("cerca"), originale = box.textContent;
-    function cerca(){
+    const box = document.getElementById("testo"), input = document.getElementById("cerca");
+    const conteggio = document.getElementById("cercaConteggio"), originale = box.textContent;
+    let cercato = null, segni = [], corrente = -1;
+
+    function evidenzia(){
         const t = input.value.trim();
+        cercato = t;
+        segni = []; corrente = -1;
         box.textContent = originale;
+        conteggio.textContent = "";
         if(!t) return;
-        const i = originale.toLowerCase().indexOf(t.toLowerCase());
-        if(i < 0) return;
-        const mark = document.createElement("mark");
-        mark.textContent = originale.substr(i, t.length);
+        const basso = originale.toLowerCase(), tb = t.toLowerCase(), pezzi = document.createDocumentFragment();
+        let da = 0, i;
+        while((i = basso.indexOf(tb, da)) >= 0){
+            pezzi.append(originale.slice(da, i));
+            const m = document.createElement("mark");
+            m.textContent = originale.substr(i, t.length);
+            pezzi.append(m);
+            segni.push(m);
+            da = i + t.length;
+        }
+        pezzi.append(originale.slice(da));
         box.textContent = "";
-        box.append(originale.slice(0, i), mark, originale.slice(i + t.length));
-        mark.scrollIntoView({block:"center"});
+        box.append(pezzi);
+        if(!segni.length) conteggio.textContent = "Nessun risultato";
     }
-    input.addEventListener("keydown", e => { if(e.key === "Enter") cerca(); });
-    if(input.value) cerca();
+
+    function vai(passo){
+        if(input.value.trim() !== cercato) evidenzia();
+        if(!segni.length) return;
+        if(corrente >= 0) segni[corrente].classList.remove("corrente");
+        corrente = corrente < 0 ? (passo > 0 ? 0 : segni.length - 1)
+                                : (corrente + passo + segni.length) % segni.length;
+        segni[corrente].classList.add("corrente");
+        segni[corrente].scrollIntoView({block: "center"});
+        conteggio.textContent = `${corrente + 1} di ${segni.length}`;
+    }
+
+    input.addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); vai(e.shiftKey ? -1 : 1); } });
+    document.getElementById("cercaSucc").addEventListener("click", () => vai(1));
+    document.getElementById("cercaPrec").addEventListener("click", () => vai(-1));
+    if(input.value) vai(1);
 })();
 </script>
 {% endblock %}
