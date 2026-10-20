@@ -65,12 +65,13 @@ def elementi(sezione, negozio_id=None, data_da="", data_a="", contenuto="tutto")
             except Exception as exc:  # un allegato non scaricabile non blocca la stampa
                 elenco.append((etichetta, "testo", f"Allegato non disponibile:\n{exc}"))
 
+    # Per punto vendita (nell'ordine dei codici), poi per data.
     out = []
-    for (nid, giorno) in sorted(gruppi, key=lambda k: (k[1], chiave_negozio.get(k[0], 9999))):
+    for (nid, giorno) in sorted(gruppi, key=lambda k: (chiave_negozio.get(k[0], 9999), k[0], k[1])):
         nome = etichetta_negozio(negozi.get(nid)) or str(nid)
         data_fmt = date.fromisoformat(giorno).strftime("%d/%m/%Y")
         for didascalia, tipo, dati in gruppi[(nid, giorno)]:
-            out.append((f"{nome}  {data_fmt}  {didascalia}", tipo, dati))
+            out.append((nome, f"{data_fmt}  {didascalia}", tipo, dati))
     return out[:MAX_ELEMENTI]
 
 
@@ -96,26 +97,34 @@ def _testo(pagina, rect, testo):
         y += corpo * 1.15
 
 
+TESTATA = 30
+
+
 def genera_pdf(voci, per_pagina=4, titolo=""):
+    """Ogni punto vendita comincia su un foglio nuovo, con codice e nome in grassetto in testata."""
     colonne, righe_griglia = GRIGLIE.get(per_pagina, GRIGLIE[4])
     doc = pymupdf.open()
     larghezza = (A4.width - 2 * MARGINE) / colonne
-    altezza = (A4.height - 2 * MARGINE - 14) / righe_griglia
+    altezza = (A4.height - 2 * MARGINE - TESTATA) / righe_griglia
     if not voci:
         pagina = doc.new_page(width=A4.width, height=A4.height)
         pagina.insert_text((MARGINE, MARGINE + 20), f"{titolo}: nessun documento nel periodo scelto.",
                            fontname="helv", fontsize=11)
         return doc.tobytes()
     per_foglio = colonne * righe_griglia
-    for i, (didascalia, tipo, dati) in enumerate(voci):
-        posto = i % per_foglio
-        if posto == 0:
+    negozio_corrente, posto, foglio = None, per_foglio, 0
+    for negozio, didascalia, tipo, dati in voci:
+        if negozio != negozio_corrente or posto == per_foglio:
+            foglio = foglio + 1 if negozio == negozio_corrente else 1
+            negozio_corrente, posto = negozio, 0
             pagina = doc.new_page(width=A4.width, height=A4.height)
-            pagina.insert_text((MARGINE, MARGINE), f"{titolo}  -  foglio {i // per_foglio + 1}",
+            pagina.insert_text((MARGINE, MARGINE + 4), negozio[:70], fontname="hebo", fontsize=14)
+            pagina.insert_text((MARGINE, MARGINE + 18), f"{titolo}  -  foglio {foglio}",
                                fontname="helv", fontsize=8, color=(0.4, 0.4, 0.4))
         c, r = posto % colonne, posto // colonne
-        cella = pymupdf.Rect(MARGINE + c * larghezza, MARGINE + 14 + r * altezza,
-                             MARGINE + (c + 1) * larghezza, MARGINE + 14 + (r + 1) * altezza)
+        posto += 1
+        cella = pymupdf.Rect(MARGINE + c * larghezza, MARGINE + TESTATA + r * altezza,
+                             MARGINE + (c + 1) * larghezza, MARGINE + TESTATA + (r + 1) * altezza)
         interno = pymupdf.Rect(cella.x0 + 4, cella.y0 + 4, cella.x1 - 4, cella.y1 - 4)
         pagina.draw_rect(interno, color=(0.75, 0.75, 0.75), width=0.5)
         pagina.insert_text((interno.x0 + 3, interno.y0 + 8), didascalia[:110], fontname="helv", fontsize=7)

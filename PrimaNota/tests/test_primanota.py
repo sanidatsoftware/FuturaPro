@@ -498,3 +498,15 @@ class TestCasiReali(TestCase):
                            pagamenti={"Carta Credito": "6", "Bancomat": "4", "Buoni Pasto": "8"})
         self.assertEqual((carte.configurazione_non_riscosso, buoni.configurazione_non_riscosso), ("carte", "buoni"))
 
+
+class TestStampaPerNegozio(TestCase):
+    def test_ogni_negozio_su_fogli_suoi_con_testata(self):
+        import pymupdf
+        from primanota.services.stampa import genera_pdf
+        voci = [("5031 - Adrano", "17/10/2026  Cassa 3", "testo", "TOTALE GIORNALIERO 1,00"),
+                ("5031 - Adrano", "17/10/2026  Cassa 4", "testo", "TOTALE GIORNALIERO 2,00"),
+                ("5034 - Librino", "17/10/2026  Cassa 1", "testo", "TOTALE GIORNALIERO 3,00")]
+        doc = pymupdf.open(stream=genera_pdf(voci, per_pagina=4, titolo="Chiusure fiscali"), filetype="pdf")
+        self.assertEqual(doc.page_count, 2)   # il secondo negozio non sta sul foglio del primo
+        self.assertEqual([doc[i].get_text().splitlines()[0] for i in range(2)], ["5031 - Adrano", "5034 - Librino"])
+
