@@ -332,10 +332,15 @@ def importa_file_sr(cond, completa=False):
         return ""
     adesso = timezone.now()
     noti = {f.identificativo: f for f in FileSR.objects.filter(negozio_id=cond.negozio_id)}
-    visti, nuovi = set(), 0
-    for origine, nome, dimensione, mtime, leggi in _file_condivisione(cond, cond.percorso_sospesi, sr_file.nome_valido):
-        ident, richiamato = sr_file.identificativo(nome)
-        visti.add(ident)
+    # Un file per identificativo: se per un momento ci sono sia «SR…289» sia «SR…289.RICH», vale il .RICH.
+    per_ident = {}
+    for voce in _file_condivisione(cond, cond.percorso_sospesi, sr_file.nome_valido):
+        ident, richiamato = sr_file.identificativo(voce[1])
+        if ident not in per_ident or richiamato:
+            per_ident[ident] = voce
+    visti, nuovi = set(per_ident), 0
+    for ident, (origine, nome, dimensione, mtime, leggi) in per_ident.items():
+        richiamato = sr_file.identificativo(nome)[1]
         f = noti.get(ident)
         if f and not completa and (f.dimensione, f.modificato_il, f.richiamato, f.presente) == (dimensione, mtime, richiamato, True):
             continue

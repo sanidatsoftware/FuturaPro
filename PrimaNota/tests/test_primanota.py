@@ -1343,3 +1343,23 @@ class TestFileSR(Base):
                                                                       "percorso_sospesi": r"\\192.168.1.50\Sospesi", "attiva": "on"})
         self.assertEqual(Condivisione.objects.get(negozio_id=10).percorso_sospesi, r"\\192.168.1.50\Sospesi")
         self.assertContains(self.client_per("admin@x").get("/primanota/condivisioni/"), "Cartella sospesi (SR)")
+
+
+    def test_rich_e_file_in_attesa_insieme(self):
+        from primanota.models import FileSR, ScontrinoSospeso
+        cond, cartella_sr = self.prepara()
+        importazione.importa_condivisione(cond)
+        self.assertEqual(ScontrinoSospeso.objects.get(identificativo="SR010051105.289").in_cassa, "attesa")
+        # La cassa crea il .RICH prima di cancellare l'altro: vale il .RICH, in qualunque ordine arrivino.
+        shutil.copy(cartella_sr / "SR010051105.289", cartella_sr / "SR010051105.289.RICH")
+        importazione.importa_condivisione(cond)
+        f = FileSR.objects.get(identificativo="SR010051105.289")
+        self.assertEqual((f.richiamato, f.nome), (True, "SR010051105.289.RICH"))
+        self.assertEqual(ScontrinoSospeso.objects.get(identificativo="SR010051105.289").stato, "richiamato")
+        # Poi la cassa cancella tutti e due: resta «richiamato».
+        (cartella_sr / "SR010051105.289").unlink()
+        (cartella_sr / "SR010051105.289.RICH").unlink()
+        importazione.importa_condivisione(cond)
+        f.refresh_from_db()
+        self.assertEqual((f.presente, f.stato_in_cassa), (False, "richiamato"))
+        self.assertEqual(ScontrinoSospeso.objects.get(identificativo="SR010051105.289").in_cassa, "richiamato")
