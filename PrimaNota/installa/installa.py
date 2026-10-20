@@ -387,12 +387,13 @@ def main():
             archivio.rmdir()
         errore("Installazione annullata. Il portale è come prima.")
 
-    titolo("Rielaborazione dei SysSpy già archiviati (in background)")
+    titolo("Rielaborazione dei SysSpy già archiviati e scontrini ribattuti (in background)")
     # Divide per giornata i file già importati e ricalcola pagamenti e controlli. Con uno storico
     # grande richiede tempo: gira in background con l'utente del portale e riprende da dove era
     # arrivata se viene interrotta. L'installazione intanto prosegue.
     log_rielabora = (portale / "logs" if (portale / "logs").is_dir() else archivio) / "primanota_rielaborazione.log"
-    comando = [python, "manage.py", "importa_sysspy", "--rielabora"]
+    # Dopo, si cercano gli scontrini sospesi ribattuti a mano anche tra quelli già importati.
+    comando = ["sh", "-c", f'"{python}" manage.py importa_sysspy --rielabora; "{python}" manage.py importa_sysspy --ribattuti']
     if os.geteuid() == 0 and utente != "root":
         comando = ["sudo", "-u", utente] + comando
     with open(log_rielabora, "a") as uscita:

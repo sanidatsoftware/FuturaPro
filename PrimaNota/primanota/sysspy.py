@@ -226,6 +226,9 @@ def scontrini(elenco):
             "correzioni": sum((abs(importo(t)) for c, t in blocco
                                if c == "8234" and importo(t) is not None and not PAGAMENTO_ANNULLATO_RE.match(t)), Decimal("0")),
             "testo": _testo(elenco, inizio, i),
+            # Righe articolo (descrizione e importo): servono a riconoscere uno scontrino ribattuto.
+            "articoli": [t.strip() for c, t in blocco if c == "8233" and t.strip()],
+            "data": m.group(1),
         })
         inizio = i + 1
     return out

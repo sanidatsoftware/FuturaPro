@@ -310,6 +310,7 @@ class ScontrinoSospeso(models.Model):
     """Uno scontrino sospeso e, se avvenuti, il suo richiamo e l'emissione fiscale (FINE RISTAMPA)."""
 
     SOSPESO, RICHIAMATO, EMESSO = "sospeso", "richiamato", "emesso"
+    RIBATTUTO, PROBABILE = "ribattuto", "probabile"
 
     negozio_id = models.IntegerField(db_index=True)
     codice_negozio = models.CharField(max_length=20)
@@ -327,6 +328,17 @@ class ScontrinoSospeso(models.Model):
     cassa_emissione = models.IntegerField(null=True, blank=True)
     numero_emesso = models.IntegerField(null=True, blank=True)
     importo_emesso = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # Senza richiamo (es. problemi di rete) la spesa può essere stata ribattuta a mano: lo scontrino
+    # fiscale trovato nei SysSpy (stesso negozio, giorno della sospensione o successivo, qualsiasi cassa).
+    ribattuto = models.CharField(max_length=10, blank=True, choices=[(RIBATTUTO, "Ribattuto"), (PROBABILE, "Probabilmente ribattuto")])
+    rib_data = models.DateField(null=True, blank=True)
+    rib_ora = models.CharField(max_length=5, blank=True)
+    rib_cassa = models.IntegerField(null=True, blank=True)
+    rib_numero = models.IntegerField(null=True, blank=True)
+    rib_importo = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    rib_somiglianza = models.FloatField(null=True, blank=True, help_text="Quota di articoli in comune (0-1)")
+    rib_motivo = models.CharField(max_length=200, blank=True)
+    rib_altri = models.JSONField(default=list, blank=True, help_text="Altri scontrini candidati")
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["negozio_id", "identificativo"], name="sospeso_unico")]
@@ -336,6 +348,8 @@ class ScontrinoSospeso(models.Model):
     def stato(self):
         if self.emesso_data:
             return self.EMESSO
+        if self.ribattuto:
+            return self.ribattuto
         if self.richiamato_data:
             return self.RICHIAMATO
         return self.SOSPESO

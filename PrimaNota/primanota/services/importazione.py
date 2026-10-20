@@ -323,6 +323,7 @@ def _importa(cond, completa, stato, stop):
         if not completa:
             noti.update({o: (d, m) for o, d, m in FileSRI.objects.filter(negozio_id=cond.negozio_id)
                          .values_list("percorso_origine", "dimensione", "modificato_il")})
+        giorni_letti = set()
         for origine, nome, dimensione, mtime, leggi in _file_condivisione(cond):
             if stop is not None and stop.is_set():
                 break
@@ -332,15 +333,24 @@ def _importa(cond, completa, stato, stop):
                 continue
             try:
                 if sri.NOME_RE.match(nome):
-                    archivia_sri(cond, origine, nome, dimensione, mtime, leggi())
+                    giorni_letti.add(archivia_sri(cond, origine, nome, dimensione, mtime, leggi())["data_file"])
                 else:
-                    archivia(cond, origine, nome, dimensione, mtime, leggi())
+                    giorni_letti.update(f.data for f in archivia(cond, origine, nome, dimensione, mtime, leggi()))
                 stato["importati"] += 1
             except Exception as exc:  # un file illeggibile non blocca gli altri
                 log.exception("Errore archiviando %s", origine)
                 stato["errori"] += 1
                 stato["messaggio"] = f"{nome}: {exc}"
         stato["stato"] = "interrotta" if stop is not None and stop.is_set() else "completata"
+        giorni_letti.discard(None)
+        if stato["stato"] == "completata" and giorni_letti:
+            # Sospesi senza richiamo: si cercano gli scontrini ribattuti a mano nei file appena letti
+            # (dal giorno prima del più vecchio: il ribattuto può essere del giorno dopo la sospensione).
+            from .sospesi import abbina_ribattuti
+            try:
+                abbina_ribattuti(cond.negozio_id, dal=min(giorni_letti) - timedelta(days=1))
+            except Exception:  # l'abbinamento non deve far fallire l'importazione
+                log.exception("Abbinamento dei ribattuti del negozio %s non riuscito", cond.codice_negozio)
     except Exception as exc:
         log.exception("Importazione negozio %s fallita", cond.codice_negozio)
         stato.update(stato="errore", messaggio=str(exc))

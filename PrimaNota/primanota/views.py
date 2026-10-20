@@ -526,7 +526,8 @@ def sysspy_archivio(request):
 
 
 STATI_SOSPESI = OrderedDict([("", "Tutti"), ("sospeso", "Ancora sospesi"), ("richiamato", "Richiamati ma non emessi"),
-                              ("emesso", "Richiamati ed emessi")])
+                              ("emesso", "Richiamati ed emessi"), ("ribattuto", "Ribattuti a mano"),
+                              ("probabile", "Probabilmente ribattuti")])
 
 
 @xframe_options_sameorigin  # il PDF si apre nella finestra di stampa della pagina stessa
@@ -565,7 +566,8 @@ def sospesi(request):
         ordine = {n["id"]: i for i, n in enumerate(negozi)}
         voci = []
         for s in sorted(righe, key=lambda s: (ordine.get(s.negozio_id, 9999), s.data, s.ora)):
-            stato_testo = {"sospeso": "ancora sospeso", "richiamato": "richiamato, non emesso", "emesso": "emesso"}[s.stato]
+            stato_testo = {"sospeso": "ancora sospeso", "richiamato": "richiamato, non emesso", "emesso": "emesso",
+                           "ribattuto": "ribattuto a mano", "probabile": "probabilmente ribattuto"}[s.stato]
             didascalia = (f"{s.data:%d/%m/%Y} {s.ora:%H:%M:%S} · cassa {s.cassa}"
                           + (f" · {s.cassiere}" if s.cassiere else "") + f" · documento {s.numero} · "
                           f"{str(s.importo).replace('.', ',')} EUR · {stato_testo}")   # il carattere della stampa non ha l'euro

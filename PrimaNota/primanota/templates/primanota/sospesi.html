@@ -11,6 +11,9 @@
 table.sospesi tr.r-sospeso td{background:#fdecec}
 table.sospesi tr.r-richiamato td{background:#fff6d6}
 table.sospesi tr.r-emesso td{background:#e8f6ec}
+table.sospesi tr.r-ribattuto td{background:#e3effc}
+table.sospesi tr.r-probabile td{background:#f0f5fb}
+.badge-blu{background:#cde2fb;color:#184f95}
 table.sospesi tr.dettaglio td{background:#f6f8fb}
 .affiancati{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .affiancati h4{margin:0 0 6px;color:#2d4055}
@@ -62,11 +65,13 @@ table.sospesi tr.dettaglio td{background:#f6f8fb}
                 <td>{{ s.numero|default:"—" }} <span class="small">{{ s.identificativo }}</span></td>
                 <td class="num">{{ s.importo|euro }}</td>
                 <td>{% if s.stato == "emesso" %}<span class="badge badge-ok">✓ Emesso</span>
+                    {% elif s.stato == "ribattuto" %}<span class="badge badge-blu">↻ Ribattuto a mano</span>
+                    {% elif s.stato == "probabile" %}<span class="badge badge-blu">↻? Probabilmente ribattuto</span>
                     {% elif s.stato == "richiamato" %}<span class="badge badge-no">Richiamato, non emesso</span>
                     {% else %}<span class="badge badge-red">⚠ Ancora sospeso</span>{% endif %}</td>
                 <td>{% if s.richiamato_data %}{{ s.richiamato_data|date:"d/m/Y" }} {{ s.richiamato_ora|time:"H:i:s" }}{% if s.cassa_richiamo != s.cassa %} · cassa {{ s.cassa_richiamo }}{% endif %}{% else %}—{% endif %}</td>
-                <td>{% if s.emesso_data %}{{ s.emesso_data|date:"d/m/Y" }} {{ s.emesso_ora|time:"H:i:s" }} · scontrino {{ s.numero_emesso|default:"—" }}{% if s.cassa_emissione != s.cassa %} · cassa {{ s.cassa_emissione }}{% endif %}{% if s.cassiere_emissione and s.cassiere_emissione != s.cassiere %}<br><span class="small">da {{ s.cassiere_emissione }}</span>{% endif %}{% else %}—{% endif %}</td>
-                <td class="num">{% if s.importo_emesso is not None %}{{ s.importo_emesso|euro }}{% if s.differenza %}<br><span class="badge badge-no">{% if s.differenza > 0 %}+{% endif %}{{ s.differenza|euro }}</span>{% endif %}{% else %}—{% endif %}</td>
+                <td>{% if s.emesso_data %}{{ s.emesso_data|date:"d/m/Y" }} {{ s.emesso_ora|time:"H:i:s" }} · scontrino {{ s.numero_emesso|default:"—" }}{% if s.cassa_emissione != s.cassa %} · cassa {{ s.cassa_emissione }}{% endif %}{% if s.cassiere_emissione and s.cassiere_emissione != s.cassiere %}<br><span class="small">da {{ s.cassiere_emissione }}</span>{% endif %}{% elif s.ribattuto %}{{ s.rib_data|date:"d/m/Y" }} {{ s.rib_ora }} · cassa {{ s.rib_cassa }} · scontrino {{ s.rib_numero }}{% if s.cassiere_emissione %}<br><span class="small">da {{ s.cassiere_emissione }}</span>{% endif %}<br><span class="small">{{ s.rib_motivo }}{% if s.rib_altri %} · altri {{ s.rib_altri|length }} candidati{% endif %}</span>{% else %}—{% endif %}</td>
+                <td class="num">{% if s.importo_emesso is not None %}{{ s.importo_emesso|euro }}{% if s.differenza %}<br><span class="badge badge-no">{% if s.differenza > 0 %}+{% endif %}{{ s.differenza|euro }}</span>{% endif %}{% elif s.rib_importo is not None %}{{ s.rib_importo|euro }}{% if s.rib_importo != s.importo %}<br><span class="badge badge-no">diverso</span>{% endif %}{% else %}—{% endif %}</td>
                 <td><button class="btn btn-light" type="button" onclick="mostraScontrini(this, {{ s.id }})">Scontrini</button></td>
                 <td><a href="/primanota/giornata/{{ s.negozio_id }}/{{ s.data|date:'Y-m-d' }}/">Giornata</a></td>
             </tr>
@@ -78,7 +83,10 @@ table.sospesi tr.dettaglio td{background:#f6f8fb}
     </table>
     <p class="small">«Ancora sospeso»: nei file letti non c'è il richiamo. «Richiamato, non emesso»: richiamato in cassa ma senza la FINE RISTAMPA
         (emissione fiscale). La differenza in giallo indica articoli aggiunti o tolti dopo il richiamo.
-        «Scontrini» affianca il documento sospeso e quello emesso dopo il richiamo, presi dai SysSpy archiviati.</p>
+        «Scontrini» affianca il documento sospeso e quello emesso dopo il richiamo, presi dai SysSpy archiviati.
+        «Ribattuto a mano»: senza richiamo, nei SysSpy dello stesso negozio (giorno della sospensione o successivo, qualsiasi cassa)
+        c'è uno scontrino con lo stesso totale e gli stessi articoli. «Probabilmente ribattuto»: stesso totale con articoli diversi
+        o non leggibili, più scontrini uguali, oppure totale diverso con molti articoli in comune.</p>
 </div>
 {% endblock %}
 {% block script %}
@@ -103,7 +111,13 @@ function mostraScontrini(bottone, id){
             const div = document.createElement("div");
             const h = document.createElement("h4"), pre = document.createElement("div");
             h.textContent = v ? v.titolo : vuoto; pre.className = "mono"; pre.textContent = v ? v.testo : "";
-            div.append(h); if(v) div.append(pre); else { const p = document.createElement("p"); p.className = "small"; p.textContent = "Non ancora richiamato ed emesso."; div.append(p); }
+            div.append(h);
+            if(v && v.motivo){ const p = document.createElement("p"); p.className = "small"; p.textContent = "Abbinato per: " + v.motivo; div.append(p); }
+            if(v) div.append(pre);
+            if(v && v.altri && v.altri.length){ const p = document.createElement("p"); p.className = "small";
+                p.textContent = "Altri candidati: " + v.altri.map(a => `${a.data.split("-").reverse().join("/")} ${a.ora} cassa ${a.cassa} n. ${a.numero} (${a.importo.replace(".", ",")} €, ${a.motivo})`).join(" · ");
+                div.append(p); }
+            if(!v){ const p = document.createElement("p"); p.className = "small"; p.textContent = "Non richiamato e nessuno scontrino ribattuto trovato."; div.append(p); }
             return div;
         };
         box.append(pannello(d.sospeso, "Sospeso"), pannello(d.emesso, "Emesso"));

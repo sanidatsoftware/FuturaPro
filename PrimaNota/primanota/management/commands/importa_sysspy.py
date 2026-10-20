@@ -15,10 +15,27 @@ class Command(BaseCommand):
         parser.add_argument("--completa", action="store_true", help="Rilegge anche i file già archiviati")
         parser.add_argument("--rielabora", action="store_true",
                             help="Rilegge i file già archiviati (senza condivisioni) con le regole attuali")
+        parser.add_argument("--ribattuti", action="store_true",
+                            help="Ricalcola gli scontrini sospesi ribattuti a mano (ultimi 120 giorni), senza importare")
         parser.add_argument("--pianificato", action="store_true",
                             help="Per il crontab: lavora solo agli orari decisi nel portale (Condivisioni negozi)")
 
     def handle(self, *args, **opzioni):
+        if opzioni["ribattuti"]:
+            from datetime import timedelta
+
+            from django.utils import timezone
+
+            from primanota.models import ScontrinoSospeso
+            from primanota.services.sospesi import abbina_ribattuti
+            dal = timezone.localdate() - timedelta(days=120)
+            negozi = ScontrinoSospeso.objects.filter(data__gte=dal)
+            if opzioni["negozio"]:
+                negozi = negozi.filter(codice_negozio=opzioni["negozio"])
+            for negozio_id, codice in negozi.values_list("negozio_id", "codice_negozio").distinct():
+                abbina_ribattuti(negozio_id, dal=dal)
+                self.stdout.write(f"{codice}: ribattuti ricalcolati")
+            return
         if opzioni["rielabora"]:
             negozio_id = None
             if opzioni["negozio"]:

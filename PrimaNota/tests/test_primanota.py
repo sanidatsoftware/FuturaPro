@@ -1192,3 +1192,91 @@ class TestContenutoScontriniSospesi(Base):
         self.assertIn("TEPELENE ACQUA NAT.P", testo)   # il contenuto dello scontrino sospeso
         self.assertIn("documento 2", testo)
         self.assertIn("Scontrino non trovato nel SysSpy", testo)   # il secondo non ha documento
+
+
+def sysspy_scontrini(giorno, cassa, scontrini):
+    """SysSpy minimo: scontrini (numero, «HH:MM», [(articolo, importo)]) di una cassa in un giorno «gg/mm/aaaa»."""
+    righe = []
+    for numero, ora, articoli in scontrini:
+        totale = sum(Decimal(i.replace(",", ".")) for _, i in articoli)
+        righe += ["8232                  TO.CAL. SRL", f"8232                    CASSA {cassa:02d}",
+                  "8232                                           Euro"]
+        righe += [f"8233    {a:<20}{i:>19}" for a, i in articoli]
+        righe += ["8236 ----------------------------------------------",
+                  f"8236 TOTALE EURO{str(totale).replace('.', ','):>35}",
+                  f"8243 CASSA{str(totale).replace('.', ','):>41}", "8232 CASSIERE 200",
+                  f"8232 {giorno} {ora}                 DOC.1105-{numero:04d}", "8232 "]
+    return "\n".join(righe) + "\n"
+
+
+class TestRibattuti(Base):
+    """Sospeso: documento 0002 del 28/05 cassa 1 (TEPELENE ACQUA NAT.P 5,40, alle 11:33), mai richiamato."""
+
+    def importa(self, *file_extra):
+        cartella = Path(self.archivio) / "share"
+        cartella.mkdir()
+        shutil.copy(DATI / "SysSpy.20260528.1", cartella)
+        (cartella / "CP260528.SRI.Cassa1").write_text("SOSP.SCONTRINO  : SR010002113.148 Ora: 113300 Cassa: 1 Sct: 0002 Eur.: 5,40\n")
+        for nome, testo in file_extra:
+            (cartella / nome).write_text(testo)
+        importazione.importa_condivisione(Condivisione.objects.create(negozio_id=10, codice_negozio="5048", percorso=str(cartella)))
+        from primanota.models import ScontrinoSospeso
+        return ScontrinoSospeso.objects.get(identificativo="SR010002113.148")
+
+    def test_ribattuto_il_giorno_dopo_su_un_altra_cassa(self):
+        s = self.importa(("SysSpy.20260529.2", sysspy_scontrini("29/05/2026", 2, [
+            (9, "08:40", [("SAPONE MARSIGLIA", "5,40")]),          # stesso totale, articoli diversi: meno buono
+            (10, "09:05", [("TEPELENE ACQUA NAT.P", "5,40")])])))   # stesso totale e stesso articolo
+        self.assertEqual((s.stato, s.rib_data, s.rib_cassa, s.rib_numero, s.rib_importo),
+                         ("ribattuto", date(2026, 5, 29), 2, 10, Decimal("5.40")))
+        self.assertEqual(s.rib_motivo, "stesso totale e stessi articoli")
+        self.assertEqual([a["numero"] for a in s.rib_altri], ["9"])
+        # Nella pagina: stato, scontrino ribattuto affiancato, escluso dal PDF degli ancora sospesi.
+        uff = self.client_per("ufficio@x")
+        r = uff.get("/primanota/sospesi/", {"data_da": "2026-05-01", "data_a": "2026-05-31"})
+        self.assertContains(r, "↻ Ribattuto a mano")
+        self.assertContains(r, 'class="r-ribattuto"')
+        d = uff.get(f"/primanota/sospesi/{s.id}/scontrini/").json()
+        self.assertIn("Ribattuto · cassa 2 · scontrino 10", d["emesso"]["titolo"])
+        self.assertIn("DOC.1105-0010", d["emesso"]["testo"])
+        r = uff.get("/primanota/sospesi/", {"data_da": "2026-05-01", "data_a": "2026-05-31", "stato": "sospeso"})
+        self.assertEqual(r.context["righe"], [])
+
+    def test_probabili(self):
+        # Due scontrini uguali: probabilmente ribattuto (il primo dopo la sospensione), con l'altro candidato.
+        s = self.importa(("SysSpy.20260528.3", sysspy_scontrini("28/05/2026", 3, [
+            (5, "11:00", [("TEPELENE ACQUA NAT.P", "5,40")]),       # prima della sospensione: non conta
+            (6, "11:50", [("TEPELENE ACQUA NAT.P", "5,40")]),
+            (7, "12:30", [("TEPELENE ACQUA NAT.P", "5,40")])])))
+        self.assertEqual((s.stato, s.rib_numero), ("probabile", 6))
+        self.assertIn("più scontrini uguali", s.rib_motivo)
+        self.assertEqual([a["numero"] for a in s.rib_altri], ["7"])
+
+    def test_totale_diverso_con_gli_stessi_articoli(self):
+        s = self.importa(("SysSpy.20260529.2", sysspy_scontrini("29/05/2026", 2, [
+            (10, "09:05", [("TEPELENE ACQUA NAT.P", "5,50")]),
+            (11, "09:10", [("FINDUS 18 BAST.NUOVA", "5,40")])])))   # stesso totale ma nessun articolo in comune
+        self.assertEqual((s.stato, s.rib_numero, s.rib_importo), ("probabile", 11, Decimal("5.40")))
+        self.assertEqual(s.rib_motivo, "stesso totale, articoli diversi")
+        self.assertEqual(s.rib_altri[0]["motivo"], "totale diverso, 100% di articoli in comune")
+
+    def test_niente_di_simile(self):
+        s = self.importa(("SysSpy.20260529.2", sysspy_scontrini("29/05/2026", 2, [
+            (10, "09:05", [("PANE", "1,20"), ("LATTE", "1,50")])])))
+        self.assertEqual((s.stato, s.ribattuto), ("sospeso", ""))
+
+
+class TestComandoRibattuti(Base):
+    importa = TestRibattuti.importa
+
+    def test_ricalcolo_da_riga_di_comando(self):
+        from io import StringIO
+        from django.core.management import call_command
+        from primanota.models import ScontrinoSospeso
+        s = self.importa(("SysSpy.20260529.2", sysspy_scontrini("29/05/2026", 2, [(10, "09:05", [("TEPELENE ACQUA NAT.P", "5,40")])])))
+        ScontrinoSospeso.objects.filter(pk=s.pk).update(ribattuto="")
+        uscita = StringIO()
+        with mock.patch("django.utils.timezone.localdate", return_value=date(2026, 6, 30)):
+            call_command("importa_sysspy", "--ribattuti", stdout=uscita)
+        self.assertIn("5048: ribattuti ricalcolati", uscita.getvalue())
+        self.assertEqual(ScontrinoSospeso.objects.get(pk=s.pk).stato, "ribattuto")
