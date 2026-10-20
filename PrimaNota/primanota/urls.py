@@ -27,6 +27,7 @@ urlpatterns = [
     path("statistiche/pdf/", views.statistiche_pdf, name="primanota_statistiche_pdf"),
     path("buoni-pasto/", views.buoni_pasto, name="primanota_buoni_pasto"),
     path("prima-nota/", views.prima_nota, name="primanota_prima_nota"),
+    path("fasce-orarie/", views.fasce_orarie, name="primanota_fasce_orarie"),
     path("buoni-pasto/collegamento/", views.buoni_pasto_collegamento, name="primanota_buoni_pasto_collegamento"),
     path("impostazioni-email/", views.impostazioni_email, name="primanota_impostazioni_email"),
     path("importazione/<str:lavoro>/", views.stato_importazione, name="primanota_importazione"),

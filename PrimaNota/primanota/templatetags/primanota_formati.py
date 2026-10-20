@@ -38,3 +38,22 @@ def quota(valore, massimo):
         return f"{float(valore) / float(massimo) * 100:.2f}" if float(massimo) else "0"
     except (TypeError, ValueError, ZeroDivisionError):
         return "0"
+
+
+@register.filter
+def get_item(contenitore, chiave):
+    """Elemento di un dizionario o di una lista: {{ scala|get_item:livello }}."""
+    try:
+        return contenitore[chiave]
+    except (KeyError, IndexError, TypeError):
+        return ""
+
+
+@register.filter
+def cifra(valore, misura):
+    """Numero di una matrice: importi con due decimali, pezzi e clienti interi (o un decimale nelle medie)."""
+    from ..services.fasce_orarie import formato
+    try:
+        return formato(Decimal(str(valore)), misura)
+    except (InvalidOperation, ValueError, TypeError):
+        return "—"

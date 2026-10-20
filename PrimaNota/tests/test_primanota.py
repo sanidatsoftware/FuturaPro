@@ -900,3 +900,72 @@ class TestPrimaNota(Base):
             r = self.client_per("ufficio@x").get("/primanota/prima-nota/")
         self.assertEqual(self.query, [])
         self.assertContains(r, "Consulta un punto vendita")
+
+
+class TestFasceOrarie(Base):
+    # (codice, descrizione, ora, valore, pezzi, clienti, giorni) come dalle viste del database Statistiche
+    NEGOZI = [("5031", "PV ADRANO", 8, Decimal("1200.50"), 600, 90, 7), ("5031", "PV ADRANO", 9, Decimal("1800.00"), 900, 120, 7),
+              ("5048", "PV MOTTA", 9, Decimal("700.00"), 300, 50, 6), ("5048", "PV MOTTA", 18, Decimal("2100.00"), 1000, 150, 6)]
+    REPARTI = [("10", "ORTOFRUTTA", 9, Decimal("500"), 200, 80, 7), ("20", "MACELLERIA", 9, Decimal("2000"), 1000, 100, 7),
+               ("20", "MACELLERIA", 18, Decimal("2100"), 1000, 120, 6)]
+
+    def esegui_finto(self):
+        def esegui(c, sql, parametri=(), dizionari=False):
+            self.query.append((sql, parametri))
+            if "DescrizioneReparti" in sql:
+                return [("10", "ORTOFRUTTA"), ("20", "MACELLERIA"), ("3", "PANE")]
+            return self.REPARTI if "View_StatFascieOrarieReparti" in sql else self.NEGOZI
+        self.query = []
+        return mock.patch.multiple("primanota.services.fasce_orarie", esegui=esegui, configurazione=lambda: {"host": "x"})
+
+    def test_per_punto_vendita(self):
+        uff = self.client_per("ufficio@x")
+        with self.esegui_finto():
+            r = uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19"})
+            self.assertEqual(self.query, [])   # senza «Cerca» nessuna query
+            r = uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19", "pv": ["5031", "5048"], "cerca": "1"})
+        sql, parametri = self.query[0]
+        self.assertEqual(parametri, ("20261013", "20261020", "5031", "5048"))   # fino a fine giornata del 19
+        self.assertIn("NumNegozio IN (%s, %s)", sql)
+        ris, tab = r.context["risultato"], r.context["tab"]
+        self.assertEqual(tab["ore"], ["08-09", "09-10", "18-19"])
+        self.assertEqual(ris["totale"], {"valore": Decimal("5800.50"), "pezzi": 2800, "clienti": 410})
+        self.assertEqual(r.context["ora_di_punta"], "09-10")   # 1800 + 700
+        self.assertEqual([x["etichetta"] for x in tab["righe"]], ["5031 PV ADRANO", "5048 PV MOTTA"])
+        self.assertEqual(tab["righe"][1]["celle"][0], (Decimal("0"), None))   # Motta alle 8: niente
+        self.assertEqual(tab["righe"][1]["celle"][2][1], 6)   # la cella più alta ha il colore più scuro
+        self.assertContains(r, "2.100,00")
+        with self.esegui_finto():
+            r = uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19", "cerca": "1",
+                                                    "misura": "pezzi", "media": "1"})
+        self.assertEqual(r.context["tab"]["righe"][0]["totale"], Decimal("1500") / 7)
+        self.assertContains(r, "214,3")   # 1500 pezzi in 7 giorni
+
+    def test_per_reparto_clienti_dai_negozi(self):
+        uff = self.client_per("ufficio@x")
+        with self.esegui_finto():
+            r = uff.get("/primanota/fasce-orarie/", {"vista": "reparti", "data_da": "2026-10-13", "data_a": "2026-10-19",
+                                                    "reparto": ["10", "20"], "cerca": "1", "misura": "clienti"})
+        sql_reparti = next(s for s, p in self.query if "View_StatFascieOrarieReparti" in s)
+        self.assertIn("CodRepartoVenditeReparto IN (%s, %s)", sql_reparti)
+        ris = r.context["risultato"]
+        self.assertEqual([e["etichetta"] for e in ris["righe"]], ["10 ORTOFRUTTA", "20 MACELLERIA"])
+        # I clienti totali per ora sono quelli dei negozi (120 + 50 alle 9), non 80 + 100 dei reparti.
+        self.assertEqual(ris["per_ora"][9]["clienti"], 170)
+        self.assertContains(r, "PANE")   # elenco dei reparti nei filtri
+        self.assertContains(r, "lo stesso cliente compra in più reparti")
+
+    def test_stampe_e_accesso(self):
+        import pymupdf
+        uff = self.client_per("ufficio@x")
+        with self.esegui_finto():
+            csv = uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19", "formato": "csv"})
+            pdf = uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19", "formato": "pdf"})
+        righe = csv.content.decode("utf-8-sig").splitlines()
+        self.assertEqual(righe[0], "Punto vendita;08-09;09-10;18-19;Totale")
+        self.assertEqual(righe[1], "5031 PV ADRANO;1.200,50;1.800,00;0,00;3.000,50")
+        self.assertIn("Fasce_orarie_negozi_Tutti_dal_2026-10-13_al_2026-10-19_valore.pdf", pdf["Content-Disposition"])
+        testo = pymupdf.open(stream=pdf.content, filetype="pdf")[0].get_text()
+        self.assertIn("5.800,50", testo)
+        self.assertEqual(self.client_per("pv@x").get("/primanota/fasce-orarie/").status_code, 302)
+        self.assertContains(uff.get("/primanota/"), "Vendite per Fasce Orarie")

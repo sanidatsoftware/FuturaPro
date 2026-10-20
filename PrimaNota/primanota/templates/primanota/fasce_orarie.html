@@ -1,0 +1,158 @@
+{% extends "primanota/base.html" %}
+{% load primanota_formati %}
+{% block title %}Vendite per Fasce Orarie{% endblock %}
+{% block style %}
+<style>
+.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.scelta{border:1px solid #ced7e2;border-radius:8px;background:#fff;max-height:130px;overflow:auto;padding:6px 10px;min-width:280px;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:2px 14px}
+.scelta label{font-size:13px;display:flex;gap:6px;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpis-stat{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px}
+.kpi-stat{background:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 4px 16px rgba(0,0,0,.08)}
+.kpi-stat strong{display:block;font-size:22px;color:#2d4055;line-height:1.1}
+.kpi-stat span{display:block;margin-top:6px;font-size:11px;text-transform:uppercase;font-weight:bold;color:#667085}
+.matrice-box{overflow-x:auto}
+table.matrice{border-collapse:separate;border-spacing:2px;font-size:12.5px;width:100%}
+table.matrice th{background:#2d4055;color:#fff;padding:6px 8px;white-space:nowrap;font-size:12px;text-align:right}
+table.matrice th:first-child,table.matrice td:first-child{position:sticky;left:0;z-index:1;text-align:left}
+table.matrice td{padding:6px 8px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;border-radius:4px}
+table.matrice td:first-child{background:#fff;color:#263238;font-weight:bold;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+table.matrice tr.totale td{background:#eef1f4;font-weight:bold;color:#2d4055}
+table.matrice td.tot{background:#eef1f4;font-weight:bold;color:#2d4055}
+.legenda-scala{display:flex;align-items:center;gap:6px;font-size:12px;color:#667085;margin-top:10px}
+.legenda-scala i{width:26px;height:12px;border-radius:3px;display:block}
+#curva svg{width:100%;height:240px;display:block}
+#tip{position:fixed;pointer-events:none;background:#1f2937;color:#fff;font-size:12px;padding:6px 9px;border-radius:6px;display:none;z-index:50;white-space:nowrap}
+</style>
+{% endblock %}
+{% block content %}
+<div class="top-actions">
+    <h1>Vendite per Fasce Orarie</h1>
+    {% if puo_gestire %}<a class="btn btn-light" href="/primanota/buoni-pasto/collegamento/">⚙ Collegamento database</a>{% endif %}
+    {% include "primanota/_menu.html" with attivo="fasce_orarie" %}
+</div>
+{% if not configurato %}<div class="message-error">Il collegamento al database non è ancora configurato:
+    {% if puo_gestire %}indicarlo in <a href="/primanota/buoni-pasto/collegamento/">Collegamento database</a>.{% else %}lo imposta il Direttore o l'Amministratore.{% endif %}</div>{% endif %}
+
+<div class="card">
+    <form method="get" class="filters" id="filtriFasce">
+        <div class="field">Vista
+            <div style="display:flex;gap:12px;padding:8px 0">{% for k, v in viste.items %}
+                <label class="check"><input type="radio" name="vista" value="{{ k }}" {% if vista == k %}checked{% endif %} onchange="this.form.submit()"> {{ v }}</label>{% endfor %}</div>
+        </div>
+        <label class="field">Dal <input type="date" name="data_da" value="{{ data_da }}" required></label>
+        <label class="field">Al <input type="date" name="data_a" value="{{ data_a }}" required></label>
+        <label class="field">Misura <select name="misura">{% for k, v in misure.items %}<option value="{{ k }}" {% if misura == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+        <label class="check" style="padding-bottom:10px"><input type="checkbox" name="media" value="1" {% if media %}checked{% endif %}> Media giornaliera</label>
+        <div class="field">Punti vendita <span class="small" style="font-weight:normal">(nessuno scelto = tutti)</span>
+            <div class="scelta" id="sceltaPv">
+                {% for n in negozi %}<label><input type="checkbox" name="pv" value="{{ n.codice }}" {% if n.codice|stringformat:"s" in scelti %}checked{% endif %}> {{ n.codice }} - {{ n.descrizione }}</label>{% endfor %}
+            </div>
+            <span class="small" style="font-weight:normal"><a href="#" onclick="return segna('sceltaPv', true)">Tutti</a> · <a href="#" onclick="return segna('sceltaPv', false)">Nessuno</a></span>
+        </div>
+        {% if vista == "reparti" %}
+        <div class="field">Reparti <span class="small" style="font-weight:normal">(nessuno scelto = tutti)</span>
+            <div class="scelta" id="sceltaReparti">
+                {% for codice, descrizione in elenco_reparti %}<label><input type="checkbox" name="reparto" value="{{ codice }}" {% if codice in reparti_scelti %}checked{% endif %}> {{ codice }} - {{ descrizione }}</label>
+                {% empty %}<span class="small">Elenco reparti non disponibile.</span>{% endfor %}
+            </div>
+            <span class="small" style="font-weight:normal"><a href="#" onclick="return segna('sceltaReparti', true)">Tutti</a> · <a href="#" onclick="return segna('sceltaReparti', false)">Nessuno</a></span>
+        </div>
+        {% endif %}
+        <button class="btn btn-orange" name="cerca" value="1">Cerca</button>
+        {% if tab %}
+        <button class="btn btn-dark" type="button" onclick="apriStampa(urlFormato('pdf'))">🖨 Stampa PDF</button>
+        <a class="btn btn-light" href="#" onclick="location.href = urlFormato('csv'); return false">Esporta Excel</a>
+        {% endif %}
+    </form>
+</div>
+{% if error %}<div class="message-error">{{ error }}</div>{% endif %}
+
+{% if tab %}
+<div class="kpis-stat">
+    <div class="kpi-stat"><strong>{{ risultato.totale.valore|euro }}</strong><span>Valore venduto</span></div>
+    <div class="kpi-stat"><strong>{{ risultato.totale.pezzi|intero }}</strong><span>Pezzi</span></div>
+    <div class="kpi-stat"><strong>{{ risultato.totale.clienti|intero }}</strong><span>Clienti</span></div>
+    <div class="kpi-stat"><strong>{{ ora_di_punta|default:"—" }}</strong><span>Fascia con più vendite</span></div>
+    <div class="kpi-stat"><strong>{{ risultato.giorni }}</strong><span>Giorni con vendite</span></div>
+</div>
+
+<div class="card">
+    <h3>{{ misure|get_item:misura }} per ora{% if media %} (media giornaliera){% endif %}</h3>
+    <div id="curva"></div>
+</div>
+
+<div class="card">
+    <h3>{% if vista == "negozi" %}Punti vendita{% else %}Reparti{% endif %} per fascia oraria</h3>
+    <p class="small">{{ sottotitolo }}. Più è scuro il colore, più la fascia pesa rispetto al valore massimo della tabella.
+        {% if vista == "reparti" and misura == "clienti" %}Il totale dei clienti è quello dei negozi: lo stesso cliente compra in più reparti.{% endif %}</p>
+    <div class="matrice-box">
+    <table class="matrice">
+        <thead><tr><th>{% if vista == "negozi" %}Punto vendita{% else %}Reparto{% endif %}</th>{% for o in tab.ore %}<th>{{ o }}</th>{% endfor %}<th>Totale</th></tr></thead>
+        <tbody>
+        {% for r in tab.righe %}
+            <tr><td title="{{ r.etichetta }} · {{ r.giorni }} giorni con vendite">{{ r.etichetta }}</td>
+                {% for v, livello in r.celle %}{% if livello is None %}<td>{% if v %}{{ v|cifra:misura }}{% endif %}</td>{% else %}<td style="background:{{ scala|get_item:livello }};color:{% if livello >= scure %}#fff{% else %}#0b0b0b{% endif %}">{{ v|cifra:misura }}</td>{% endif %}{% endfor %}
+                <td class="tot">{{ r.totale|cifra:misura }}</td></tr>
+        {% endfor %}
+        <tr class="totale"><td>Totale</td>{% for v in tab.colonne %}<td>{{ v|cifra:misura }}</td>{% endfor %}<td>{{ tab.totale|cifra:misura }}</td></tr>
+        <tr class="totale"><td>% sul totale</td>{% for q in tab.quote %}<td>{{ q|perc }}</td>{% endfor %}<td>100%</td></tr>
+        </tbody>
+    </table>
+    </div>
+    <div class="legenda-scala">meno {% for c in scala %}<i style="background:{{ c }}"></i>{% endfor %} più</div>
+</div>
+<div id="tip"></div>
+{% elif risultato %}
+<div class="card">Nessuna vendita per il periodo e i filtri scelti.</div>
+{% endif %}
+{% endblock %}
+{% block script %}
+{{ grafico|json_script:"dati-curva" }}
+<script>
+function segna(id, stato){ document.querySelectorAll('#' + id + ' input').forEach(i => i.checked = stato); return false; }
+function urlFormato(formato){
+    const q = new URLSearchParams(new FormData(document.getElementById("filtriFasce")));
+    q.set("formato", formato);
+    return "/primanota/fasce-orarie/?" + q.toString();
+}
+(function(){
+    const dati = JSON.parse(document.getElementById("dati-curva").textContent || "{}");
+    const box = document.getElementById("curva"), tip = document.getElementById("tip");
+    if(!box || !dati.ore || !dati.ore.length) return;
+    const misura = "{{ misura }}";
+    const fmt = v => misura === "valore" ? v.toLocaleString("it-IT", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " €"
+                                         : v.toLocaleString("it-IT", {maximumFractionDigits: 1});
+    // Colonne per ora: una sola serie, sommità arrotondate, 2px di spazio, valore al passaggio del mouse.
+    function disegna(){
+        const L = Math.max(480, box.clientWidth), H = 240, sx = 70, dx = 10, alto = 12, basso = 28, n = dati.ore.length;
+        const max = Math.max(...dati.valori, 1), passo = Math.pow(10, Math.floor(Math.log10(max))), tetto = Math.ceil(max / passo) * passo;
+        const y = v => alto + (H - alto - basso) * (1 - v / tetto), larg = (L - sx - dx) / n, w = Math.min(48, larg - 2);
+        let html = "";
+        for(let k = 0; k <= 4; k++){
+            const v = tetto * k / 4;
+            html += `<line x1="${sx}" x2="${L - dx}" y1="${y(v)}" y2="${y(v)}" stroke="#e6e9ee"/>` +
+                    `<text x="${sx - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="#667085">${v.toLocaleString("it-IT", {maximumFractionDigits: tetto < 10 ? 2 : 0})}</text>`;
+        }
+        dati.ore.forEach((o, i) => {
+            const v = dati.valori[i], x0 = sx + larg * i + (larg - w) / 2, y0 = y(v), y1 = y(0), r = Math.min(4, w / 2, y1 - y0);
+            if(v > 0) html += `<path class="col" data-i="${i}" fill="#2a78d6" d="M${x0},${y1} V${y0 + r} Q${x0},${y0} ${x0 + r},${y0} H${x0 + w - r} Q${x0 + w},${y0} ${x0 + w},${y0 + r} V${y1} Z"/>`;
+            html += `<text x="${x0 + w / 2}" y="${H - 9}" text-anchor="middle" font-size="11" fill="#667085">${o}</text>` +
+                    `<rect class="area" data-i="${i}" x="${sx + larg * i}" y="${alto}" width="${larg}" height="${H - alto - basso}" fill="transparent"/>`;
+        });
+        box.innerHTML = `<svg viewBox="0 0 ${L} ${H}" style="width:${L}px">${html}</svg>`;
+        box.querySelectorAll(".area").forEach(a => {
+            a.addEventListener("mousemove", e => {
+                const i = +a.dataset.i;
+                box.querySelectorAll(".col").forEach(c => c.setAttribute("fill", c.dataset.i == i ? "#1c5cab" : "#2a78d6"));
+                tip.textContent = `${dati.ore[i]}: ${fmt(dati.valori[i])}`; tip.style.display = "block";
+                tip.style.left = (e.clientX + 14) + "px"; tip.style.top = (e.clientY + 14) + "px";
+            });
+            a.addEventListener("mouseleave", () => { tip.style.display = "none"; box.querySelectorAll(".col").forEach(c => c.setAttribute("fill", "#2a78d6")); });
+        });
+    }
+    disegna();
+    let attesa; window.addEventListener("resize", () => { clearTimeout(attesa); attesa = setTimeout(disegna, 150); });
+})();
+</script>
+{% endblock %}

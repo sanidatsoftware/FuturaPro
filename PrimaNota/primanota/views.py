@@ -835,6 +835,77 @@ def buoni_pasto(request):
         periodo=periodo, descrizione_pv=descrizione_pv, configurato=bool(servizio.configurazione())))
 
 
+MAX_GIORNI_FASCE = 366
+
+
+@xframe_options_sameorigin  # il PDF si apre nella finestra di stampa della pagina stessa
+@_accesso(solo_ufficio=True)
+def fasce_orarie(request):
+    """Vendite per fasce orarie, per punto vendita o per reparto (database Statistiche)."""
+    from .services import cassa_centrale
+    from .services import fasce_orarie as servizio
+
+    oggi = timezone.localdate()
+    data_a = _data(request.GET.get("data_a"), (oggi - timedelta(days=1)).isoformat())
+    data_da = _data(request.GET.get("data_da"), (date.fromisoformat(data_a) - timedelta(days=6)).isoformat())
+    if data_a < data_da:
+        data_da, data_a = data_a, data_da
+    vista = request.GET.get("vista") if request.GET.get("vista") in servizio.VISTE else "negozi"
+    misura = request.GET.get("misura") if request.GET.get("misura") in servizio.MISURE else "valore"
+    media = request.GET.get("media") == "1"
+    scelti = [p for p in request.GET.getlist("pv") if p.strip()]
+    reparti_scelti = [r for r in request.GET.getlist("reparto") if r.strip()]
+    negozi = negozi_attivi_ordinati()
+    nome_pv = {str(n.get("codice")): etichetta_negozio(n) for n in negozi}
+    risultato = error = None
+    formato = request.GET.get("formato", "")
+    # La query parte solo con «Cerca» o con la stampa: cambiare vista ricarica solo i filtri (e i reparti).
+    if request.GET.get("cerca") or formato in ("csv", "pdf"):
+        if (date.fromisoformat(data_a) - date.fromisoformat(data_da)).days >= MAX_GIORNI_FASCE:
+            error = f"Scegliere al massimo {MAX_GIORNI_FASCE} giorni."
+        else:
+            try:
+                righe, clienti = servizio.interroga(data_da, data_a, vista, scelti, reparti_scelti if vista == "reparti" else ())
+                risultato = servizio.componi(righe, clienti)
+            except RuntimeError as exc:
+                error = str(exc)
+    da, a = date.fromisoformat(data_da), date.fromisoformat(data_a)
+    periodo = f"dal {da:%d/%m/%Y} al {a:%d/%m/%Y}"
+    descrizione = ", ".join(nome_pv.get(p, p) for p in scelti) if scelti else "Tutti i punti vendita"
+    titolo = f"Vendite per fasce orarie {servizio.VISTE[vista].lower()}"
+    sottotitolo = (f"{periodo} · {descrizione} · {servizio.MISURE[misura]}"
+                   + (" (media giornaliera)" if media else ""))
+    base_nome = "_".join(re.sub(r"[^\w-]+", "_", t).strip("_") for t in
+                         ("Fasce_orarie", vista, "_".join(scelti) if scelti else "Tutti", f"dal {data_da} al {data_a}", misura))
+
+    if formato in ("csv", "pdf"):
+        if error or risultato is None:
+            return HttpResponse(error or "Indicare il periodo.", status=502 if error else 400)
+        if formato == "csv":
+            risposta = HttpResponse(servizio.csv(risultato, misura, media, vista), content_type="text/csv; charset=utf-8")
+            risposta["Content-Disposition"] = f'attachment; filename="{base_nome}.csv"'
+            return risposta
+        risposta = HttpResponse(servizio.pdf(risultato, misura, media, vista, titolo, sottotitolo, base_nome + ".pdf"),
+                                content_type="application/pdf")
+        risposta["Content-Disposition"] = f'inline; filename="{base_nome}.pdf"'
+        return risposta
+
+    elenco_reparti = []
+    if vista == "reparti":
+        try:
+            elenco_reparti = servizio.elenco_reparti(scelti)
+        except RuntimeError as exc:
+            error = error or str(exc)
+    tab = servizio.tabella(risultato, misura, media) if risultato else None
+    return render(request, "primanota/fasce_orarie.html", _contesto(
+        request, data_da=data_da, data_a=data_a, vista=vista, misura=misura, media=media, scelti=scelti,
+        reparti_scelti=reparti_scelti, negozi=negozi, elenco_reparti=elenco_reparti, risultato=risultato, tab=tab,
+        error=error, viste=servizio.VISTE, misure=servizio.MISURE, sottotitolo=sottotitolo, scala=servizio.SCALA,
+        scure=servizio.SCURE, configurato=bool(cassa_centrale.configurazione()),
+        ora_di_punta=servizio.etichetta_ora(risultato["ora_di_punta"]) if risultato and risultato["ora_di_punta"] is not None else "",
+        grafico={"ore": tab["ore"], "valori": [float(v) for v in tab["colonne"]]} if tab else {}))
+
+
 MAX_GIORNI_PRIMA_NOTA = 31
 
 
