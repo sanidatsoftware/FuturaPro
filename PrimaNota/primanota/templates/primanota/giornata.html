@@ -19,8 +19,9 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
     {% include "primanota/_menu.html" %}
 </div>
 {% if error %}<div class="message-error">{{ error }}</div>{% endif %}
-{% if utente_negozio %}<div class="card small">Chiusure fiscali e POS lette dai SysSpy delle casse, con gli stessi controlli che vede la sede:
-    se trovi qualcosa che non torna, scrivilo nelle note in fondo alla pagina.</div>{% endif %}
+{% if utente_negozio %}<div class="card small">Chiusure fiscali e POS lette dai SysSpy delle casse, con gli stessi controlli che vede la sede,
+    accanto alle scansioni caricate: se trovi qualcosa che non torna, scrivilo nelle note in fondo alla pagina.
+    Le scansioni si caricano da <a href="/primanota/upload/">Caricamento e chiusure</a>.</div>{% endif %}
 
 <div class="card">
     <h2>File scontrini (SysSpy) · {{ files|length }} cass{{ files|length|pluralize:"a,e" }}</h2>

@@ -238,9 +238,8 @@ class RegolaDocumento(models.Model):
         (FACOLTATIVO, "Facoltativa"),
     ]
     PREDEFINITE = {
-        # Chiusure fiscali e POS si leggono dal SysSpy: il negozio non le scansiona più.
-        "Chiusura fiscale": FACOLTATIVO,
-        "Chiusure POS bancari": FACOLTATIVO,
+        "Chiusura fiscale": SEMPRE,
+        "Chiusure POS bancari": SEMPRE,
         "Resi": SE_SYSSPY,
         "Transazioni abortite": SE_SYSSPY,
         "Versamenti contante": SEMPRE,

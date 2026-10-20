@@ -30,7 +30,6 @@ from .services.accesso import (
     nome_utente,
 )
 from .services.baserow_primanota import (
-    TIPI_CARICABILI_PV,
     TIPI_DOCUMENTO,
     TIPI_VALIDI,
     TRANSAZIONI_ABORTITE,
@@ -87,8 +86,7 @@ def _contesto(request, **altro):
     return {"utente": user, "puo_gestire": can_manage_primanota(user), "puo_versamenti": can_see_versamenti(user),
             "utente_negozio": is_store_user(user),
             "tipi_documento": [t for t in TIPI_DOCUMENTO if t["id"] != VERSAMENTO_CONTANTE],
-            "tipi_documento_tutti": TIPI_DOCUMENTO,
-            "tipi_caricabili": [t for t in TIPI_DOCUMENTO if t["id"] in TIPI_CARICABILI_PV], **altro}
+            "tipi_documento_tutti": TIPI_DOCUMENTO, **altro}
 
 
 def _negozio_consentito(request, negozio_id):
@@ -98,13 +96,31 @@ def _negozio_consentito(request, negozio_id):
 
 
 def _giornate_recenti(negozio_id, giorni=14):
-    """Ultime giornate del negozio con totali e controlli dei SysSpy, per la pagina di caricamento."""
-    oggi = timezone.localdate()
-    files = FileSysSpy.objects.filter(negozio_id=negozio_id, data__range=(oggi - timedelta(days=giorni), oggi))
+    """
+    Ultime giornate del negozio per la pagina di caricamento: totali e controlli dei SysSpy e
+    scansioni obbligatorie (secondo le regole di Amministratore e Direttore) non ancora caricate.
+    """
+    from .services.monitor import SYSSPY_PER_TIPO
+
+    ieri = timezone.localdate() - timedelta(days=1)
+    dal = ieri - timedelta(days=giorni - 1)
     per_giorno = OrderedDict()
-    for f in files.order_by("-data", "cassa"):
-        g = per_giorno.setdefault(f.data, {"data": f.data, "casse": 0, "totale": Decimal("0"), "pos": Decimal("0"),
-                                           "anomalie": [], "fiscale": 0, "chiusure_pos": 0})
+    for i in range(giorni):
+        d = ieri - timedelta(days=i)
+        per_giorno[d] = {"data": d, "casse": 0, "totale": Decimal("0"), "pos": Decimal("0"), "anomalie": [],
+                         "fiscale": 0, "chiusure_pos": 0, "mancanti": [], "presenti": set()}
+    try:
+        caricate = elenco_scansioni(negozio_id=negozio_id, data_da=dal.isoformat(), data_a=ieri.isoformat())
+    except RuntimeError:
+        caricate = None   # Baserow non risponde: non si segnala niente come mancante
+    for d, tipo in DocumentoSysSpy.objects.filter(
+            file__negozio_id=negozio_id, file__data__range=(dal, ieri),
+            tipo__in=[DocumentoSysSpy.RESO, DocumentoSysSpy.ABORTITO]).values_list("file__data", "tipo").distinct():
+        per_giorno[d]["presenti"].add(tipo)
+    files = FileSysSpy.objects.filter(negozio_id=negozio_id, data__range=(dal, ieri))
+    for f in files.order_by("cassa"):
+        g = per_giorno[f.data]
+        g["presenti"].add("CASSA")
         if f.cassa_vuota:
             continue
         g["casse"] += 1
@@ -113,6 +129,13 @@ def _giornate_recenti(negozio_id, giorni=14):
         g["fiscale"] += bool(f.chiusura_fiscale)
         g["chiusure_pos"] += bool(f.chiusura_pos)
         g["anomalie"] += [f"Cassa {f.cassa}: {c['titolo']}" for c in f.controlli if c["esito"] == "attenzione"]
+    if caricate is not None:
+        regole = RegolaDocumento.mappa()
+        tipi_caricati = {(s["data_documento"], s["tipo_documento"]) for s in caricate}
+        for d, g in per_giorno.items():
+            g["mancanti"] = [t["label"] for t in TIPI_DOCUMENTO
+                             if (d.isoformat(), t["id"]) not in tipi_caricati
+                             and obbligatoria(regole.get(t["id"]), SYSSPY_PER_TIPO.get(t["id"]) in g["presenti"])]
     return list(per_giorno.values())
 
 
@@ -185,7 +208,7 @@ def upload(request):
         tipo = request.POST.get("tipo_documento", "").strip()
         documento = request.FILES.get("documento")
         cassa = request.POST.get("cassa", "").strip()
-        if not giorno or tipo not in TIPI_CARICABILI_PV or not documento:
+        if not giorno or tipo not in TIPI_VALIDI or not documento:
             error = "Compila Data, Tipo Documento e allega il file."
         elif cassa and not cassa.isdigit():
             error = "La cassa deve essere un numero."

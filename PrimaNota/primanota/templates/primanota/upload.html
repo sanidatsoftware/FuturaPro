@@ -34,7 +34,7 @@
                     <label>Tipo documento</label>
                     <select name="tipo_documento" required>
                         <option value="">Seleziona...</option>
-                        {% for tipo in tipi_caricabili %}<option value="{{ tipo.id }}">{{ tipo.label }}</option>{% endfor %}
+                        {% for tipo in tipi_documento_tutti %}<option value="{{ tipo.id }}">{{ tipo.label }}</option>{% endfor %}
                     </select>
                 </div>
                 <div class="form-group">
@@ -83,23 +83,24 @@
 </div>
 
 <div class="card">
-    <h2>Le tue chiusure (ultimi 14 giorni)</h2>
-    <p class="small">Chiusure fiscali e POS lette dai SysSpy delle casse, con gli stessi controlli della sede. Apri la giornata
-        per vederle e, se qualcosa non torna, scrivi una nota.</p>
+    <h2>Le tue giornate (ultimi 14 giorni)</h2>
+    <p class="small">Scansioni obbligatorie ancora da caricare e chiusure fiscali e POS lette dai SysSpy delle casse, con gli
+        stessi controlli della sede. Apri la giornata per vederle e, se qualcosa non torna, scrivi una nota.</p>
     <table class="table">
-        <thead><tr><th>Giornata</th><th>Casse</th><th class="num">Totale giornaliero</th><th class="num">Chiusure POS</th><th>Controlli</th><th></th></tr></thead>
+        <thead><tr><th>Giornata</th><th>Scansioni da caricare</th><th>Casse</th><th class="num">Totale giornaliero</th><th class="num">Chiusure POS</th><th>Controlli</th><th></th></tr></thead>
         <tbody>
         {% for g in giornate %}
             <tr>
                 <td>{{ g.data|date:"D d/m/Y" }}</td>
-                <td>{{ g.casse }}{% if g.fiscale < g.casse %} <span class="badge badge-no">{{ g.fiscale }} chiusur{{ g.fiscale|pluralize:"a,e" }} fiscal{{ g.fiscale|pluralize:"e,i" }}</span>{% endif %}</td>
-                <td class="num">{{ g.totale|euro }}</td>
-                <td class="num">{{ g.pos|euro }}</td>
-                <td>{% if g.anomalie %}{% for a in g.anomalie %}<span class="badge badge-red">⚠ {{ a }}</span> {% endfor %}{% else %}<span class="badge badge-ok">✓ Nessuna anomalia</span>{% endif %}</td>
+                <td>{% for m in g.mancanti %}<span class="badge badge-red">{{ m }}</span> {% empty %}<span class="badge badge-ok">✓ Complete</span>{% endfor %}</td>
+                <td>{% if not g.casse %}<span class="small">SysSpy non ancora arrivato</span>{% else %}{{ g.casse }}{% endif %}{% if g.casse and g.fiscale < g.casse %} <span class="badge badge-no">{{ g.fiscale }} chiusur{{ g.fiscale|pluralize:"a,e" }} fiscal{{ g.fiscale|pluralize:"e,i" }}</span>{% endif %}</td>
+                <td class="num">{% if g.casse %}{{ g.totale|euro }}{% else %}—{% endif %}</td>
+                <td class="num">{% if g.casse %}{{ g.pos|euro }}{% else %}—{% endif %}</td>
+                <td>{% if not g.casse %}—{% elif g.anomalie %}{% for a in g.anomalie %}<span class="badge badge-red">⚠ {{ a }}</span> {% endfor %}{% else %}<span class="badge badge-ok">✓ Nessuna anomalia</span>{% endif %}</td>
                 <td><a class="btn btn-light" href="/primanota/giornata/{{ negozio_id }}/{{ g.data|date:'Y-m-d' }}/">Apri giornata</a></td>
             </tr>
         {% empty %}
-            <tr><td colspan="6">Nessun SysSpy archiviato negli ultimi giorni.</td></tr>
+            <tr><td colspan="7">Nessuna giornata.</td></tr>
         {% endfor %}
         </tbody>
     </table>

@@ -226,11 +226,11 @@ class TestPagine(Base):
         self.assertEqual((riga["Negozio"][0]["id"], riga["Tipo Documento"], riga["Cassa"]), (10, "Resi", 1))
         self.assertFalse(riga["Lavorato"])
         self.assertContains(self.carica(pv, "Tipo inventato"), "Compila Data")
-        # Chiusure fiscali e POS arrivano dal SysSpy: il negozio carica solo resi, abortite e versamenti.
-        self.assertContains(self.carica(pv, "Chiusura fiscale"), "Compila Data")
+        # Il negozio carica tutti i generi; obbligatorie o facoltative le decidono le regole.
+        self.assertRedirects(self.carica(pv, "Chiusura fiscale"), "/primanota/upload/?uploaded=1", fetch_redirect_response=False)
         pagina = pv.get("/primanota/upload/")
-        self.assertContains(pagina, '<option value="Transazioni abortite">')
-        self.assertNotContains(pagina, '<option value="Chiusura fiscale">')
+        for tipo in ("Chiusura fiscale", "Chiusure POS bancari", "Resi", "Transazioni abortite", "Versamenti contante"):
+            self.assertContains(pagina, f'<option value="{tipo}">')
 
     def test_giornata_affianca_scansioni_e_sysspy(self):
         self.importa_fixture()
@@ -282,7 +282,6 @@ class TestPagine(Base):
         oggi = date.today()
         ieri = (oggi - timedelta(days=1)).isoformat() if oggi.day > 1 else oggi.isoformat()
         pv = self.client_per("pv@x")
-        RegolaDocumento.objects.create(tipo_documento="Chiusure POS bancari", obbligo=RegolaDocumento.SEMPRE)
         self.scansione_sede("Chiusura fiscale", giorno=ieri)
         self.carica(pv, "Versamenti contante", giorno=ieri)
         Nota.objects.create(negozio_id=10, data=ieri, tipo=Nota.ANOMALIA, testo="x", creata_da="x")
@@ -446,8 +445,7 @@ class TestDivisioneEControlli(Base):
         r = self.client_per("ufficio@x").get("/primanota/giornata/10/2026-05-28/")
         sezioni = {s["tipo"]["id"]: s["obbligatoria"] for s in r.context["sezioni"]}
         # I versamenti non sono più nella giornata: hanno la sezione Versamenti.
-        # Chiusure fiscali e POS si leggono dal SysSpy: la scansione è facoltativa (salvo diversa regola).
-        self.assertEqual(sezioni, {"Chiusura fiscale": False, "Chiusure POS bancari": False, "Resi": False,
+        self.assertEqual(sezioni, {"Chiusura fiscale": True, "Chiusure POS bancari": True, "Resi": False,
                                    "Transazioni abortite": True})
         self.client_per("admin@x").post("/primanota/condivisioni/", {"azione": "regole", "regola_versamenti": "FACOLTATIVO"})
         self.assertEqual(RegolaDocumento.mappa()["Versamenti contante"], "FACOLTATIVO")
@@ -592,7 +590,7 @@ class TestChiusureVisteDalNegozio(Base):
     def test_il_negozio_vede_le_proprie_chiusure(self):
         self.importa_fixture()
         pv = self.client_per("pv@x")
-        self.assertContains(pv.get("/primanota/upload/"), "Le tue chiusure")
+        self.assertContains(pv.get("/primanota/upload/"), "Le tue giornate")
         r = pv.get("/primanota/giornata/10/2026-05-28/")
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, "TOTALE GIORNALIERO")          # chiusura fiscale
@@ -616,5 +614,14 @@ class TestChiusureVisteDalNegozio(Base):
         oggi = date(2026, 5, 30)
         with mock.patch("primanota.views.timezone.localdate", return_value=oggi):
             giornate = views._giornate_recenti(10)
-        self.assertEqual([g["data"] for g in giornate], [date(2026, 5, 28)])
-        self.assertEqual((giornate[0]["casse"], giornate[0]["anomalie"]), (1, []))
+        self.assertEqual([g["data"] for g in giornate][:2], [date(2026, 5, 29), date(2026, 5, 28)])
+        g = giornate[1]
+        self.assertEqual((g["casse"], g["anomalie"]), (1, []))
+        # Regole predefinite: chiusure e versamento sempre; abortite perché il SysSpy ne contiene; resi no.
+        self.assertEqual(g["mancanti"], ["Chiusura fiscale", "Chiusure POS bancari", "Transazioni abortite",
+                                         "Versamenti contante"])
+        self.carica(self.client_per("pv@x"), "Transazioni abortite")
+        RegolaDocumento.objects.create(tipo_documento="Versamenti contante", obbligo=RegolaDocumento.FACOLTATIVO)
+        with mock.patch("primanota.views.timezone.localdate", return_value=oggi):
+            g = views._giornate_recenti(10)[1]
+        self.assertEqual(g["mancanti"], ["Chiusura fiscale", "Chiusure POS bancari"])
