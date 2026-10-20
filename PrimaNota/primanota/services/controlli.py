@@ -84,13 +84,18 @@ def controlli(f, dettagli=True):
                   ("Buoni Pasto + Credito negli scontrini", f.buoni_e_crediti)]
         configurazione = f.configurazione_non_riscosso
         if configurazione == "carte":
-            out.append({"nome": "Non riscosso", "esito": OK, "titolo": "Non riscosso = carte",
-                        "spiegazione": "Questa cassa registra come «non riscosso» i pagamenti con carta "
-                                       "(i buoni pasto sono conteggiati come riscosso).", "valori": valori})
+            out.append({"nome": "Non riscosso", "esito": INFO, "titolo": "Stampante: carte come non riscosso",
+                        "spiegazione": f"La stampante fiscale di questa cassa (matricola {f.matricola_stampante or '—'}) "
+                                       "riporta nel «non riscosso» i pagamenti con carta e conta buoni pasto e crediti "
+                                       "come riscosso. Nei Mezzi di Pagamento invece Carta Credito e Bancomat sono "
+                                       "«Elettronico [PE]» e Buoni Pasto e Credito sono «[NR]»: la chiusura fiscale non "
+                                       "rispecchia la configurazione. Succede con le stampanti con matricola 99…: "
+                                       "da verificare con l'assistenza della cassa.", "valori": valori})
         elif configurazione == "buoni":
             out.append({"nome": "Non riscosso", "esito": OK, "titolo": "Non riscosso = buoni e crediti",
-                        "spiegazione": "Questa cassa registra come «non riscosso» buoni pasto e vendite a credito "
-                                       "(le carte sono conteggiate come riscosso).", "valori": valori})
+                        "spiegazione": "Come da configurazione dei Mezzi di Pagamento: nel «non riscosso» ci sono "
+                                       "buoni pasto (Ticket restaurant [NR]) e vendite a credito ([NR]); carte e "
+                                       "bancomat (Elettronico [PE]) sono nel riscosso.", "valori": valori})
         else:
             out.append({"nome": "Non riscosso", "esito": ATTENZIONE, "titolo": f"Non riscosso {_euro(nr)} non spiegato",
                         "spiegazione": "Il corrispettivo non riscosso della chiusura fiscale non corrisponde né alle carte né "

@@ -246,7 +246,8 @@ def giornata(request, negozio_id, giorno):
     configurazioni = {}
     for f in files:
         if f.configurazione_non_riscosso:
-            configurazioni.setdefault(f.configurazione_non_riscosso, []).append(str(f.cassa))
+            configurazioni.setdefault(f.configurazione_non_riscosso, []).append(
+                f"{f.cassa} (matricola {f.matricola_stampante})" if f.matricola_stampante else str(f.cassa))
     configurazioni_diverse = len(configurazioni) > 1 and {
         "carte": ", ".join(configurazioni["carte"]), "buoni": ", ".join(configurazioni["buoni"])}
     corrente = date.fromisoformat(giorno)

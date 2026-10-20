@@ -23,9 +23,10 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
 <div class="card">
     <h2>File scontrini (SysSpy) · {{ files|length }} cass{{ files|length|pluralize:"a,e" }}</h2>
     {% if configurazioni_diverse %}
-    <div class="message-error">Le casse di questo negozio sono configurate in modo diverso: la cassa {{ configurazioni_diverse.carte }}
-        registra come «non riscosso» i pagamenti con carta, la cassa {{ configurazioni_diverse.buoni }} i buoni pasto e i crediti.
-        I totali delle chiusure fiscali non sono quindi confrontabili tra loro: conviene uniformare le forme di pagamento delle casse.</div>
+    <div class="message-error">Le stampanti fiscali di questo negozio non chiudono allo stesso modo: la cassa
+        {{ configurazioni_diverse.carte }} riporta nel «non riscosso» i pagamenti con carta, la cassa {{ configurazioni_diverse.buoni }}
+        i buoni pasto e i crediti, come previsto dai Mezzi di Pagamento. I «non riscosso» delle casse non sono quindi
+        confrontabili tra loro: da verificare con l'assistenza della cassa.</div>
     {% endif %}
     {% if files %}
     <table class="table">
