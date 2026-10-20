@@ -30,18 +30,17 @@
     </div>
     <div class="card">
         <h3>Server di posta</h3>
-        <form method="post" class="filters">{% csrf_token %}<input type="hidden" name="azione" value="server">
-            <label class="field">Server SMTP <input name="host" value="{{ imp.host }}"></label>
-            <label class="field">Porta <input name="porta" type="number" value="{{ imp.porta }}" style="width:90px"></label>
-            <label class="field">Sicurezza <select name="sicurezza">
-                <option value="tls" {% if imp.sicurezza == "tls" %}selected{% endif %}>STARTTLS</option>
-                <option value="ssl" {% if imp.sicurezza == "ssl" %}selected{% endif %}>SSL</option>
-                <option value="" {% if not imp.sicurezza %}selected{% endif %}>Nessuna</option></select></label>
-            <label class="field">Utente <input name="utente" value="{{ imp.utente }}"></label>
-            <label class="field">Password <input name="password" type="password" placeholder="{% if imp.password_cifrata %}(salvata){% endif %}" autocomplete="new-password"></label>
-            <label class="field">Mittente <input name="mittente" value="{{ imp.mittente }}" placeholder="noreply@tocal.it"></label>
-            <button class="btn btn-dark">Salva</button>
-        </form>
+        <p class="small">Si usa la posta già configurata nel portale (la stessa degli Incarichi), letta da
+            <code>{{ posta.percorso }}</code>: server, utente, password e mittente si cambiano lì.</p>
+        {% if not posta.trovata %}
+            <div class="message-error">Configurazione email del portale non trovata.</div>
+        {% else %}
+        <table class="table" style="width:auto">
+            <tr><td>Stato</td><td>{% if posta.attiva %}<span class="badge badge-ok">Attiva</span>{% else %}<span class="badge badge-red">Disattivata</span>{% endif %}</td></tr>
+            <tr><td>Server</td><td>{{ posta.server|default:"—" }}{% if posta.ssl %} (SSL){% endif %}</td></tr>
+            <tr><td>Mittente</td><td>{{ posta.mittente|default:"—" }}</td></tr>
+        </table>
+        {% endif %}
         <form method="post" class="filters" style="margin-top:14px">{% csrf_token %}<input type="hidden" name="azione" value="prova">
             <label class="field">Invia una mail di prova a <input name="email" type="email" required></label>
             <button class="btn btn-light">Invia prova</button>

@@ -684,3 +684,34 @@ class TestDocumentiAmministrativi(Base):
         nuovo = installa.modifica_menu(vecchio)
         self.assertIn("<h2>Documenti Amministrativi</h2>", nuovo)
         self.assertIn("gestione versamenti e statistiche", nuovo)
+
+
+class TestPostaDelPortale(Base):
+    def test_invia_con_la_configurazione_del_portale(self):
+        from primanota.services import posta
+        config = Path(self.archivio) / "email_config.json"
+        config.write_text(json.dumps({"enabled": True, "smtp_host": "smtp.prova", "smtp_port": 465, "smtp_user": "u@x.it",
+                                      "smtp_password": "pw", "smtp_ssl": True, "from_email": "da@x.it", "rules": {}}))
+        allegato = mock.Mock(content=b"%PDF-1.4", headers={"Content-Type": "application/pdf"})
+        with override_settings(PRIMANOTA_EMAIL_CONFIG=str(config)), \
+                mock.patch("primanota.services.posta.smtplib.SMTP_SSL") as smtp, \
+                mock.patch("primanota.services.posta.requests.get", return_value=allegato):
+            self.assertEqual(posta.stato()["server"], "smtp.prova:465")
+            posta.invia(["a@x.it", "b@x.it"], "Versamento 5048", "Mancano 10 euro", "http://b/scan.pdf", "scan.pdf")
+            # La pagina delle impostazioni mostra il server ma non la password.
+            pagina = self.client_per("admin@x").get("/primanota/impostazioni-email/")
+        sessione = smtp.return_value.__enter__.return_value
+        sessione.login.assert_called_once_with("u@x.it", "pw")
+        msg = sessione.send_message.call_args.args[0]
+        self.assertEqual((msg["To"], msg["Subject"]), ("a@x.it, b@x.it", "Versamento 5048"))
+        self.assertIn("da@x.it", msg["From"])
+        self.assertEqual([p.get_filename() for p in msg.iter_attachments()], ["scan.pdf"])
+        self.assertContains(pagina, "smtp.prova:465")
+        self.assertNotContains(pagina, "pw<")
+
+    def test_senza_configurazione_non_invia(self):
+        from primanota.services import posta
+        with override_settings(PRIMANOTA_EMAIL_CONFIG="/non/esiste.json"):
+            self.assertFalse(posta.configurata())
+            with self.assertRaisesRegex(RuntimeError, "non trovata"):
+                posta.invia(["a@x.it"], "x", "y")

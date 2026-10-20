@@ -12,7 +12,7 @@ from django.utils import timezone
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_POST
 
-from .models import (Condivisione, DestinatarioEmail, DocumentoSysSpy, FileSysSpy, ImpostazioniEmail, Nota,
+from .models import (Condivisione, DestinatarioEmail, DocumentoSysSpy, FileSysSpy, Nota,
                      Pianificazione, RegolaDocumento)
 from .services.regole import NON_RICHIESTA, obbligatoria, stato_giornate
 from .services import importazione
@@ -759,22 +759,13 @@ def statistiche(request):
 
 @_accesso(solo_ufficio=True, solo_gestione=True)
 def impostazioni_email(request):
-    """Server di posta e destinatari delle note sui versamenti."""
-    imp = ImpostazioniEmail.corrente()
+    """Destinatari delle note sui versamenti; la posta è quella configurata nel portale."""
+    from .services import posta
+
     messaggio = errore = None
     if request.method == "POST":
         azione = request.POST.get("azione")
-        if azione == "server":
-            imp.host = request.POST.get("host", "").strip()
-            imp.porta = int(request.POST.get("porta") or 587)
-            imp.utente = request.POST.get("utente", "").strip()
-            imp.sicurezza = request.POST.get("sicurezza", "tls")
-            imp.mittente = request.POST.get("mittente", "").strip()
-            if request.POST.get("password"):
-                imp.password_cifrata = importazione.cifra(request.POST["password"])
-            imp.save()
-            messaggio = "Server di posta salvato."
-        elif azione == "aggiungi":
+        if azione == "aggiungi":
             nome, email = request.POST.get("nome", "").strip(), request.POST.get("email", "").strip()
             if nome and "@" in email:
                 DestinatarioEmail.objects.create(nome=nome, email=email)
@@ -787,13 +778,12 @@ def impostazioni_email(request):
         elif azione == "elimina":
             DestinatarioEmail.objects.filter(pk=request.POST.get("id")).delete()
         elif azione == "prova":
-            from .services.posta import invia
             try:
-                invia([request.POST.get("email", "").strip()], "Prova invio Chiusure Fiscali",
-                      "Messaggio di prova dal portale TO.CAL (Chiusure Fiscali).")
+                posta.invia([request.POST.get("email", "").strip()], "Prova invio Documenti Amministrativi",
+                            "Messaggio di prova dal portale TO.CAL (Documenti Amministrativi).")
                 messaggio = "Email di prova inviata."
             except Exception as exc:
                 errore = f"Invio non riuscito: {exc}"
     return render(request, "primanota/impostazioni_email.html", _contesto(
-        request, imp=imp, destinatari=DestinatarioEmail.objects.all(), messaggio=messaggio, errore=errore))
+        request, posta=posta.stato(), destinatari=DestinatarioEmail.objects.all(), messaggio=messaggio, errore=errore))
 

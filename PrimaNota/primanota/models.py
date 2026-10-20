@@ -255,21 +255,6 @@ class RegolaDocumento(models.Model):
         return out
 
 
-class ImpostazioniEmail(models.Model):
-    """Server di posta per inviare le note sui versamenti (una sola riga)."""
-
-    host = models.CharField(max_length=200, blank=True)
-    porta = models.IntegerField(default=587)
-    utente = models.CharField(max_length=200, blank=True)
-    password_cifrata = models.TextField(blank=True)
-    sicurezza = models.CharField(max_length=10, default="tls", choices=[("tls", "STARTTLS"), ("ssl", "SSL"), ("", "Nessuna")])
-    mittente = models.CharField(max_length=200, blank=True)
-
-    @classmethod
-    def corrente(cls):
-        return cls.objects.first() or cls.objects.create()
-
-
 class DestinatarioEmail(models.Model):
     """Indirizzi tra cui il negozio sceglie a chi inviare una nota sul versamento."""
 
