@@ -1267,6 +1267,12 @@ class TestRibattuti(Base):
             (10, "18:26", [("TEPELENE ACQUA NAT.P", "0,90")])])))
         self.assertEqual((s.stato, s.ribattuto), ("sospeso", ""))
 
+    def test_solo_una_parte_in_comune(self):
+        # Il 64% in comune (un articolo grande uguale, gli altri diversi) non basta.
+        s = self.importa(("SysSpy.20260529.2", sysspy_scontrini("29/05/2026", 2, [
+            (10, "09:05", [("TEPELENE ACQUA NAT.P", "5,40"), ("PANE", "1,50"), ("LATTE", "1,54")])])))
+        self.assertEqual((s.stato, s.ribattuto), ("sospeso", ""))
+
     def test_niente_di_simile(self):
         s = self.importa(("SysSpy.20260529.2", sysspy_scontrini("29/05/2026", 2, [
             (10, "09:05", [("PANE", "1,20"), ("LATTE", "1,50")]),

@@ -165,8 +165,9 @@ def _numero(numero_doc):
 
 # ---------------------------------------------------------------- scontrini ribattuti a mano
 
-SOGLIA_STESSI_ARTICOLI = 0.8   # stesso totale e almeno l'80% di articoli in comune: ribattuto
-SOGLIA_TOTALE_DIVERSO = 0.6    # totale diverso ma almeno il 60% di articoli in comune: probabilmente ribattuto
+# Somiglianza pesata sugli importi, rispetto al più grande dei due scontrini.
+SOGLIA_STESSI_ARTICOLI = 0.95  # stesso totale e praticamente gli stessi articoli: ribattuto
+SOGLIA_TOTALE_DIVERSO = 0.9    # totale diverso ma quasi tutto in comune (un articolo piccolo in più o in meno): probabilmente ribattuto
 
 
 def _articoli(doc):
