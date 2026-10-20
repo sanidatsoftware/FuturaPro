@@ -166,7 +166,7 @@ class Nota(models.Model):
 
 class Pianificazione(models.Model):
     """
-    Orari dell'importazione automatica, decisi dall'Amministratore nel portale.
+    Orari dell'importazione automatica, decisi nel portale da Amministratore o Direttore.
     Il crontab lancia "importa_sysspy --pianificato" ogni 5 minuti: il comando
     lavora solo quando è passato un orario non ancora eseguito.
     """
@@ -199,7 +199,7 @@ class Pianificazione(models.Model):
 
 
 class RegolaDocumento(models.Model):
-    """Quando una scansione è obbligatoria nella giornata di prima nota (decide l'Amministratore)."""
+    """Quando una scansione è obbligatoria nella giornata di prima nota (decide Amministratore o Direttore)."""
 
     SEMPRE = "SEMPRE"
     SE_SYSSPY = "SE_SYSSPY"

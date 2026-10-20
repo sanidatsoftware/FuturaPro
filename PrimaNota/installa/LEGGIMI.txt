@@ -33,13 +33,13 @@ PRIMA NOTA - INSTALLAZIONE AUTOMATICA
    "Menu_PrimaNota" degli utenti autorizzati (negozi e ufficio). Gli
    Amministratori la vedono sempre; tutti gli altri solo con la casella spuntata.
 
-5) Dal portale, come Amministratore:
+5) Dal portale, come Amministratore o Direttore:
    Menu > Prima Nota > Condivisioni negozi: indicare per ogni negozio la cartella
    dei SysSpy (\\server\condivisione\cartella oppure /mnt/negozi/5048) e premere
    "Importa nuovi". La prima volta archivia tutto lo storico.
    Nella stessa pagina: "Importa nuovi di tutti", "Ricostruisci tutti" e gli orari
    dell'importazione automatica (e della ricostruzione settimanale, se serve).
-   Condivisioni, importazioni e orari sono riservati all'Amministratore.
+   Condivisioni, importazioni e orari sono riservati ad Amministratore e Direttore.
 
 Opzioni:  --portale /altra/cartella   se il portale non e' in /opt/tocal
           --python /percorso/python   se lo script non trova il Python del portale

@@ -208,7 +208,7 @@ class TestPagine(Base):
         self.assertEqual(self.client_per("nomenu@x").get("/primanota/admin/").status_code, 403)
         self.assertRedirects(self.client_per("pv@x").get("/primanota/admin/"), "/primanota/upload/", fetch_redirect_response=False)
         self.assertEqual(self.client_per("ufficio@x").get("/primanota/condivisioni/").status_code, 403)
-        self.assertEqual(self.client_per("direttore@x").get("/primanota/condivisioni/").status_code, 403)
+        self.assertEqual(self.client_per("direttore@x").get("/primanota/condivisioni/").status_code, 200)
         # L'Amministratore entra anche senza la casella Menu_PrimaNota.
         self.assertEqual(self.client_per("admin@x").get("/primanota/condivisioni/").status_code, 200)
 

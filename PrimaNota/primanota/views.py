@@ -67,7 +67,7 @@ def _accesso(solo_ufficio=False, solo_gestione=False):
             if solo_ufficio and not is_office_user(user):
                 return redirect("/primanota/upload/")
             if solo_gestione and not can_manage_primanota(user):
-                return HttpResponseForbidden("Funzione riservata all'Amministratore.")
+                return HttpResponseForbidden("Funzione riservata ad Amministratore e Direttore.")
             request.utente_primanota = user
             # Il portale è configurato in UTC: date e orari della Prima Nota sono quelli italiani.
             timezone.activate(LOCAL_TZ)

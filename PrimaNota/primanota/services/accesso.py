@@ -80,9 +80,12 @@ def can_access_primanota(user):
     return is_office_user(user)
 
 
+RUOLI_GESTIONE = {AMMINISTRATORE, "Direttore"}
+
+
 def can_manage_primanota(user):
-    """Condivisioni dei negozi, importazioni e orari: solo Amministratore."""
-    return is_amministratore(user)
+    """Condivisioni dei negozi, importazioni, orari e regole: Amministratore e Direttore."""
+    return bool(user) and get_user_role(user) in RUOLI_GESTIONE
 
 
 def nome_utente(user):
