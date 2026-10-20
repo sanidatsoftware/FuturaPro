@@ -270,7 +270,7 @@ class DestinatarioEmail(models.Model):
 
 
 class CollegamentoBuoniPasto(models.Model):
-    """Database SQL Server dei buoni pasto (una sola riga), deciso da Amministratore o Direttore."""
+    """Database SQL Server della cassa centrale (una sola riga), deciso da Amministratore o Direttore."""
 
     host = models.CharField(max_length=200, blank=True, default="192.168.1.194")
     database = models.CharField(max_length=200, blank=True, default="Scontrini")

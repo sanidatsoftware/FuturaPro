@@ -1,0 +1,152 @@
+{% extends "primanota/base.html" %}
+{% load primanota_formati %}
+{% block title %}Consultazione Prima Nota{% endblock %}
+{% block style %}
+<style>
+.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.c{text-align:center}
+.pv-scelta{border:1px solid #ced7e2;border-radius:8px;background:#fff;max-height:130px;overflow:auto;padding:6px 10px;min-width:300px;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:2px 14px}
+.pv-scelta label{font-size:13px;display:flex;gap:6px;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.testata-pn{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px;color:#2d4055}
+.testata-pn strong{font-size:17px}
+table.pn td{padding:6px 9px}
+table.pn tr.causale td{background:#cfe3fa;border-bottom:2px solid #fff}
+table.pn tr.causale.con-righe{cursor:pointer}
+table.pn tr.causale.con-righe:hover td{background:#b7d3f6}
+table.pn tr.causale .freccia{display:inline-block;width:14px;color:#2d4055;transition:transform .15s}
+table.pn tr.causale.aperta .freccia{transform:rotate(90deg)}
+table.pn tr.movimento td{background:#fff;font-size:13px}
+table.pn tr.movimento td.nota{white-space:pre-wrap;color:#263238}
+table.pn tr.dettaglio td{background:#f6f8fb}
+.campi{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:4px 18px;font-size:12px}
+.campi span{color:#667085}
+.cert{display:inline-block;width:18px;height:18px;border:1.5px solid #263238;border-radius:50%;text-align:center;line-height:16px;font-size:11px;font-weight:bold}
+.btn-piccolo{border:1px solid #ced7e2;background:#fff;border-radius:6px;padding:2px 8px;cursor:pointer;font-weight:bold;color:#2d4055}
+table.riepilogo td,table.riepilogo th{padding:6px 10px}
+</style>
+{% endblock %}
+{% block content %}
+<div class="top-actions">
+    <h1>Consultazione Prima Nota</h1>
+    {% if puo_gestire %}<a class="btn btn-light" href="/primanota/buoni-pasto/collegamento/">⚙ Collegamento database</a>{% endif %}
+    {% include "primanota/_menu.html" with attivo="prima_nota" %}
+</div>
+{% if not configurato %}<div class="message-error">Il collegamento al database della cassa centrale non è ancora configurato:
+    {% if puo_gestire %}indicarlo in <a href="/primanota/buoni-pasto/collegamento/">Collegamento database</a>.{% else %}lo imposta il Direttore o l'Amministratore.{% endif %}</div>{% endif %}
+
+<div class="grid2">
+    <div class="card">
+        <h3>Consulta un punto vendita</h3>
+        <form method="get" class="filters">
+            <label class="field">Punto vendita
+                <select name="pv" required><option value="">Scegli...</option>
+                    {% for n in negozi %}<option value="{{ n.codice }}" {% if pv == n.codice|stringformat:"s" %}selected{% endif %}>{{ n.codice }} - {{ n.descrizione }}</option>{% endfor %}
+                </select></label>
+            <label class="field">Data <input type="date" name="data" value="{{ giorno }}" required></label>
+            <button class="btn btn-orange">Cerca</button>
+            {% if pv %}
+            <a class="btn btn-light" href="?pv={{ pv }}&data={{ precedente }}" title="Giorno prima">«</a>
+            <a class="btn btn-light" href="?pv={{ pv }}&data={{ successivo }}" title="Giorno dopo">»</a>
+            {% endif %}
+        </form>
+    </div>
+    <div class="card">
+        <h3>Stampa PDF</h3>
+        <form class="filters" id="formStampa" onsubmit="return stampaPn()">
+            <label class="field">Dal <input type="date" name="dal" value="{{ giorno }}" required></label>
+            <label class="field">Al <input type="date" name="al" value="{{ giorno }}" required></label>
+            <div class="field">Punti vendita <span class="small" style="font-weight:normal">(nessuno scelto = tutti)</span>
+                <div class="pv-scelta">
+                    {% for n in negozi %}<label><input type="checkbox" name="pv" value="{{ n.codice }}" {% if pv == n.codice|stringformat:"s" %}checked{% endif %}> {{ n.codice }} - {{ n.descrizione }}</label>{% endfor %}
+                </div>
+                <span class="small" style="font-weight:normal"><a href="#" onclick="return segnaPv(true)">Tutti</a> · <a href="#" onclick="return segnaPv(false)">Nessuno</a></span>
+            </div>
+            <button class="btn btn-dark">🖨 Stampa PDF</button>
+        </form>
+        <p class="small">Un foglio A4 per punto vendita e giorno, con le note intere, in un unico PDF (al massimo 31 giorni).</p>
+    </div>
+</div>
+{% if error %}<div class="message-error">{{ error }}</div>{% endif %}
+
+{% if giornata %}
+<div class="card">
+    <div class="testata-pn">
+        <strong>{{ giornata.pv }} {{ giornata.nome }}</strong>
+        <span>data: <strong>{{ giornata.data|date:"d/m/Y" }}</strong></span>
+        <span>modello: <strong>PRIMA NOTA</strong></span>
+        <span style="flex:1"></span>
+        <button class="btn btn-light" type="button" onclick="apriTutte(true)">Espandi tutto</button>
+        <button class="btn btn-light" type="button" onclick="apriTutte(false)">Comprimi tutto</button>
+    </div>
+    <table class="table riepilogo" style="margin-bottom:14px">
+        <thead><tr><th></th><th>Data</th><th class="num">Entrate</th><th class="num">Uscite</th><th class="num">Evidenze</th><th class="num">Movimenti</th></tr></thead>
+        <tbody>
+        {% for etichetta, r in riepilogo %}
+            <tr><td><strong>{{ etichetta }}</strong></td><td>{{ r.data|date:"d/m/Y" }}</td><td class="num">{{ r.entrate|euro }}</td>
+                <td class="num">{{ r.uscite|euro }}</td><td class="num">{{ r.evidenze|euro }}</td><td class="num">{{ r.movimenti|intero }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <table class="table pn">
+        <thead><tr><th class="c" style="width:56px">Righe</th><th>Causale</th><th>Descrizione / Rag. sociale</th><th>Doc. rif. numero</th><th>Data</th>
+            <th class="num">Entrate</th><th class="num">Uscite</th><th class="num">Evidenze</th><th>Note</th><th style="width:40px"></th></tr></thead>
+        <tbody>
+        {% for c in giornata.causali %}
+            <tr class="causale {% if c.movimenti %}con-righe{% endif %}" {% if c.movimenti %}data-causale="{{ c.codice }}" onclick="apri(this)"{% endif %}>
+                <td class="c">{% if c.movimenti %}{{ c.movimenti|length }}{% endif %}</td>
+                <td>{% if c.movimenti %}<span class="freccia">▸</span>{% else %}<span class="freccia"></span>{% endif %}{{ c.codice }} {{ c.descrizione }}</td>
+                <td></td><td></td><td></td>
+                <td class="num">{% if c.entrate is not None %}{{ c.entrate|euro }}{% endif %}</td>
+                <td class="num">{% if c.uscite is not None %}{{ c.uscite|euro }}{% endif %}</td>
+                <td class="num">{% if c.evidenze is not None %}{{ c.evidenze|euro }}{% endif %}</td>
+                <td>{% if c.note %}📝 {{ c.note }}{% endif %}</td><td></td>
+            </tr>
+            {% for m in c.movimenti %}
+            <tr class="movimento" data-di="{{ c.codice }}" hidden>
+                <td class="c small">{% if m.certificato %}<span class="cert" title="{{ m.certificato }}">✓</span>{% endif %} {{ m.ora }}</td>
+                <td class="small">n. {{ m.progressivo }}</td>
+                <td>{{ m.descrizione }}</td><td>{{ m.numero_doc }}</td><td>{{ m.data_doc|date:"d/m/Y" }}</td>
+                <td class="num">{% if m.colonna == "entrate" %}{{ m.importo|euro }}{% endif %}</td>
+                <td class="num">{% if m.colonna == "uscite" %}{{ m.importo|euro }}{% endif %}</td>
+                <td class="num">{% if m.colonna == "evidenze" %}{{ m.importo|euro }}{% endif %}</td>
+                <td class="nota">{{ m.note }}</td>
+                <td><button class="btn-piccolo" type="button" title="Tutti i dati del movimento" onclick="dettaglio(this)">⋯</button></td>
+            </tr>
+            <tr class="dettaglio" data-di="{{ c.codice }}" hidden data-chiuso="1">
+                <td></td><td colspan="9"><div class="campi">{% for etichetta, valore in m.dettagli %}<div><span>{{ etichetta }}:</span> {{ valore }}</div>{% endfor %}</div></td>
+            </tr>
+            {% endfor %}
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% elif cercato and not error %}
+<div class="card">Nessun movimento di prima nota per {{ nome_pv }} il {{ giorno }}.</div>
+{% endif %}
+{% endblock %}
+{% block script %}
+<script>
+function segnaPv(stato){ document.querySelectorAll('.pv-scelta input').forEach(i => i.checked = stato); return false; }
+function stampaPn(){
+    const q = new URLSearchParams(new FormData(document.getElementById("formStampa")));
+    q.set("formato", "pdf");
+    apriStampa("/primanota/prima-nota/?" + q.toString());
+    return false;
+}
+// Clic sulla causale: mostra o nasconde i suoi movimenti (il dettaglio completo si apre con «⋯»).
+function apri(riga, stato){
+    const aperta = stato === undefined ? !riga.classList.contains("aperta") : stato;
+    riga.classList.toggle("aperta", aperta);
+    document.querySelectorAll(`tr[data-di="${riga.dataset.causale}"]`).forEach(r => {
+        r.hidden = !aperta || (r.classList.contains("dettaglio") && r.dataset.chiuso === "1");
+    });
+}
+function apriTutte(stato){ document.querySelectorAll("tr.causale.con-righe").forEach(r => apri(r, stato)); }
+function dettaglio(bottone){
+    const riga = bottone.closest("tr").nextElementSibling;
+    riga.dataset.chiuso = riga.dataset.chiuso === "1" ? "0" : "1";
+    riga.hidden = riga.dataset.chiuso === "1";
+}
+</script>
+{% endblock %}

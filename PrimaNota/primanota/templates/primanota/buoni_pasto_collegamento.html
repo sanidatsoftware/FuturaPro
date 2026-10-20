@@ -1,15 +1,16 @@
 {% extends "primanota/base.html" %}
-{% block title %}Collegamento database buoni pasto{% endblock %}
+{% block title %}Collegamento database cassa centrale{% endblock %}
 {% block content %}
 <div class="top-actions">
-    <h1>Collegamento al database dei buoni pasto</h1>
+    <h1>Collegamento al database della cassa centrale</h1>
+    <a class="btn btn-light" href="/primanota/prima-nota/">« Consultazione Prima Nota</a>
     <a class="btn btn-light" href="/primanota/buoni-pasto/">« Buoni Pasto per Emettitore</a>
     {% include "primanota/_menu.html" with attivo="buoni_pasto" %}
 </div>
 {% if messaggio %}<div class="message-ok">{{ messaggio }}</div>{% endif %}
 {% if errore %}<div class="message-error">{{ errore }}</div>{% endif %}
 <div class="card" style="max-width:760px">
-    <p class="small">Database SQL Server da cui si leggono gli incassi in buoni pasto (cassa centrale, causali 18-25).
+    <p class="small">Database SQL Server della cassa centrale, da cui leggono «Consultazione Prima Nota» e «Buoni Pasto per Emettitore».
         Lo modificano solo Direttore e Amministratore; la password è salvata cifrata e non viene mai mostrata.</p>
     <form method="post" class="filters">{% csrf_token %}
         <label class="field">Server <input name="host" value="{{ c.host }}" required placeholder="192.168.1.194"></label>

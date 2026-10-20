@@ -233,10 +233,12 @@
             });
         } else {
             const punti = vista.map((d, i) => `${x(i)},${y(d.valore)}`).join(" ");
+            // Area: superficie piena sotto la linea. Linea: solo la linea, con un punto per ogni giorno.
             if(scelte.andamento === "area")
-                html += `<polygon points="${x(0)},${y(0)} ${punti} ${x(n - 1)},${y(0)}" fill="#cde2fb" opacity=".75"/>`;
-            html += n === 1 ? `<circle cx="${x(0)}" cy="${y(vista[0].valore)}" r="4" fill="#2a78d6"/>`
-                            : `<polyline points="${punti}" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/>`;
+                html += `<polygon points="${x(0)},${y(0)} ${punti} ${x(n - 1)},${y(0)}" fill="#86b6ef" fill-opacity=".6"/>`;
+            if(n > 1) html += `<polyline points="${punti}" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/>`;
+            if(scelte.andamento === "linea" || n === 1)
+                vista.forEach((d, i) => { html += `<circle cx="${x(i)}" cy="${y(d.valore)}" r="${n > 60 ? 2.5 : 4}" fill="#2a78d6" stroke="#fff" stroke-width="1.5"/>`; });
         }
         html += `<line id="mirino" y1="${alto}" y2="${H - basso}" stroke="#52514e" stroke-dasharray="3 3" visibility="hidden"/>` +
                 `<circle id="punto" r="5" fill="#2a78d6" stroke="#fff" stroke-width="2" visibility="hidden"/>` +

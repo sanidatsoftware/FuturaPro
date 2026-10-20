@@ -807,11 +807,11 @@ class TestBuoniPasto(Base):
 class TestCollegamentoBuoniPasto(Base):
     def test_solo_direttore_e_amministratore(self):
         from primanota.models import CollegamentoBuoniPasto
-        from primanota.services import buoni_pasto
+        from primanota.services import cassa_centrale as buoni_pasto
         self.assertEqual(self.client_per("ufficio@x").get("/primanota/buoni-pasto/collegamento/").status_code, 403)
         self.assertEqual(self.client_per("pv@x").get("/primanota/buoni-pasto/collegamento/").status_code, 302)
         d = self.client_per("direttore@x")
-        with mock.patch("primanota.services.buoni_pasto.prova") as prova:
+        with mock.patch("primanota.services.cassa_centrale.prova") as prova:
             r = d.post("/primanota/buoni-pasto/collegamento/", {"host": "10.0.0.5", "database": "Scontrini", "utente": "lettore",
                                                                 "password": "segreta", "azione": "prova"})
         self.assertContains(r, "il database risponde")
@@ -828,3 +828,75 @@ class TestCollegamentoBuoniPasto(Base):
         self.assertNotContains(self.client_per("ufficio@x").get("/primanota/buoni-pasto/"), "/primanota/buoni-pasto/collegamento/")
         for url in ("/primanota/statistiche/", "/primanota/buoni-pasto/"):
             self.assertRedirects(self.client_per("pv@x").get(url), "/primanota/upload/", fetch_redirect_response=False)
+
+
+
+def righe_prima_nota(*file):
+    """Le righe dei CSV di esempio come le restituisce pymssql (dict per colonna, importi Decimal)."""
+    import csv
+    colonne = (DATI / "prima_nota_colonne.txt").read_text().split()
+    out = []
+    for nome in file:
+        with open(DATI / nome, encoding="utf-8") as f:
+            for r in csv.reader(f, delimiter=";", quotechar='"'):
+                d = dict(zip(colonne, r))
+                for k in ("importo", "imponibile", "iva", "importo_ori"):
+                    d[k] = Decimal(d[k].replace(",", "."))
+                d["causale_descr"], d["nome_negozio"] = "", "PV PROVA " + d["pv"]
+                out.append(d)
+    return out
+
+
+class TestPrimaNota(Base):
+    RIPRESA = [("5040", Decimal("5229924.84"), Decimal("5229924.84"), Decimal("2744142.44"), 17810)]
+
+    def esegui_finto(self, righe):
+        def esegui(c, sql, parametri=(), dizionari=False):
+            self.query.append((sql, parametri))
+            return righe if dizionari else [r for r in self.RIPRESA if r[0] in parametri]
+        self.query = []
+        return mock.patch.multiple("primanota.services.prima_nota", esegui=esegui, configurazione=lambda: {"host": "x"})
+
+    def test_giornata_come_nel_gestionale(self):
+        with self.esegui_finto(righe_prima_nota("prima_nota_5040.csv")):
+            r = self.client_per("ufficio@x").get("/primanota/prima-nota/", {"pv": "5040", "data": "2026-10-19"})
+        g = r.context["giornata"]
+        self.assertEqual(self.query[0][1], ("20261019", "20261019", "5040"))
+        self.assertIn("ISNULL(r.data_ann, 0) = 0", self.query[0][0])
+        self.assertEqual(self.query[1][1], ("20261019", "5040"))   # ripresa: tutto prima del giorno
+        # Gli stessi numeri della schermata del gestionale.
+        self.assertEqual((g["periodo"]["entrate"], g["periodo"]["uscite"], g["periodo"]["evidenze"], g["periodo"]["movimenti"]),
+                         (Decimal("936.41"), Decimal("936.41"), Decimal("697.19"), 15))
+        self.assertEqual((g["progressivo"]["entrate"], g["progressivo"]["evidenze"], g["progressivo"]["movimenti"]),
+                         (Decimal("5230861.25"), Decimal("2744839.63"), 17825))
+        causali = {c["codice"]: c for c in g["causali"]}
+        self.assertEqual([c["codice"] for c in g["causali"]][:5], [1, 15, 14, 16, 2])   # ordine del modello
+        self.assertEqual((len(causali[1]["movimenti"]), causali[1]["entrate"]), (4, Decimal("934.75")))
+        self.assertEqual(causali[10]["movimenti"][0]["descrizione"], "Oper: 72-ROSSI MARIO")
+        self.assertEqual(causali[21]["evidenze"], Decimal("20"))
+        self.assertIsNone(causali[3]["uscite"])
+        nota = causali[17]["movimenti"][0]["note"]
+        self.assertTrue(nota.startswith("cassone elettronica") and nota.endswith("aut.mario manutentore"))
+        self.assertContains(r, "aut.mario manutentore")   # nota intera, non tagliata
+        self.assertContains(r, "5.230.861,25 €")
+
+    def test_stampa_piu_negozi_una_pagina_ciascuno(self):
+        import pymupdf
+        with self.esegui_finto(righe_prima_nota("prima_nota_5031.csv", "prima_nota_5040.csv")):
+            r = self.client_per("ufficio@x").get("/primanota/prima-nota/", {"formato": "pdf", "dal": "2026-10-19", "al": "2026-10-19"})
+        self.assertEqual(self.query[0][1], ("20261019", "20261019"))   # nessun PV scelto = tutti
+        self.assertIn('filename="Prima_nota_Tutti_i_PV_2026-10-19.pdf"', r["Content-Disposition"])
+        doc = pymupdf.open(stream=r.content, filetype="pdf")
+        self.assertEqual(doc.page_count, 2)
+        self.assertIn("5031 PV PROVA 5031", doc[0].get_text())
+        testo = " ".join(doc[1].get_text().split())
+        self.assertIn("5040 PV PROVA 5040", testo)
+        self.assertIn("salumeria coprati dal manutentore aut.mario manutentore", testo)   # nota intera
+        self.assertIn("5.230.861,25", testo)
+        self.assertEqual(self.client_per("pv@x").get("/primanota/prima-nota/").status_code, 302)
+
+    def test_senza_ricerca_nessuna_query(self):
+        with self.esegui_finto([]):
+            r = self.client_per("ufficio@x").get("/primanota/prima-nota/")
+        self.assertEqual(self.query, [])
+        self.assertContains(r, "Consulta un punto vendita")

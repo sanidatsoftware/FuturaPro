@@ -10,7 +10,7 @@ from collections import OrderedDict
 from decimal import Decimal
 from html import escape
 
-from django.conf import settings
+from .cassa_centrale import NON_CONFIGURATO, configurazione, esegui, prova  # noqa: F401 (prova: pagina del collegamento)
 
 QUERY = """
 SELECT r.pv AS PuntoVendita,
@@ -31,59 +31,16 @@ SELECT r.pv AS PuntoVendita,
 """
 
 
-def configurazione():
-    """
-    {"host", "database", "user", "password"}: quella salvata nel portale (Buoni Pasto > Collegamento),
-    altrimenti settings.BUONI_PASTO_DB; None se manca.
-    """
-    from ..models import CollegamentoBuoniPasto
-    from .importazione import decifra
-
-    c = CollegamentoBuoniPasto.objects.first()
-    if c and c.host and c.utente:
-        return {"host": c.host, "database": c.database or "Scontrini", "user": c.utente,
-                "password": decifra(c.password_cifrata)}
-    c = getattr(settings, "BUONI_PASTO_DB", None)
-    return c if c and c.get("host") else None
-
-
-def _pymssql():
-    try:
-        import pymssql
-    except ImportError:
-        raise RuntimeError("Manca il modulo pymssql: rieseguire l'installazione.")
-    return pymssql
-
-
-def _esegui(c, sql, parametri=()):
-    """Esegue la query e restituisce tutte le righe; RuntimeError con il motivo se non riesce."""
-    pymssql = _pymssql()
-    try:
-        with pymssql.connect(server=c["host"], user=c.get("user", ""), password=c.get("password", ""),
-                             database=c.get("database") or "Scontrini", login_timeout=15, timeout=300) as cn:
-            with cn.cursor() as cur:
-                cur.execute(sql, parametri)
-                return cur.fetchall()
-    except pymssql.Error as exc:
-        raise RuntimeError(f"Database dei buoni pasto non raggiungibile o query non riuscita: {exc}")
-
-
-def prova(c):
-    """Prova il collegamento con i dati indicati (SELECT 1)."""
-    _esegui(c, "SELECT 1")
-
-
 def interroga(data_da, data_a, punti_vendita=()):
     """Righe (pv, nome, causale, emettitore, importo). Date ISO; la query le vuole come yyyymmdd."""
     c = configurazione()
     if not c:
-        raise RuntimeError("Collegamento al database dei buoni pasto non configurato "
-                           "(Buoni Pasto per Emettitore > Collegamento, a cura di Direttore o Amministratore).")
+        raise RuntimeError(NON_CONFIGURATO)
     punti_vendita = [str(p).strip() for p in punti_vendita if str(p).strip()]
     filtro = f"AND r.pv IN ({', '.join(['%s'] * len(punti_vendita))})" if punti_vendita else ""
     parametri = (data_da.replace("-", ""), data_a.replace("-", ""), *punti_vendita)
     return [(str(pv).strip(), (nome or "").strip(), causale, (emettitore or "").strip(), Decimal(str(importo or 0)))
-            for pv, nome, causale, emettitore, importo in _esegui(c, QUERY.format(filtro_pv=filtro), parametri)]
+            for pv, nome, causale, emettitore, importo in esegui(c, QUERY.format(filtro_pv=filtro), parametri)]
 
 
 def riepilogo(righe):

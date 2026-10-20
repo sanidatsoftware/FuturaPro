@@ -835,11 +835,68 @@ def buoni_pasto(request):
         periodo=periodo, descrizione_pv=descrizione_pv, configurato=bool(servizio.configurazione())))
 
 
+MAX_GIORNI_PRIMA_NOTA = 31
+
+
+@xframe_options_sameorigin  # il PDF si apre nella finestra di stampa della pagina stessa
+@_accesso(solo_ufficio=True)
+def prima_nota(request):
+    """Consultazione della prima nota (cassa centrale) per punto vendita e giorno; stampa PDF per più PV e giorni."""
+    from .services import cassa_centrale
+    from .services import prima_nota as servizio
+
+    ieri = (timezone.localdate() - timedelta(days=1)).isoformat()
+    negozi = negozi_attivi_ordinati()
+    nome_pv = {str(n.get("codice")): etichetta_negozio(n) for n in negozi}
+
+    if request.GET.get("formato") == "pdf":
+        from .services.prima_nota_pdf import genera_pdf
+        data_da = _data(request.GET.get("dal"), ieri)
+        data_a = _data(request.GET.get("al"), data_da)
+        if data_a < data_da:
+            data_da, data_a = data_a, data_da
+        if (date.fromisoformat(data_a) - date.fromisoformat(data_da)).days >= MAX_GIORNI_PRIMA_NOTA:
+            return HttpResponse(f"Scegliere al massimo {MAX_GIORNI_PRIMA_NOTA} giorni.", status=400)
+        scelti = [p for p in request.GET.getlist("pv") if p.strip()]
+        try:
+            giornate = servizio.interroga(data_da, data_a, scelti)
+        except RuntimeError as exc:
+            return HttpResponse(str(exc), status=502)
+        for g in giornate:
+            g["nome"] = g["nome"] or nome_pv.get(g["pv"], "")
+        periodo = data_da if data_da == data_a else f"dal {data_da} al {data_a}"
+        nome = "_".join(re.sub(r"[^\w-]+", "_", t).strip("_")
+                        for t in ("Prima_nota", "_".join(scelti) if scelti else "Tutti_i_PV", periodo)) + ".pdf"
+        risposta = HttpResponse(genera_pdf(giornate, "Prima nota", nome), content_type="application/pdf")
+        risposta["Content-Disposition"] = f'inline; filename="{nome}"'
+        return risposta
+
+    giorno = _data(request.GET.get("data"), ieri)
+    pv = request.GET.get("pv", "").strip()
+    giornata = error = None
+    cercato = bool(pv) and "data" in request.GET   # la query parte solo con «Cerca»
+    if cercato:
+        try:
+            giornate = servizio.interroga(giorno, giorno, [pv])
+            giornata = giornate[0] if giornate else None
+        except RuntimeError as exc:
+            error = str(exc)
+        if giornata:
+            giornata["nome"] = giornata["nome"] or nome_pv.get(pv, "")
+    corrente = date.fromisoformat(giorno)
+    return render(request, "primanota/prima_nota.html", _contesto(
+        request, negozi=negozi, giorno=giorno, pv=pv, giornata=giornata, error=error, cercato=cercato, ieri=ieri,
+        precedente=(corrente - timedelta(days=1)).isoformat(), successivo=(corrente + timedelta(days=1)).isoformat(),
+        nome_pv=nome_pv.get(pv, pv), configurato=bool(cassa_centrale.configurazione()),
+        riepilogo=[("Ripresa", giornata["ripresa"]), ("Periodo", giornata["periodo"]),
+                   ("Progressivo", giornata["progressivo"])] if giornata else []))
+
+
 @_accesso(solo_ufficio=True, solo_gestione=True)
 def buoni_pasto_collegamento(request):
     """Server, database, utente e password del database dei buoni pasto: solo Direttore e Amministratore."""
     from .models import CollegamentoBuoniPasto
-    from .services import buoni_pasto as servizio
+    from .services import cassa_centrale as servizio
 
     c = CollegamentoBuoniPasto.corrente()
     messaggio = errore = None

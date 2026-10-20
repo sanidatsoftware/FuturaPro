@@ -18,7 +18,7 @@ DPI_GRAFICI = 200
 
 # Stessi colori della pagina: serie singola in blu, categorie nell'ordine fisso della palette.
 BLU = (0x2a / 255, 0x78 / 255, 0xd6 / 255)
-BLU_CHIARO = (0xcd / 255, 0xe2 / 255, 0xfb / 255)
+BLU_AREA = (0x86 / 255, 0xb6 / 255, 0xef / 255)
 GRIGLIA = (0.90, 0.91, 0.93)
 TESTO_2 = (0.40, 0.44, 0.52)
 CATEGORIE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
@@ -98,13 +98,15 @@ def _andamento(giorni, tipo):
         else:
             x = lambda i: sx + (larghezza / 2 if n == 1 else i * larghezza / (n - 1))
             punti = [pymupdf.Point(x(i), y(v)) for i, v in enumerate(valori)]
+            # Area: superficie piena sotto la linea. Linea: solo la linea, con un punto per ogni giorno.
             if tipo == "area":
                 p.draw_polyline([pymupdf.Point(x(0), y(0))] + punti + [pymupdf.Point(x(n - 1), y(0))],
-                                color=None, fill=BLU_CHIARO, closePath=True)
-            if n == 1:
-                p.draw_circle(punti[0], 2.5, color=None, fill=BLU)
-            else:
+                                color=None, fill=BLU_AREA, fill_opacity=0.6, closePath=True)
+            if n > 1:
                 p.draw_polyline(punti, color=BLU, width=1.6, lineJoin=1)
+            if tipo == "linea" or n == 1:
+                for punto in punti:
+                    p.draw_circle(punto, 1.6 if n > 60 else 2.4, color=(1, 1, 1), fill=BLU, width=0.8)
         ogni = max(1, -(-n // 16))
         for i, g in enumerate(giorni):
             if i % ogni == 0:
