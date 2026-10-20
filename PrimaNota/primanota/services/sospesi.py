@@ -211,8 +211,9 @@ def abbina_ribattuti(negozio_id, dal=None):
     """
     Per gli scontrini sospesi e non emessi del negozio cerca lo scontrino fiscale ribattuto a mano:
     stesso negozio, giorno della sospensione (dopo l'ora) o successivo, qualsiasi cassa. Stesso totale e
-    stessi articoli: ribattuto; stesso totale ma articoli diversi o non leggibili, oppure totale diverso
-    con molti articoli in comune: probabilmente ribattuto. Ogni scontrino fiscale si usa una volta sola.
+    stessi articoli: ribattuto; molti articoli in comune (con totale uguale o diverso), oppure stesso totale
+    con articoli non leggibili: probabilmente ribattuto. Stesso totale con articoli diversi non conta.
+    Ogni scontrino fiscale si usa una volta sola.
     """
     from datetime import timedelta
 
@@ -253,13 +254,16 @@ def abbina_ribattuti(negozio_id, dal=None):
                     continue
                 somiglianza = _somiglianza(articoli, _articoli(d))
                 stesso_totale = s.importo is not None and d["totale"] == s.importo
-                if stesso_totale and somiglianza is not None and somiglianza >= SOGLIA_STESSI_ARTICOLI:
+                # Lo stesso totale da solo non basta: gli articoli devono coincidere, se si possono leggere.
+                if somiglianza is None:
+                    if not stesso_totale:
+                        continue
+                    livello, motivo = 1, "stesso totale, articoli non confrontabili"
+                elif stesso_totale and somiglianza >= SOGLIA_STESSI_ARTICOLI:
                     livello, motivo = 0, "stesso totale e stessi articoli"
-                elif stesso_totale:
-                    livello, motivo = 1, ("stesso totale, articoli diversi" if somiglianza is not None
-                                          else "stesso totale, articoli non confrontabili")
-                elif somiglianza is not None and somiglianza >= SOGLIA_TOTALE_DIVERSO:
-                    livello, motivo = 2, f"totale diverso, {round(somiglianza * 100)}% di articoli in comune"
+                elif somiglianza >= SOGLIA_TOTALE_DIVERSO:
+                    livello, motivo = 2, (f"{'stesso totale' if stesso_totale else 'totale diverso'}, "
+                                          f"{round(somiglianza * 100)}% di articoli in comune")
                 else:
                     continue
                 distanza = (giorno - s.data).days * 24 * 60 + (ora or 0) - ora_sospensione

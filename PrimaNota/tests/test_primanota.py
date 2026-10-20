@@ -1225,7 +1225,7 @@ class TestRibattuti(Base):
 
     def test_ribattuto_il_giorno_dopo_su_un_altra_cassa(self):
         s = self.importa(("SysSpy.20260529.2", sysspy_scontrini("29/05/2026", 2, [
-            (9, "08:40", [("SAPONE MARSIGLIA", "5,40")]),          # stesso totale, articoli diversi: meno buono
+            (9, "08:40", [("TEPELENE ACQUA NAT.P", "5,50")]),      # stessi articoli, totale diverso: meno buono
             (10, "09:05", [("TEPELENE ACQUA NAT.P", "5,40")])])))   # stesso totale e stesso articolo
         self.assertEqual((s.stato, s.rib_data, s.rib_cassa, s.rib_numero, s.rib_importo),
                          ("ribattuto", date(2026, 5, 29), 2, 10, Decimal("5.40")))
@@ -1256,13 +1256,15 @@ class TestRibattuti(Base):
         s = self.importa(("SysSpy.20260529.2", sysspy_scontrini("29/05/2026", 2, [
             (10, "09:05", [("TEPELENE ACQUA NAT.P", "5,50")]),
             (11, "09:10", [("FINDUS 18 BAST.NUOVA", "5,40")])])))   # stesso totale ma nessun articolo in comune
-        self.assertEqual((s.stato, s.rib_numero, s.rib_importo), ("probabile", 11, Decimal("5.40")))
-        self.assertEqual(s.rib_motivo, "stesso totale, articoli diversi")
-        self.assertEqual(s.rib_altri[0]["motivo"], "totale diverso, 100% di articoli in comune")
+        # Lo scontrino con lo stesso totale ma senza articoli in comune non è un candidato.
+        self.assertEqual((s.stato, s.rib_numero, s.rib_importo), ("probabile", 10, Decimal("5.50")))
+        self.assertEqual(s.rib_motivo, "totale diverso, 100% di articoli in comune")
+        self.assertEqual(s.rib_altri, [])
 
     def test_niente_di_simile(self):
         s = self.importa(("SysSpy.20260529.2", sysspy_scontrini("29/05/2026", 2, [
-            (10, "09:05", [("PANE", "1,20"), ("LATTE", "1,50")])])))
+            (10, "09:05", [("PANE", "1,20"), ("LATTE", "1,50")]),
+            (11, "09:10", [("GRANAROLO IL QUATTRO", "1,94"), ("OLIVE NERE GRECHE MA", "3,46")])])))   # stesso totale, altri articoli
         self.assertEqual((s.stato, s.ribattuto), ("sospeso", ""))
 
 
