@@ -1,0 +1,25 @@
+{% extends "primanota/base.html" %}
+{% block title %}Statistiche{% endblock %}
+{% block content %}
+<div class="top-actions">
+    <h1>Statistiche</h1>
+    {% include "primanota/_menu.html" with attivo="statistiche_menu" %}
+</div>
+<div class="sezioni">
+    <a class="sezione-card" href="/primanota/statistiche/finanziarie/">
+        <div class="icona">📈</div>
+        <h2>Statistiche finanziarie</h2>
+        <p>Corrispettivi per periodo e negozio, mezzi di pagamento, correzioni, abortite, resi e produttività dei cassieri, dai SysSpy.</p>
+    </a>
+    <a class="sezione-card" href="/primanota/fasce-orarie/">
+        <div class="icona">🕒</div>
+        <h2>Vendite per Fasce Orarie</h2>
+        <p>Venduto, pezzi e clienti ora per ora, per punto vendita o per reparto, con media giornaliera, stampa PDF ed Excel.</p>
+    </a>
+    <a class="sezione-card" href="/primanota/buoni-pasto/">
+        <div class="icona">🍽️</div>
+        <h2>Buoni Pasto per Emettitori</h2>
+        <p>Incassi in buoni pasto per punto vendita ed emettitore nel periodo, con totali, stampa PDF ed esportazione Excel.</p>
+    </a>
+</div>
+{% endblock %}

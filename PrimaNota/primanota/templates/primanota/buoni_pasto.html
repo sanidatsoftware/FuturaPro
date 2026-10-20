@@ -1,6 +1,6 @@
 {% extends "primanota/base.html" %}
 {% load primanota_formati %}
-{% block title %}Buoni Pasto per Emettitore{% endblock %}
+{% block title %}Buoni Pasto per Emettitori{% endblock %}
 {% block style %}
 <style>
 .pv-scelta{border:1px solid #ced7e2;border-radius:8px;background:#fff;max-height:150px;overflow:auto;padding:6px 10px;min-width:300px;
@@ -19,7 +19,7 @@
 {% endblock %}
 {% block content %}
 <div class="top-actions">
-    <h1>Buoni Pasto per Emettitore</h1>
+    <h1>Buoni Pasto per Emettitori</h1>
     {% if puo_gestire %}<a class="btn btn-light" href="/primanota/buoni-pasto/collegamento/">⚙ Collegamento database</a>{% endif %}
     {% include "primanota/_menu.html" with attivo="buoni_pasto" %}
 </div>

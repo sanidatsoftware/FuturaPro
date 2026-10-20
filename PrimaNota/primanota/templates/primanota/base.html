@@ -43,6 +43,14 @@ textarea{min-height:80px;resize:vertical;width:100%}
 .stampa-barra{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid #e1e7ee}
 .stampa-barra strong{flex:1;color:#2d4055}
 .stampa-box iframe{flex:1;border:0;border-radius:0 0 14px 14px;width:100%}
+/* Schede delle sezioni (Documenti Amministrativi, Statistiche). */
+.sezioni{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+.sezione-card{background:#fff;border-radius:14px;padding:26px;box-shadow:0 4px 16px rgba(0,0,0,.08);text-decoration:none;color:#263238;
+    border:2px solid transparent;transition:border-color .15s,transform .15s}
+.sezione-card:hover{border-color:#ff6a00;transform:translateY(-2px)}
+.sezione-card .icona{font-size:34px}.sezione-card h2{color:#2d4055;margin:10px 0 6px}
+.sezione-card p{margin:0;color:#667085;font-size:14px}
+.sezione-card .badge{margin-top:12px}
 .stampa-attesa{flex:1;display:flex;align-items:center;justify-content:center;color:#667085}
 </style>
 {% block style %}{% endblock %}

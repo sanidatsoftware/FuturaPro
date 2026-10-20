@@ -7,7 +7,15 @@
     <a class="btn btn-light {% if attivo == 'versamenti' %}active{% endif %}" href="/primanota/versamenti/">Consultazione versamenti</a>
     <a class="btn btn-light {% if attivo == 'versamenti_note' %}active{% endif %}" href="/primanota/versamenti/note/">Note sui versamenti</a>
     <a class="btn btn-light" href="/primanota/">« Documenti Amministrativi</a>
-    {% elif attivo == "statistiche" or attivo == "buoni_pasto" or attivo == "prima_nota" or attivo == "fasce_orarie" %}
+    {% elif attivo == "statistiche" or attivo == "buoni_pasto" or attivo == "fasce_orarie" or attivo == "statistiche_menu" %}
+    {% if attivo != "statistiche_menu" %}
+    <a class="btn btn-light {% if attivo == 'statistiche' %}active{% endif %}" href="/primanota/statistiche/finanziarie/">Statistiche finanziarie</a>
+    <a class="btn btn-light {% if attivo == 'fasce_orarie' %}active{% endif %}" href="/primanota/fasce-orarie/">Vendite per Fasce Orarie</a>
+    <a class="btn btn-light {% if attivo == 'buoni_pasto' %}active{% endif %}" href="/primanota/buoni-pasto/">Buoni Pasto per Emettitori</a>
+    <a class="btn btn-light" href="/primanota/statistiche/">« Statistiche</a>
+    {% endif %}
+    <a class="btn btn-light" href="/primanota/">« Documenti Amministrativi</a>
+    {% elif attivo == "prima_nota" %}
     <a class="btn btn-light" href="/primanota/">« Documenti Amministrativi</a>
     {% else %}
     <a class="btn btn-light {% if attivo == 'admin' %}active{% endif %}" href="/primanota/admin/">Scansioni</a>

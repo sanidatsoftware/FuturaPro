@@ -602,7 +602,7 @@ class TestVersamentiNoteStatistiche(Base):
 
     def test_statistiche(self):
         self.importa_fixture()
-        r = self.client_per("ufficio@x").get("/primanota/statistiche/", {"data_da": "2026-05-28", "data_a": "2026-05-28"})
+        r = self.client_per("direttore@x").get("/primanota/statistiche/finanziarie/", {"data_da": "2026-05-28", "data_a": "2026-05-28"})
         dati = r.context["dati"]
         self.assertEqual((dati["kpi"]["totale"], dati["kpi"]["scontrini"], dati["kpi"]["abortite"]), (Decimal("18.00"), 2, 1))
         self.assertEqual(dati["cassieri"][0]["nome"], "MARIO ROSSI")
@@ -662,8 +662,10 @@ class TestDocumentiAmministrativi(Base):
     def test_tre_sezioni_per_la_sede(self):
         uff = self.client_per("ufficio@x")
         home = uff.get("/primanota/")
-        for voce in ("Chiusure Fiscali", "Gestione Versamenti", "Statistiche"):
+        for voce in ("Chiusure Fiscali", "Gestione Versamenti", "Consultazione Prima Nota"):
             self.assertContains(home, f"<h2>{voce}</h2>")
+        self.assertNotContains(home, "<h2>Statistiche</h2>")   # solo Direttori e Amministratori
+        self.assertContains(self.client_per("direttore@x").get("/primanota/"), "<h2>Statistiche</h2>")
         # Nelle Chiusure Fiscali nessun riferimento ai versamenti; in Gestione Versamenti il suo menu.
         admin = uff.get("/primanota/admin/")
         self.assertNotContains(admin, "/primanota/versamenti/")
@@ -721,25 +723,25 @@ class TestStatistichePdf(Base):
     def test_pdf_con_grafici_scelti(self):
         import pymupdf
         self.importa_fixture()
-        uff = self.client_per("ufficio@x")
+        uff = self.client_per("direttore@x")
         for andamento, torta in (("linea", "barre"), ("colonne", "torta"), ("area", "torta")):
-            r = uff.get("/primanota/statistiche/pdf/", {"data_da": "2026-05-25", "data_a": "2026-05-30", "andamento": andamento,
+            r = uff.get("/primanota/statistiche/finanziarie/pdf/", {"data_da": "2026-05-25", "data_a": "2026-05-30", "andamento": andamento,
                                                         "grafico_negozi": torta, "grafico_pagamenti": torta,
                                                         "vista_da": "2026-05-27", "vista_a": "2026-05-29"})
             self.assertEqual(r["Content-Type"], "application/pdf")
             self.assertEqual(r["X-Frame-Options"], "SAMEORIGIN")
-            self.assertIn('filename="Statistiche_Tutti_i_negozi_dal_2026-05-25_al_2026-05-30.pdf"', r["Content-Disposition"])
+            self.assertIn('filename="Statistiche_finanziarie_Tutti_i_negozi_dal_2026-05-25_al_2026-05-30.pdf"', r["Content-Disposition"])
             doc = pymupdf.open(stream=r.content, filetype="pdf")
             testo = "".join(p.get_text() for p in doc)
             self.assertIn("Andamento dei corrispettivi (dal 27/05 al 29/05)", testo)
             self.assertIn("MARIO ROSSI", testo)
             self.assertIn("18,00 €", testo)
             self.assertEqual(sum(len(p.get_images()) for p in doc), 2)   # andamento; negozi e pagamenti
-        self.assertEqual(self.client_per("pv@x").get("/primanota/statistiche/pdf/").status_code, 302)
+        self.assertEqual(self.client_per("pv@x").get("/primanota/statistiche/finanziarie/pdf/").status_code, 302)
 
     def test_pagina_con_comandi_dei_grafici(self):
         self.importa_fixture()
-        r = self.client_per("ufficio@x").get("/primanota/statistiche/", {"data_da": "2026-05-28", "data_a": "2026-05-28"})
+        r = self.client_per("direttore@x").get("/primanota/statistiche/finanziarie/", {"data_da": "2026-05-28", "data_a": "2026-05-28"})
         for comando in ('id="zoomPiu"', 'id="zoomMeno"', 'data-valore="colonne"', 'data-valore="torta"', 'id="stampaPdf"'):
             self.assertContains(r, comando)
         self.assertEqual(r.context["grafici"]["pagamenti"], [{"etichetta": "Carta Credito", "valore": 18.0}])
@@ -768,7 +770,7 @@ class TestBuoniPasto(Base):
         self.assertEqual(righe[0], ("5031", "Pv Adrano", 18, "DAY RISTOSERVICE", Decimal("120.50")))
 
     def test_pagina_totali_e_stampe(self):
-        uff = self.client_per("ufficio@x")
+        uff = self.client_per("direttore@x")
         with mock.patch("primanota.services.buoni_pasto.interroga") as interroga:
             r = uff.get("/primanota/buoni-pasto/")
             interroga.assert_not_called()   # la query parte solo con «Cerca»
@@ -791,11 +793,11 @@ class TestBuoniPasto(Base):
         self.assertIn("Totale 5031 Pv Adrano", testo)
         self.assertIn("230,50 €", testo)
         self.assertEqual(self.client_per("pv@x").get("/primanota/buoni-pasto/").status_code, 302)
-        self.assertContains(uff.get("/primanota/"), "Buoni Pasto per Emettitore")
+        self.assertContains(uff.get("/primanota/statistiche/"), "Buoni Pasto per Emettitori")
 
     def test_errore_di_collegamento(self):
         with override_settings(BUONI_PASTO_DB=None):
-            r = self.client_per("ufficio@x").get("/primanota/buoni-pasto/", {"data_da": "2026-10-01", "data_a": "2026-10-19"})
+            r = self.client_per("direttore@x").get("/primanota/buoni-pasto/", {"data_da": "2026-10-01", "data_a": "2026-10-19"})
         self.assertContains(r, "non configurato")
 
     def test_larghezza_barre_non_localizzata(self):
@@ -823,9 +825,9 @@ class TestCollegamentoBuoniPasto(Base):
         self.client_per("admin@x").post("/primanota/buoni-pasto/collegamento/", {"host": "10.0.0.6", "utente": "lettore", "password": ""})
         self.assertEqual(buoni_pasto.configurazione()["password"], "segreta")
         self.assertEqual(buoni_pasto.configurazione()["host"], "10.0.0.6")
-        # Il link al collegamento lo vede solo chi può gestirlo; le consultazioni restano della sede.
+        # Il link al collegamento lo vede chi può gestirlo; l'ufficio non entra nelle statistiche.
         self.assertContains(d.get("/primanota/buoni-pasto/"), "/primanota/buoni-pasto/collegamento/")
-        self.assertNotContains(self.client_per("ufficio@x").get("/primanota/buoni-pasto/"), "/primanota/buoni-pasto/collegamento/")
+        self.assertEqual(self.client_per("ufficio@x").get("/primanota/buoni-pasto/").status_code, 403)
         for url in ("/primanota/statistiche/", "/primanota/buoni-pasto/"):
             self.assertRedirects(self.client_per("pv@x").get(url), "/primanota/upload/", fetch_redirect_response=False)
 
@@ -919,7 +921,7 @@ class TestFasceOrarie(Base):
         return mock.patch.multiple("primanota.services.fasce_orarie", esegui=esegui, configurazione=lambda: {"host": "x"})
 
     def test_per_punto_vendita(self):
-        uff = self.client_per("ufficio@x")
+        uff = self.client_per("direttore@x")
         with self.esegui_finto():
             r = uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19"})
             self.assertEqual(self.query, [])   # senza «Cerca» nessuna query
@@ -942,7 +944,7 @@ class TestFasceOrarie(Base):
         self.assertContains(r, "214,3")   # 1500 pezzi in 7 giorni
 
     def test_per_reparto_clienti_dai_negozi(self):
-        uff = self.client_per("ufficio@x")
+        uff = self.client_per("direttore@x")
         with self.esegui_finto():
             r = uff.get("/primanota/fasce-orarie/", {"vista": "reparti", "data_da": "2026-10-13", "data_a": "2026-10-19",
                                                     "reparto": ["10", "20"], "cerca": "1", "misura": "clienti"})
@@ -957,7 +959,7 @@ class TestFasceOrarie(Base):
 
     def test_stampe_e_accesso(self):
         import pymupdf
-        uff = self.client_per("ufficio@x")
+        uff = self.client_per("direttore@x")
         with self.esegui_finto():
             csv = uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19", "formato": "csv"})
             pdf = uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19", "formato": "pdf"})
@@ -968,4 +970,26 @@ class TestFasceOrarie(Base):
         testo = pymupdf.open(stream=pdf.content, filetype="pdf")[0].get_text()
         self.assertIn("5.800,50", testo)
         self.assertEqual(self.client_per("pv@x").get("/primanota/fasce-orarie/").status_code, 302)
-        self.assertContains(uff.get("/primanota/"), "Vendite per Fasce Orarie")
+        self.assertContains(uff.get("/primanota/statistiche/"), "Vendite per Fasce Orarie")
+
+
+class TestMenuStatistiche(Base):
+    def test_tre_sezioni_solo_per_direttori_e_amministratori(self):
+        for email in ("direttore@x", "admin@x"):
+            c = self.client_per(email)
+            self.assertContains(c.get("/primanota/"), 'href="/primanota/statistiche/"')
+            r = c.get("/primanota/statistiche/")
+            for voce in ("Statistiche finanziarie", "Vendite per Fasce Orarie", "Buoni Pasto per Emettitori"):
+                self.assertContains(r, f"<h2>{voce}</h2>")
+        uff = self.client_per("ufficio@x")
+        self.assertNotContains(uff.get("/primanota/"), 'href="/primanota/statistiche/"')
+        for url in ("/primanota/statistiche/", "/primanota/statistiche/finanziarie/", "/primanota/statistiche/finanziarie/pdf/",
+                    "/primanota/fasce-orarie/", "/primanota/buoni-pasto/"):
+            self.assertEqual(uff.get(url).status_code, 403, url)
+            self.assertEqual(self.client_per("pv@x").get(url).status_code, 302, url)
+        # Le consultazioni della sede restano all'ufficio.
+        self.assertEqual(uff.get("/primanota/prima-nota/").status_code, 200)
+        # Vecchi collegamenti alle statistiche con i filtri.
+        r = self.client_per("direttore@x").get("/primanota/statistiche/", {"data_da": "2026-05-01", "data_a": "2026-05-31"})
+        self.assertRedirects(r, "/primanota/statistiche/finanziarie/?data_da=2026-05-01&data_a=2026-05-31",
+                             fetch_redirect_response=False)

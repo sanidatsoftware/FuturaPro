@@ -735,6 +735,14 @@ def versamenti_note(request):
 MAX_GIORNI_STATISTICHE = 366
 
 
+@_accesso(solo_ufficio=True, solo_gestione=True)
+def statistiche_menu(request):
+    """Statistiche (Direttori e Amministratori): finanziarie, vendite per fasce orarie, buoni pasto per emettitori."""
+    if "data_da" in request.GET:   # vecchi collegamenti alle statistiche con i filtri
+        return redirect("/primanota/statistiche/finanziarie/?" + request.GET.urlencode())
+    return render(request, "primanota/statistiche_menu.html", _contesto(request))
+
+
 def _statistiche_richieste(request):
     """Periodo e negozio dai filtri; dati None (con l'errore) se il periodo è troppo lungo."""
     from .services.statistiche import calcola
@@ -751,7 +759,7 @@ def _statistiche_richieste(request):
     return data_da, data_a, filtro_negozio, dati, None
 
 
-@_accesso(solo_ufficio=True)
+@_accesso(solo_ufficio=True, solo_gestione=True)
 def statistiche(request):
     data_da, data_a, filtro_negozio, dati, error = _statistiche_richieste(request)
     return render(request, "primanota/statistiche.html", _contesto(
@@ -764,7 +772,7 @@ def statistiche(request):
 
 
 @xframe_options_sameorigin  # il PDF si apre nella finestra di stampa della pagina stessa
-@_accesso(solo_ufficio=True)
+@_accesso(solo_ufficio=True, solo_gestione=True)
 def statistiche_pdf(request):
     """Le statistiche in PDF A4, con i tipi di grafico e la vista dell'andamento scelti nella pagina."""
     from .services import statistiche_pdf as servizio
@@ -781,7 +789,7 @@ def statistiche_pdf(request):
     da, a = date.fromisoformat(data_da), date.fromisoformat(data_a)
     nome = servizio.nome_file(etichetta, data_da, data_a)
     pdf = servizio.genera_pdf(
-        dati, titolo="Statistiche " + (etichetta or "tutti i negozi"),
+        dati, titolo="Statistiche finanziarie " + (etichetta or "tutti i negozi"),
         sottotitolo=f"dal {da:%d/%m/%Y} al {a:%d/%m/%Y}", nome=nome, giorni=giorni,
         andamento=request.GET.get("andamento", "linea"), negozi=request.GET.get("grafico_negozi", "barre"),
         pagamenti=request.GET.get("grafico_pagamenti", "barre"))
@@ -791,7 +799,7 @@ def statistiche_pdf(request):
 
 
 @xframe_options_sameorigin  # il PDF si apre nella finestra di stampa della pagina stessa
-@_accesso(solo_ufficio=True)
+@_accesso(solo_ufficio=True, solo_gestione=True)
 def buoni_pasto(request):
     """Buoni pasto per emettitore: incassi per punto vendita e causale (18-25) dal database delle statistiche."""
     from .services import buoni_pasto as servizio
@@ -839,7 +847,7 @@ MAX_GIORNI_FASCE = 366
 
 
 @xframe_options_sameorigin  # il PDF si apre nella finestra di stampa della pagina stessa
-@_accesso(solo_ufficio=True)
+@_accesso(solo_ufficio=True, solo_gestione=True)
 def fasce_orarie(request):
     """Vendite per fasce orarie, per punto vendita o per reparto (database Statistiche)."""
     from .services import cassa_centrale

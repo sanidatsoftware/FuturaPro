@@ -1,16 +1,5 @@
 {% extends "primanota/base.html" %}
 {% block title %}Documenti Amministrativi{% endblock %}
-{% block style %}
-<style>
-.sezioni{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
-.sezione-card{background:#fff;border-radius:14px;padding:26px;box-shadow:0 4px 16px rgba(0,0,0,.08);text-decoration:none;color:#263238;
-    border:2px solid transparent;transition:border-color .15s,transform .15s}
-.sezione-card:hover{border-color:#ff6a00;transform:translateY(-2px)}
-.sezione-card .icona{font-size:34px}.sezione-card h2{color:#2d4055;margin:10px 0 6px}
-.sezione-card p{margin:0;color:#667085;font-size:14px}
-.sezione-card .badge{margin-top:12px}
-</style>
-{% endblock %}
 {% block content %}
 <div class="top-actions">
     <h1>Documenti Amministrativi</h1>
@@ -31,25 +20,17 @@
         {% if note_versamenti %}<span class="badge badge-no">{{ note_versamenti }} not{{ note_versamenti|pluralize:"a,e" }} da lavorare</span>{% endif %}
     </a>
     {% endif %}
-    <a class="sezione-card" href="/primanota/statistiche/">
-        <div class="icona">📈</div>
-        <h2>Statistiche</h2>
-        <p>Corrispettivi per periodo e negozio, mezzi di pagamento, correzioni, abortite, resi e produttività dei cassieri.</p>
-    </a>
     <a class="sezione-card" href="/primanota/prima-nota/">
         <div class="icona">📒</div>
         <h2>Consultazione Prima Nota</h2>
         <p>Movimenti della cassa centrale per punto vendita e giorno, come nel gestionale, e stampa PDF per più negozi e giorni.</p>
     </a>
-    <a class="sezione-card" href="/primanota/fasce-orarie/">
-        <div class="icona">🕒</div>
-        <h2>Vendite per Fasce Orarie</h2>
-        <p>Venduto, pezzi e clienti ora per ora, per punto vendita o per reparto, con media giornaliera, stampa PDF ed Excel.</p>
+    {% if puo_gestire %}
+    <a class="sezione-card" href="/primanota/statistiche/">
+        <div class="icona">📈</div>
+        <h2>Statistiche</h2>
+        <p>Statistiche finanziarie, vendite per fasce orarie e buoni pasto per emettitori. Riservate a Direttori e Amministratori.</p>
     </a>
-    <a class="sezione-card" href="/primanota/buoni-pasto/">
-        <div class="icona">🍽️</div>
-        <h2>Buoni Pasto per Emettitore</h2>
-        <p>Incassi in buoni pasto per punto vendita ed emettitore nel periodo, con totali, stampa PDF ed esportazione Excel.</p>
-    </a>
+    {% endif %}
 </div>
 {% endblock %}

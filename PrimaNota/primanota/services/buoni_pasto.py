@@ -98,7 +98,7 @@ def pdf(risultato, periodo, descrizione_pv, nome):
           f"<td class='n'>{euro(g['totale'])}</td></tr>"
         for i, g in enumerate(risultato["gruppi"]))
     html = (
-        f"<h1>Buoni pasto per emettitore</h1><p class='sotto'>{escape(periodo)} · {escape(descrizione_pv)}</p>"
+        f"<h1>Buoni pasto per emettitori</h1><p class='sotto'>{escape(periodo)} · {escape(descrizione_pv)}</p>"
         "<h2>Totale per emettitore</h2><table><tr><th class='c'>Causale</th><th>Emettitore</th>"
         "<th class='n'>Importo</th><th class='n'>Quota</th></tr>"
         f"{emettitori}<tr class='tot'><td></td><td>Totale</td><td class='n'>{euro(risultato['totale'])}</td>"
@@ -107,4 +107,4 @@ def pdf(risultato, periodo, descrizione_pv, nome):
         "<th class='c'>Causale</th><th>Emettitore</th><th class='n'>Importo</th></tr>"
         f"{dettaglio}<tr class='tot'><td></td><td colspan='3'>Totale generale</td>"
         f"<td class='n'>{euro(risultato['totale'])}</td></tr></table>")
-    return documento_pdf(html, "Buoni pasto per emettitore", periodo, nome, css=CSS_PDF)
+    return documento_pdf(html, "Buoni pasto per emettitori", periodo, nome, css=CSS_PDF)

@@ -1,6 +1,6 @@
 {% extends "primanota/base.html" %}
 {% load primanota_formati %}
-{% block title %}Statistiche Chiusure Fiscali{% endblock %}
+{% block title %}Statistiche finanziarie{% endblock %}
 {% block style %}
 <style>
 .viz{--serie:#2a78d6;--serie-chiaro:#cde2fb;--testo:#263238;--testo-2:#52514e;--griglia:#e6e9ee}
@@ -37,7 +37,7 @@
 {% endblock %}
 {% block content %}
 <div class="top-actions">
-    <h1>Statistiche</h1>
+    <h1>Statistiche finanziarie</h1>
     {% include "primanota/_menu.html" with attivo="statistiche" %}
 </div>
 <div class="card">
@@ -354,7 +354,7 @@
         const q = new URLSearchParams(new FormData(document.querySelector("form.filters")));
         q.set("andamento", scelte.andamento); q.set("grafico_negozi", scelte.negozi); q.set("grafico_pagamenti", scelte.pagamenti);
         if(dati.length && (inizio > 0 || fine < dati.length - 1)){ q.set("vista_da", dati[inizio].data); q.set("vista_a", dati[fine].data); }
-        apriStampa("/primanota/statistiche/pdf/?" + q.toString());
+        apriStampa("/primanota/statistiche/finanziarie/pdf/?" + q.toString());
     };
 })();
 </script>

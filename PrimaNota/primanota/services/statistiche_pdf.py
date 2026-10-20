@@ -43,7 +43,7 @@ def euro(valore):
 
 
 def nome_file(negozio, data_da, data_a):
-    parti = ["Statistiche", negozio or "Tutti i negozi", data_da if data_da == data_a else f"dal {data_da} al {data_a}"]
+    parti = ["Statistiche finanziarie", negozio or "Tutti i negozi", data_da if data_da == data_a else f"dal {data_da} al {data_a}"]
     return "_".join(re.sub(r"[^\w-]+", "_", p.replace(" - ", " ")).strip("_") for p in parti) + ".pdf"
 
 
