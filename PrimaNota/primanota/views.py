@@ -8,6 +8,7 @@ from pathlib import Path
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_POST
 
 from .models import Condivisione, DocumentoSysSpy, FileSysSpy, Nota, Pianificazione, RegolaDocumento
@@ -470,6 +471,7 @@ def stato_importazione(request, lavoro):
 MAX_GIORNI_STAMPA = 31
 
 
+@xframe_options_sameorigin  # il PDF si apre nella finestra di stampa della pagina stessa
 @_accesso(solo_ufficio=True)
 def stampa(request):
     """PDF A4 delle chiusure fiscali o POS (scansioni + estratti SysSpy), più documenti per foglio."""

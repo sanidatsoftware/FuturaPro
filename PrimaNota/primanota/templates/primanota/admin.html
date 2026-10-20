@@ -31,7 +31,8 @@
 </div>
 
 <div class="card">
-    <form method="get" action="/primanota/stampa/" target="_blank" class="filters">
+    <form method="get" action="/primanota/stampa/" class="filters"
+          onsubmit="apriStampa(this.action + '?' + new URLSearchParams(new FormData(this))); return false;">
         <strong>Stampa</strong>
         <label class="field">Sezione <select name="sezione"><option value="fiscale">Chiusure fiscali</option><option value="pos">Chiusure POS</option></select></label>
         <label class="field">Negozio

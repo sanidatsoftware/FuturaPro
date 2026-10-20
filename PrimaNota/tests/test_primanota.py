@@ -444,6 +444,7 @@ class TestDivisioneEControlli(Base):
             r = self.client_per("ufficio@x").get("/primanota/stampa/", {"sezione": "fiscale", "data_da": "2026-05-28",
                                                                          "per_pagina": 4})
         self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertEqual(r["X-Frame-Options"], "SAMEORIGIN")   # si apre nella finestra della pagina
         doc = pymupdf.open(stream=r.content, filetype="pdf")
         testo = doc[0].get_text()
         self.assertEqual(doc.page_count, 1)

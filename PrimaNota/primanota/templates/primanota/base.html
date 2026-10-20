@@ -37,6 +37,13 @@ textarea{min-height:80px;resize:vertical;width:100%}
 .grid2{display:grid;grid-template-columns:minmax(320px,1fr) minmax(320px,1fr);gap:18px;align-items:start}
 @media(max-width:1000px){.grid2{grid-template-columns:1fr}}
 .nav{display:flex;gap:8px;flex-wrap:wrap}
+/* Finestra della stampa: il PDF si apre sopra la pagina, senza nuove schede. */
+.stampa-overlay{position:fixed;inset:0;z-index:9999;background:rgba(36,59,85,.72);display:none;align-items:center;justify-content:center}
+.stampa-box{background:#fff;border-radius:14px;width:min(1100px,96vw);height:92vh;display:flex;flex-direction:column;box-shadow:0 12px 35px rgba(0,0,0,.3)}
+.stampa-barra{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid #e1e7ee}
+.stampa-barra strong{flex:1;color:#2d4055}
+.stampa-box iframe{flex:1;border:0;border-radius:0 0 14px 14px;width:100%}
+.stampa-attesa{flex:1;display:flex;align-items:center;justify-content:center;color:#667085}
 </style>
 {% block style %}{% endblock %}
 </head>
@@ -73,6 +80,54 @@ function toggleLavorato(id, checkbox, versamento){
             }
         })
         .catch(() => { checkbox.disabled = false; checkbox.checked = !checkbox.checked; alert("Errore aggiornamento lavorato."); });
+}
+function apriStampa(url){
+    let overlay = document.getElementById("stampaOverlay");
+    if(!overlay){
+        overlay = document.createElement("div");
+        overlay.id = "stampaOverlay";
+        overlay.className = "stampa-overlay";
+        overlay.innerHTML = `<div class="stampa-box"><div class="stampa-barra"><strong>Stampa</strong>
+            <button class="btn btn-orange" id="stampaStampa" disabled>Stampa</button>
+            <button class="btn btn-light" id="stampaChiudi">Chiudi</button></div>
+            <div class="stampa-attesa" id="stampaAttesa">Preparazione del PDF in corso…</div></div>`;
+        document.body.appendChild(overlay);
+        overlay.addEventListener("click", e => { if(e.target === overlay) chiudiStampa(); });
+        document.getElementById("stampaChiudi").addEventListener("click", chiudiStampa);
+        document.getElementById("stampaStampa").addEventListener("click", () => {
+            const f = overlay.querySelector("iframe");
+            try { f.contentWindow.focus(); f.contentWindow.print(); } catch(e) { alert("Usare il pulsante di stampa del visualizzatore PDF."); }
+        });
+        document.addEventListener("keydown", e => { if(e.key === "Escape") chiudiStampa(); });
+    }
+    const box = overlay.querySelector(".stampa-box");
+    overlay.querySelector("iframe")?.remove();
+    const attesa = document.getElementById("stampaAttesa");
+    attesa.style.display = "flex";
+    attesa.textContent = "Preparazione del PDF in corso…";
+    document.getElementById("stampaStampa").disabled = true;
+    // Il PDF si scarica prima e poi si mostra: così si sa quando è pronto e si vedono gli errori.
+    fetch(url, {credentials: "same-origin"})
+        .then(async r => {
+            if(!r.ok) throw new Error((await r.text()).slice(0, 200) || ("Errore " + r.status));
+            return r.blob();
+        })
+        .then(pdf => {
+            const frame = document.createElement("iframe");
+            frame.src = URL.createObjectURL(pdf);
+            attesa.style.display = "none";
+            box.appendChild(frame);
+            document.getElementById("stampaStampa").disabled = false;
+        })
+        .catch(err => { attesa.textContent = "Stampa non riuscita: " + err.message; });
+    overlay.style.display = "flex";
+    return false;
+}
+function chiudiStampa(){
+    const overlay = document.getElementById("stampaOverlay");
+    const frame = overlay && overlay.querySelector("iframe");
+    if(frame){ URL.revokeObjectURL(frame.src); frame.remove(); }
+    if(overlay) overlay.style.display = "none";
 }
 function deleteScansione(id){
     if(!confirm("Confermi l'eliminazione del documento?")) return;

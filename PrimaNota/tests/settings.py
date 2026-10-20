@@ -20,6 +20,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",   # come nel portale
 ]
 ROOT_URLCONF = "tests.urls"
 TEMPLATES = [{
