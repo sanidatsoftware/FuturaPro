@@ -2,9 +2,11 @@
 {% block title %}Condivisioni negozi{% endblock %}
 {% block content %}
 <div class="top-actions">
-    <h1>Condivisioni dei negozi (SysSpy)</h1>
+    <h1>Impostazioni · Condivisioni dei negozi (SysSpy)</h1>
     {% include "primanota/_menu.html" with attivo="condivisioni" %}
 </div>
+<div class="card filters"><a class="btn btn-dark" href="/primanota/impostazioni-email/">✉ Email delle note sui versamenti</a>
+    <span class="small">Destinatari e server di posta per le note che i negozi scrivono sui versamenti.</span></div>
 <div class="card small">
     Per ogni negozio indicare la cartella da cui prelevare i file <code>SysSpy.AAAAMMGG.CASSA</code>:
     <code>\\server\condivisione\cartella</code> (SMB) oppure un percorso già montato sul server, ad esempio <code>/mnt/negozi/5048</code>.
@@ -26,7 +28,7 @@
               onsubmit="return confirm('Rileggere i file già archiviati con le regole attuali (es. divisione per giornata)?')">{% csrf_token %}
             <button class="btn btn-light">Rielabora archivio</button></form>
         <p class="small">«Rielabora archivio» non va sulle condivisioni: rilegge i file già archiviati sul server. Usarlo dopo un
-            aggiornamento della Prima Nota, ad esempio per attribuire alle giornate giuste il contenuto finito nel file del giorno dopo.</p>
+            aggiornamento del programma, ad esempio per attribuire alle giornate giuste il contenuto finito nel file del giorno dopo.</p>
     </div>
     <div class="card">
         <h3>Importazione automatica</h3>

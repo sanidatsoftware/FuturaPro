@@ -1,9 +1,9 @@
 {% extends "primanota/base.html" %}
-{% block title %}Prima Nota · Sede{% endblock %}
+{% block title %}Chiusure Fiscali · Sede{% endblock %}
 {% block style %}<style>.scan-flags{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:4px}</style>{% endblock %}
 {% block content %}
 <div class="top-actions">
-    <h1>Prima Nota · Portale Sede</h1>
+    <h1>Chiusure Fiscali · Portale Sede</h1>
     {% include "primanota/_menu.html" with attivo="admin" %}
 </div>
 {% if error %}<div class="message-error">{{ error }}</div>{% endif %}
@@ -26,9 +26,31 @@
         <label class="field">al <input type="date" name="data_a" value="{{ data_a }}"></label>
         <label class="check"><input type="checkbox" name="solo_non_lavorati" {% if solo_non_lavorati %}checked{% endif %}> Solo da lavorare</label>
         <button class="btn btn-orange" type="submit">Filtra</button>
-        <span class="small">{{ conteggio }} documenti · {{ note_aperte }} note aperte{% if richieste_contatto %} · <span class="badge badge-red">{{ richieste_contatto }} richieste di contatto</span>{% endif %}</span>
+        <span class="small">{{ conteggio }} documenti</span>
     </form>
 </div>
+
+{% if note_negozi %}
+<div class="card">
+    <h3>Segnalazioni dei negozi da lavorare ({{ note_negozi|length }})</h3>
+    <table class="table">
+        <thead><tr><th>Inserita</th><th>Negozio</th><th>Giornata</th><th>Tipo</th><th>Testo</th><th></th></tr></thead>
+        <tbody>
+        {% for n, negozio in note_negozi %}
+            <tr>
+                <td>{{ n.creata_il|date:"d/m/Y H:i" }}<br><span class="small">{{ n.creata_da }}</span></td>
+                <td>{{ negozio }}</td>
+                <td>{{ n.data|date:"d/m/Y" }}</td>
+                <td>{% if n.versamento %}<span class="badge badge-grey">Versamento</span>{% elif n.tipo == "RICHIESTA_CONTATTO" %}<span class="badge badge-red">🔴 {{ n.get_tipo_display }}</span>{% elif n.tipo == "ANOMALIA" %}<span class="badge badge-no">🟠 {{ n.get_tipo_display }}</span>{% else %}{{ n.get_tipo_display }}{% endif %}</td>
+                <td>{{ n.testo|linebreaksbr }}</td>
+                <td><form method="post" action="/primanota/note/{{ n.id }}/chiudi/">{% csrf_token %}
+                    <input type="hidden" name="ritorno" value="{{ request.get_full_path }}"><button class="btn btn-dark">Segna lavorata</button></form></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
 
 <div class="card">
     <form method="get" action="/primanota/stampa/" class="filters"

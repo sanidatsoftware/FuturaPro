@@ -8,6 +8,12 @@
     </div>
     <div class="small">Caricato {{ s.data_upload_fmt }}{% if s.caricato_da_label %} da {{ s.caricato_da_label }}{% endif %}</div>
     {% if s.note %}<div class="small">Note: {{ s.note }}</div>{% endif %}
+    {% if utente_negozio %}
+    <div class="scan-flags">
+        {% if s.lavorato %}<span class="badge badge-ok">Lavorato</span>{% else %}<span class="badge badge-no">Non lavorato</span>
+            {% if not s.versamento_lavorato %}<button class="btn btn-light" type="button" onclick="deleteScansione({{ s.id }})">Elimina</button>{% endif %}{% endif %}
+    </div>
+    {% else %}
     <div class="scan-flags">
         <label class="check"><input type="checkbox" onchange="toggleLavorato({{ s.id }}, this, false)" {% if s.lavorato %}checked{% endif %}>
             <span id="scan-status-{{ s.id }}" class="badge {% if s.lavorato %}badge-ok{% else %}badge-no{% endif %}">{% if s.lavorato %}Lavorato{% else %}Non lavorato{% endif %}</span></label>
@@ -19,4 +25,5 @@
         {% endif %}
         <button class="btn btn-light" type="button" onclick="deleteScansione({{ s.id }})">Elimina</button>
     </div>
+{% endif %}
 </div>

@@ -22,7 +22,7 @@ from decimal import Decimal, InvalidOperation
 
 # Da aumentare quando cambia il modo di leggere i file: la rielaborazione dell'archivio
 # rifà solo i file analizzati con una versione precedente.
-VERSIONE_ANALISI = 2
+VERSIONE_ANALISI = 3   # 3: cassiere e importo delle correzioni per scontrino
 
 NOME_FILE_RE = re.compile(r"^SysSpy\.(\d{8})\.(\d+)$", re.I)
 TIMESTAMP_RE = re.compile(r"^\s*(\d{2}/\d{2}/\d{4}) (\d{2}:\d{2})")
@@ -30,6 +30,8 @@ DOC_RE = re.compile(r"^\s*(\d{2}/\d{2}/\d{4}) (\d{2}:\d{2})\s+DOC\.(\S+)")
 IMPORTO_RE = re.compile(r"(-?\d{1,3}(?:\.\d{3})*,\d{2}|-?\d+,\d{2}|-?\d+)\s*$")
 # Il buono di reso stampato dalla cassa ha "MOTIVO DEL RESO" e le firme: non entra nel totale giornaliero.
 RESO_RE = re.compile(r"\bRESO\b")
+CASSIERE_RE = re.compile(r"^\s*CASSIERE (\d+)\s*$")
+PAGAMENTO_ANNULLATO_RE = re.compile(r"^\s*\d+\s*x\s*[\d.,]+\s+\D")
 
 # Righe della chiusura fiscale da memorizzare come valori, con il nome del campo.
 VOCI_FISCALI = {
@@ -218,6 +220,11 @@ def scontrini(elenco):
             "storni": sum("Inizio Storno" in t for t in testi),
             "annullamenti_riga": sum("INIZIO ANNULLAMENTO" in t for t in testi),
             "reso": any(RESO_RE.search(t.upper()) for c, t in blocco if c != "9949"),
+            "cassiere": next((m2.group(1) for m2 in (CASSIERE_RE.match(t) for t in testi) if m2), ""),
+            # Articoli stornati o annullati (8234). Le righe «1 x 40,00 CASSA» sono pagamenti annullati e
+            # ribattuti, non articoli: la cassa non li conta negli annulli e qui si escludono.
+            "correzioni": sum((abs(importo(t)) for c, t in blocco
+                               if c == "8234" and importo(t) is not None and not PAGAMENTO_ANNULLATO_RE.match(t)), Decimal("0")),
             "testo": _testo(elenco, inizio, i),
         })
         inizio = i + 1
@@ -279,6 +286,19 @@ def pos_negate(elenco):
             i = fine + 1
             continue
         i += 1
+    return out
+
+
+def nomi_cassieri(elenco):
+    """{codice: nome} dalle stampe «INIZIO/FINE ATTIVITA' CASSIERE» (CODICE / DESCRIZIONE CASSIERE)."""
+    out, codice = {}, None
+    for i, (_, t) in enumerate(elenco[:-1]):
+        voce, valore = t.strip(), elenco[i + 1][1].strip()
+        if voce == "CODICE CASSIERE" and valore.isdigit():
+            codice = valore
+        elif voce == "DESCRIZIONE CASSIERE" and codice and valore:
+            out[codice] = valore
+            codice = None
     return out
 
 
@@ -377,6 +397,7 @@ def analizza(nome_file, raw):
         "data_file": data,
         "cassa": cassa,
         "codice_negozio": codice_negozio(elenco),
+        "cassieri": nomi_cassieri(elenco),
         "testo": testo_pulito(elenco),
         "righe": len(elenco),
         "giornate": giornate,

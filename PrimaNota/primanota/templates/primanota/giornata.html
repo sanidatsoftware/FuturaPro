@@ -1,5 +1,5 @@
 {% extends "primanota/base.html" %}
-{% block title %}Prima Nota {{ negozio_label }} {{ giorno_fmt }}{% endblock %}
+{% block title %}Chiusure Fiscali {{ negozio_label }} {{ giorno_fmt }}{% endblock %}
 {% block style %}
 <style>
 .scan{padding:10px 0;border-bottom:1px solid #eee}.scan:last-child{border-bottom:0}
@@ -19,6 +19,8 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
     {% include "primanota/_menu.html" %}
 </div>
 {% if error %}<div class="message-error">{{ error }}</div>{% endif %}
+{% if utente_negozio %}<div class="card small">Chiusure fiscali e POS lette dai SysSpy delle casse, con gli stessi controlli che vede la sede:
+    se trovi qualcosa che non torna, scrivilo nelle note in fondo alla pagina.</div>{% endif %}
 
 <div class="card">
     <h2>File scontrini (SysSpy) · {{ files|length }} cass{{ files|length|pluralize:"a,e" }}</h2>
@@ -132,6 +134,14 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
 </div>
 {% endfor %}
 
+{% if puo_versamenti %}
+<div class="card">
+    <h2>Versamenti contante</h2>
+    {% for s in versamenti %}{% include "primanota/_scansione.html" %}{% empty %}<p class="vuoto">Nessun versamento caricato.</p>{% endfor %}
+    <a class="btn btn-light" href="/primanota/versamenti/?negozio={{ negozio_id }}&data_da={{ giorno }}&data_a={{ giorno }}">Apri nella sezione Versamenti</a>
+</div>
+{% endif %}
+
 {% if altre %}
 <div class="card"><h2>Altri documenti</h2>{% for s in altre %}<p><strong>{{ s.tipo_documento }}</strong></p>{% include "primanota/_scansione.html" %}{% endfor %}</div>
 {% endif %}
@@ -155,10 +165,14 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
                 <td>{{ n.testo|linebreaksbr }}</td>
                 <td>{{ n.creata_da }}<br><span class="small">{{ n.creata_il|date:"d/m/Y H:i" }}</span></td>
                 <td>
+                    {% if utente_negozio %}
+                        {% if n.chiusa %}<span class="badge badge-ok">Lavorata</span>{% else %}<span class="badge badge-no">Aperta</span>{% endif %}
+                    {% else %}
                     <form method="post" action="/primanota/note/{{ n.id }}/chiudi/">{% csrf_token %}
                         {% if n.chiusa %}<span class="badge badge-ok">Chiusa</span> <span class="small">{{ n.chiusa_da }} {{ n.chiusa_il|date:"d/m/Y H:i" }}</span> <button class="btn btn-light">Riapri</button>
                         {% else %}<span class="badge badge-no">Aperta</span> <button class="btn btn-dark">Chiudi</button>{% endif %}
                     </form>
+                    {% endif %}
                 </td>
             </tr>
         {% empty %}

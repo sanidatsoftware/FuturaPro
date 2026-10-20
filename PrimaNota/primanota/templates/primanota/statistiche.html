@@ -1,0 +1,188 @@
+{% extends "primanota/base.html" %}
+{% load primanota_formati %}
+{% block title %}Statistiche Chiusure Fiscali{% endblock %}
+{% block style %}
+<style>
+.viz{--serie:#2a78d6;--serie-chiaro:#cde2fb;--testo:#263238;--testo-2:#52514e;--griglia:#e6e9ee}
+.kpis-stat{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px}
+.kpi-stat{background:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 4px 16px rgba(0,0,0,.08)}
+.kpi-stat strong{display:block;font-size:24px;color:#2d4055;line-height:1.1}
+.kpi-stat span{display:block;margin-top:6px;font-size:11px;text-transform:uppercase;font-weight:bold;color:#667085}
+.barre{display:grid;grid-template-columns:minmax(140px,240px) 1fr minmax(90px,auto);gap:6px 12px;align-items:center;font-size:13px}
+.barre .nome{color:var(--testo);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.barre .traccia{height:18px;position:relative}
+.barre .barra{height:18px;background:var(--serie);border-radius:0 4px 4px 0;min-width:2px}
+.barre .valore{text-align:right;color:var(--testo-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.barre .riga-hover:hover{filter:brightness(1.12)}
+.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+#tip{position:fixed;pointer-events:none;background:#1f2937;color:#fff;font-size:12px;padding:6px 9px;border-radius:6px;display:none;z-index:50;white-space:nowrap}
+#andamento svg{width:100%;height:260px;display:block}
+.nota-dati{background:#fff8d6;border:1px solid #e5c100;border-radius:8px;padding:10px;margin-bottom:14px;font-size:13px}
+</style>
+{% endblock %}
+{% block content %}
+<div class="top-actions">
+    <h1>Statistiche</h1>
+    {% include "primanota/_menu.html" with attivo="statistiche" %}
+</div>
+<div class="card">
+    <form method="get" class="filters">
+        <label class="field">Negozio
+            <select name="negozio"><option value="">Tutti</option>
+                {% for n in negozi %}<option value="{{ n.id }}" {% if filtro_negozio == n.id|stringformat:"s" %}selected{% endif %}>{{ n.codice }} - {{ n.descrizione }}</option>{% endfor %}
+            </select></label>
+        <label class="field">Dal <input type="date" name="data_da" value="{{ data_da }}"></label>
+        <label class="field">Al <input type="date" name="data_a" value="{{ data_a }}"></label>
+        <button class="btn btn-orange">Aggiorna</button>
+        <span class="small">Dati dei SysSpy archiviati (chiusure fiscali e scontrini).</span>
+    </form>
+</div>
+{% if error %}<div class="message-error">{{ error }}</div>{% endif %}
+{% if dati %}
+<div class="viz">
+{% if dati.da_rielaborare %}<div class="nota-dati">{{ dati.da_rielaborare }} file del periodo sono stati letti prima di questo aggiornamento:
+    per loro mancano cassiere e correzioni finché la rielaborazione dell'archivio non li rilegge.</div>{% endif %}
+
+<div class="kpis-stat">
+    <div class="kpi-stat"><strong>{{ dati.kpi.totale|euro }}</strong><span>Corrispettivi</span></div>
+    <div class="kpi-stat"><strong>{{ dati.kpi.scontrini|intero }}</strong><span>Scontrini</span></div>
+    <div class="kpi-stat"><strong>{{ dati.kpi.medio|euro }}</strong><span>Scontrino medio</span></div>
+    <div class="kpi-stat"><strong>{{ dati.kpi.elettronico|perc }}</strong><span>Pagato con carte e bancomat</span></div>
+    <div class="kpi-stat"><strong>{{ dati.kpi.annulli|euro }}</strong><span>Annulli (correzioni)</span></div>
+    <div class="kpi-stat"><strong>{{ dati.kpi.abortite|intero }} · {{ dati.kpi.resi|intero }}</strong><span>Transazioni abortite · resi</span></div>
+</div>
+
+<div class="card">
+    <h3>Andamento dei corrispettivi</h3>
+    <div id="andamento"></div>
+</div>
+
+<div class="grid2">
+    <div class="card">
+        <h3>Corrispettivi per negozio</h3>
+        <div class="barre">
+            {% with massimo=dati.negozi.0.totale %}
+            {% for r in dati.negozi %}
+                <div class="nome" title="{{ r.etichetta }}">{{ r.etichetta }}</div>
+                <div class="traccia"><div class="barra riga-hover" style="width:{{ r.totale|quota:massimo }}%"
+                     data-tip="{{ r.etichetta }}: {{ r.totale|euro }} · {{ r.scontrini|intero }} scontrini · medio {{ r.medio|euro }}"></div></div>
+                <div class="valore">{{ r.totale|euro }}</div>
+            {% empty %}<div class="small">Nessun dato nel periodo.</div>
+            {% endfor %}
+            {% endwith %}
+        </div>
+    </div>
+    <div class="card">
+        <h3>Mezzi di pagamento</h3>
+        <div class="barre">
+            {% with massimo=dati.pagamenti|dictsortreversed:"importo"|first %}
+            {% for r in dati.pagamenti %}
+                <div class="nome">{{ r.voce }}</div>
+                <div class="traccia"><div class="barra riga-hover" style="width:{{ r.importo|quota:massimo.importo }}%"
+                     data-tip="{{ r.voce }}: {{ r.importo|euro }} ({{ r.quota|perc }})"></div></div>
+                <div class="valore">{{ r.importo|euro }} · {{ r.quota|perc }}</div>
+            {% empty %}<div class="small">Nessun dato nel periodo.</div>
+            {% endfor %}
+            {% endwith %}
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Correzioni, transazioni abortite e resi per negozio</h3>
+    <table class="table">
+        <thead><tr><th>Negozio</th><th class="num">Casse</th><th class="num">Scontrini</th><th class="num">Scontrino medio</th>
+            <th class="num">Annulli (chiusura fiscale)</th><th class="num">Righe corrette</th><th class="num">Importo corretto</th>
+            <th class="num">Abortite</th><th class="num">Importo abortite</th><th class="num">Resi</th><th class="num">Importo resi</th></tr></thead>
+        <tbody>
+        {% for r in dati.negozi %}
+            <tr><td>{{ r.etichetta }}</td><td class="num">{{ r.casse }}</td><td class="num">{{ r.scontrini|intero }}</td><td class="num">{{ r.medio|euro }}</td>
+                <td class="num">{{ r.annulli|euro }}</td><td class="num">{{ r.correzioni|intero }}</td><td class="num">{{ r.correzioni_euro|euro }}</td>
+                <td class="num">{{ r.abortite|intero }}</td><td class="num">{{ r.abortite_euro|euro }}</td>
+                <td class="num">{{ r.resi|intero }}</td><td class="num">{{ r.resi_euro|euro }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <p class="small">«Righe corrette»: articoli stornati o annullati dentro gli scontrini; il «Totale annulli» della chiusura fiscale comprende queste righe più gli articoli degli scontrini annullati per richiesta del cliente (contati tra le abortite).
+        Gli importi di abortite e resi non entrano nei corrispettivi.</p>
+</div>
+
+<div class="card">
+    <h3>Produttività per cassiere</h3>
+    <table class="table">
+        <thead><tr><th>Negozio</th><th>Cassiere</th><th class="num">Giorni</th><th class="num">Scontrini</th><th class="num">Scontrini al giorno</th>
+            <th class="num">Incassato</th><th class="num">Scontrino medio</th><th class="num">Righe corrette</th><th class="num">Importo corretto</th><th class="num">Abortite</th><th style="width:22%"></th></tr></thead>
+        <tbody>
+        {% with massimo=dati.cassieri.0.totale %}
+        {% for c in dati.cassieri %}
+            <tr><td>{{ c.negozio }}</td><td>{{ c.nome }} <span class="small">({{ c.codice }})</span></td><td class="num">{{ c.giorni }}</td>
+                <td class="num">{{ c.scontrini|intero }}</td><td class="num">{{ c.per_giorno }}</td><td class="num">{{ c.totale|euro }}</td>
+                <td class="num">{{ c.medio|euro }}</td><td class="num">{{ c.correzioni|intero }}</td><td class="num">{{ c.correzioni_euro|euro }}</td><td class="num">{{ c.abortite|intero }}</td>
+                <td><div class="barre" style="grid-template-columns:1fr"><div class="traccia"><div class="barra riga-hover" style="width:{{ c.totale|quota:massimo }}%" data-tip="{{ c.nome }}: {{ c.totale|euro }}"></div></div></div></td></tr>
+        {% empty %}
+            <tr><td colspan="11" class="small">Nessun cassiere nel periodo{% if dati.da_rielaborare %} (serve la rielaborazione dell'archivio){% endif %}.</td></tr>
+        {% endfor %}
+        {% endwith %}
+        </tbody>
+    </table>
+</div>
+</div>
+<div id="tip"></div>
+{% endif %}
+{% endblock %}
+{% block script %}
+{{ grafici|json_script:"dati-grafici" }}
+<script>
+(function(){
+    const tip = document.getElementById("tip");
+    if(!tip) return;
+    const euro = v => v.toLocaleString("it-IT", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " €";
+    function mostra(testo, e){ tip.textContent = testo; tip.style.display = "block"; tip.style.left = (e.clientX + 14) + "px"; tip.style.top = (e.clientY + 14) + "px"; }
+    function nascondi(){ tip.style.display = "none"; }
+    document.querySelectorAll("[data-tip]").forEach(el => {
+        el.addEventListener("mousemove", e => mostra(el.dataset.tip, e));
+        el.addEventListener("mouseleave", nascondi);
+    });
+
+    // Andamento giornaliero: una linea con area, mirino e valore del giorno al passaggio del mouse.
+    const dati = JSON.parse(document.getElementById("dati-grafici").textContent || "{}").giorni || [];
+    const box = document.getElementById("andamento");
+    if(!box || !dati.length) return;
+    const L = 900, H = 260, sx = 70, dx = 16, alto = 14, basso = 30;
+    const max = Math.max(...dati.map(d => d.valore), 1);
+    const passo = Math.pow(10, Math.floor(Math.log10(max)));
+    const tetto = Math.ceil(max / passo) * passo;
+    const x = i => sx + (dati.length === 1 ? (L - sx - dx) / 2 : i * (L - sx - dx) / (dati.length - 1));
+    const y = v => alto + (H - alto - basso) * (1 - v / tetto);
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", `0 0 ${L} ${H}`);
+    let html = "";
+    for(let k = 0; k <= 4; k++){
+        const v = tetto * k / 4, yy = y(v);
+        html += `<line x1="${sx}" x2="${L - dx}" y1="${yy}" y2="${yy}" stroke="#e6e9ee"/>` +
+                `<text x="${sx - 8}" y="${yy + 4}" text-anchor="end" font-size="11" fill="#667085">${Math.round(v).toLocaleString("it-IT")}</text>`;
+    }
+    const ogni = Math.max(1, Math.ceil(dati.length / 12));
+    dati.forEach((d, i) => { if(i % ogni === 0) html += `<text x="${x(i)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="#667085">${d.etichetta}</text>`; });
+    const punti = dati.map((d, i) => `${x(i)},${y(d.valore)}`).join(" ");
+    html += `<polygon points="${x(0)},${y(0)} ${punti} ${x(dati.length - 1)},${y(0)}" fill="#cde2fb" opacity=".55"/>` +
+            `<polyline points="${punti}" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/>` +
+            `<line id="mirino" y1="${alto}" y2="${H - basso}" stroke="#52514e" stroke-dasharray="3 3" visibility="hidden"/>` +
+            `<circle id="punto" r="5" fill="#2a78d6" stroke="#fff" stroke-width="2" visibility="hidden"/>` +
+            `<rect x="${sx}" y="${alto}" width="${L - sx - dx}" height="${H - alto - basso}" fill="transparent" id="area"/>`;
+    svg.innerHTML = html;
+    box.appendChild(svg);
+    const area = svg.querySelector("#area"), mirino = svg.querySelector("#mirino"), punto = svg.querySelector("#punto");
+    area.addEventListener("mousemove", e => {
+        const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * L / r.width;
+        const i = Math.max(0, Math.min(dati.length - 1, Math.round((px - sx) / ((L - sx - dx) / Math.max(1, dati.length - 1)))));
+        const d = dati[i];
+        mirino.setAttribute("x1", x(i)); mirino.setAttribute("x2", x(i)); mirino.setAttribute("visibility", "visible");
+        punto.setAttribute("cx", x(i)); punto.setAttribute("cy", y(d.valore)); punto.setAttribute("visibility", "visible");
+        mostra(`${d.etichetta}: ${euro(d.valore)}`, e);
+    });
+    area.addEventListener("mouseleave", () => { mirino.setAttribute("visibility", "hidden"); punto.setAttribute("visibility", "hidden"); nascondi(); });
+})();
+</script>
+{% endblock %}

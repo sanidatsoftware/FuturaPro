@@ -1,0 +1,51 @@
+{% extends "primanota/base.html" %}
+{% block title %}Versamenti contante{% endblock %}
+{% block style %}<style>.scan-flags{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:4px}
+.scan-preview{width:100%;height:420px;border:1px solid #d9e0e8;border-radius:8px;margin-top:8px;background:#fff;object-fit:contain}
+.num{text-align:right;white-space:nowrap}</style>{% endblock %}
+{% block content %}
+<div class="top-actions">
+    <h1>Versamenti contante</h1>
+    <a class="btn btn-orange" href="/primanota/versamenti/monitor/">👁 Monitor versamenti</a>
+    {% include "primanota/_menu.html" with attivo="versamenti" %}
+</div>
+{% if error %}<div class="message-error">{{ error }}</div>{% endif %}
+<div class="card">
+    <form method="get" class="filters">
+        <label class="field">Negozio
+            <select name="negozio"><option value="">Tutti</option>
+                {% for n in negozi %}<option value="{{ n.id }}" {% if filtro_negozio == n.id|stringformat:"s" %}selected{% endif %}>{{ n.codice }} - {{ n.descrizione }}</option>{% endfor %}
+            </select></label>
+        <label class="field">Dal <input type="date" name="data_da" value="{{ data_da }}"></label>
+        <label class="field">Al <input type="date" name="data_a" value="{{ data_a }}"></label>
+        <label class="check"><input type="checkbox" name="solo_da_lavorare" {% if solo_da_lavorare %}checked{% endif %}> Solo da lavorare</label>
+        <button class="btn btn-orange">Filtra</button>
+        <span class="small">{{ scansioni|length }} versament{{ scansioni|length|pluralize:"o,i" }}</span>
+    </form>
+</div>
+{% for s in scansioni %}
+<div class="card">
+    <div class="grid2">
+        <div>
+            <h3 style="margin-bottom:4px">{{ s.negozio_label }} · {{ s.data_documento_fmt }}</h3>
+            <table class="table" style="width:auto;margin:8px 0">
+                <tr><td>Contanti negli scontrini (SysSpy, tutte le casse)</td><td class="num"><strong>{{ s.contanti_attesi|default:"—" }}</strong></td></tr>
+            </table>
+            {% include "primanota/_scansione.html" %}
+            {% if s.note_versamento %}
+            <h4 style="margin:12px 0 4px">Note del negozio</h4>
+            {% for n in s.note_versamento %}
+                <div class="small" style="margin-bottom:8px"><strong>{{ n.creata_da }}</strong> · {{ n.creata_il|date:"d/m/Y H:i" }}
+                    {% if n.inviata_a %} · inviata a {{ n.inviata_a }} ({{ n.esito_invio }}){% endif %}<br>
+                    <span style="color:#263238;font-size:14px">{{ n.testo|linebreaksbr }}</span></div>
+            {% endfor %}
+            {% endif %}
+            <a class="btn btn-light" href="/primanota/giornata/{{ s.negozio_id }}/{{ s.data_documento }}/">Giornata e SysSpy</a>
+        </div>
+        <div>{% if s.anteprima %}{% if s.anteprima.immagine %}<img class="scan-preview" src="{{ s.anteprima.url }}" alt="">{% else %}<iframe class="scan-preview" src="{{ s.anteprima.url }}"></iframe>{% endif %}{% endif %}</div>
+    </div>
+</div>
+{% empty %}
+<div class="card">Nessun versamento per i filtri scelti.</div>
+{% endfor %}
+{% endblock %}

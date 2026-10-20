@@ -65,7 +65,9 @@ class FileSysSpy(models.Model):
     pagamenti = models.JSONField(default=dict, blank=True, help_text="Totale per tipo di pagamento negli scontrini")
     versione_analisi = models.IntegerField(default=0, help_text="Versione delle regole con cui è stato letto il file")
     elenco_scontrini = models.JSONField(default=list, blank=True,
-                                        help_text="[numero, ora, totale, pagato con POS] per spiegare le differenze")
+                                        help_text="Per scontrino: numero, ora, totale, pagato POS, abortito, cassiere, "
+                                                  "reso, correzioni (n e €) - vedi importazione.archivia")
+    cassieri = models.JSONField(default=dict, blank=True, help_text="{codice cassiere: nome} letti dal file")
 
     class Meta:
         ordering = ["-data", "codice_negozio", "cassa"]
@@ -177,9 +179,14 @@ class Nota(models.Model):
     testo = models.TextField()
     creata_da = models.CharField(max_length=200)
     creata_il = models.DateTimeField(auto_now_add=True)
-    chiusa = models.BooleanField(default=False)
+    chiusa = models.BooleanField(default=False, help_text="Lavorata dalla sede")
     chiusa_da = models.CharField(max_length=200, blank=True)
     chiusa_il = models.DateTimeField(null=True, blank=True)
+    # Note sui versamenti contante: le vedono solo Direttori e Amministratori.
+    versamento = models.BooleanField(default=False)
+    scansione_id = models.IntegerField(null=True, blank=True, help_text="Scansione Baserow a cui si riferisce")
+    inviata_a = models.TextField(blank=True, help_text="Indirizzi a cui è stata inviata per email")
+    esito_invio = models.TextField(blank=True)
 
     class Meta:
         ordering = ["-creata_il"]
@@ -231,8 +238,9 @@ class RegolaDocumento(models.Model):
         (FACOLTATIVO, "Facoltativa"),
     ]
     PREDEFINITE = {
-        "Chiusura fiscale": SEMPRE,
-        "Chiusure POS bancari": SEMPRE,
+        # Chiusure fiscali e POS si leggono dal SysSpy: il negozio non le scansiona più.
+        "Chiusura fiscale": FACOLTATIVO,
+        "Chiusure POS bancari": FACOLTATIVO,
         "Resi": SE_SYSSPY,
         "Transazioni abortite": SE_SYSSPY,
         "Versamenti contante": SEMPRE,
@@ -246,4 +254,33 @@ class RegolaDocumento(models.Model):
         out = dict(cls.PREDEFINITE)
         out.update(dict(cls.objects.values_list("tipo_documento", "obbligo")))
         return out
+
+
+class ImpostazioniEmail(models.Model):
+    """Server di posta per inviare le note sui versamenti (una sola riga)."""
+
+    host = models.CharField(max_length=200, blank=True)
+    porta = models.IntegerField(default=587)
+    utente = models.CharField(max_length=200, blank=True)
+    password_cifrata = models.TextField(blank=True)
+    sicurezza = models.CharField(max_length=10, default="tls", choices=[("tls", "STARTTLS"), ("ssl", "SSL"), ("", "Nessuna")])
+    mittente = models.CharField(max_length=200, blank=True)
+
+    @classmethod
+    def corrente(cls):
+        return cls.objects.first() or cls.objects.create()
+
+
+class DestinatarioEmail(models.Model):
+    """Indirizzi tra cui il negozio sceglie a chi inviare una nota sul versamento."""
+
+    nome = models.CharField(max_length=200)
+    email = models.EmailField()
+    attivo = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["nome"]
+
+    def __str__(self):
+        return f"{self.nome} <{self.email}>"
 

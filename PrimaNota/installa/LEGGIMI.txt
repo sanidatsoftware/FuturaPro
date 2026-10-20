@@ -13,7 +13,7 @@ PRIMA NOTA - INSTALLAZIONE AUTOMATICA
      db.sqlite3, crontab ed eventuali cartelle primanota gia' presenti);
    - mette la cartella primanota in /opt/tocal/primanota, sostituendo quella gia'
      copiata a mano (che resta nel backup);
-   - aggiunge Prima Nota a settings.py, urls.py e al menu del portale;
+   - aggiunge Chiusure Fiscali a settings.py, urls.py e al menu del portale;
    - crea in Baserow la tabella "Prima Nota Scansioni" con tutti i campi e, nella
      tabella Utenti, la casella "Menu_PrimaNota": chiede email e password di un
      utente Baserow amministratore (Invio per saltare);
@@ -38,7 +38,7 @@ PRIMA NOTA - INSTALLAZIONE AUTOMATICA
    Amministratori la vedono sempre; tutti gli altri solo con la casella spuntata.
 
 5) Dal portale, come Amministratore o Direttore:
-   Menu > Prima Nota > Condivisioni negozi: indicare per ogni negozio la cartella
+   Menu > Chiusure Fiscali > Impostazioni: indicare per ogni negozio la cartella
    dei SysSpy (\\server\condivisione\cartella oppure /mnt/negozi/5048) e premere
    "Importa nuovi". La prima volta archivia tutto lo storico.
    Nella stessa pagina: "Importa nuovi di tutti", "Ricostruisci tutti" e gli orari

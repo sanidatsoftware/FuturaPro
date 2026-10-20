@@ -14,7 +14,7 @@ from scansioni.services.baserow_scansioni import LOCAL_TZ
 from ..models import DocumentoSysSpy, FileSysSpy, Nota, RegolaDocumento
 from .regole import obbligatoria
 from .accesso import negozi_attivi_ordinati
-from .baserow_primanota import TIPI_DOCUMENTO, elenco_scansioni
+from .baserow_primanota import TIPI_DOCUMENTO, VERSAMENTO_CONTANTE, elenco_scansioni
 
 
 def _sysspy_per_giorno(dal, al):
@@ -37,15 +37,20 @@ SYSSPY_PER_TIPO = {"Resi": DocumentoSysSpy.RESO, "Transazioni abortite": Documen
                    "Chiusura fiscale": "CASSA", "Chiusure POS bancari": "CASSA"}
 
 
-def _note_aperte_per_giorno(dal, al):
+def _note_aperte_per_giorno(dal, al, versamento=False):
     out = {}
-    for r in (Nota.objects.filter(data__range=(dal, al), chiusa=False).values("negozio_id", "data")
+    for r in (Nota.objects.filter(data__range=(dal, al), chiusa=False, versamento=versamento).values("negozio_id", "data")
               .annotate(n=Count("id"), contatto=Count("id", filter=Q(tipo=Nota.RICHIESTA_CONTATTO)))):
         out[(r["negozio_id"], r["data"].isoformat())] = r
     return out
 
 
-def build_monitor(year=None, month=None, view_mode="month", week_start=None):
+def build_monitor_versamenti(year=None, month=None, view_mode="month", week_start=None):
+    """Lo stesso monitor, solo per i versamenti contante (Direttore e Amministratore)."""
+    return build_monitor(year, month, view_mode, week_start, versamenti=True)
+
+
+def build_monitor(year=None, month=None, view_mode="month", week_start=None, versamenti=False):
     today = datetime.now(LOCAL_TZ).date()
     year = _safe_int(year, today.year)
     month = _safe_int(month, today.month)
@@ -59,7 +64,10 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None):
     inizio_mese_corrente = date(today.year, today.month, 1)
     dal = min(days[0], inizio_mese_corrente)
     al = max(days[-1], today)
-    scansioni = elenco_scansioni(data_da=dal.isoformat(), data_a=al.isoformat())
+    # Il monitor generale esclude i versamenti, che hanno un monitor proprio.
+    scansioni = [s for s in elenco_scansioni(data_da=dal.isoformat(), data_a=al.isoformat())
+                 if s["versamento"] == versamenti]
+    tipi = [t for t in TIPI_DOCUMENTO if (t["id"] == VERSAMENTO_CONTANTE) == versamenti]
 
     aggregato = {}
     for s in scansioni:
@@ -67,9 +75,10 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None):
             continue
         cella = aggregato.setdefault((s["negozio_id"], s["data_documento"]), {
             "total": 0, "worked": 0, "pending": 0, "versamenti_aperti": 0,
-            "tipi": {t["id"]: 0 for t in TIPI_DOCUMENTO}})
+            "tipi": {t["id"]: 0 for t in tipi}})
         cella["total"] += 1
-        cella["worked" if s["lavorato"] else "pending"] += 1
+        lavorato = s["versamento_lavorato"] if versamenti else s["lavorato"]
+        cella["worked" if lavorato else "pending"] += 1
         if s["tipo_documento"] in cella["tipi"]:
             cella["tipi"][s["tipo_documento"]] += 1
         if s["versamento"] and not s["versamento_lavorato"]:
@@ -77,7 +86,7 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None):
 
     sysspy = _sysspy_per_giorno(days[0], days[-1])
     regole = RegolaDocumento.mappa()
-    note = _note_aperte_per_giorno(days[0], days[-1])
+    note = _note_aperte_per_giorno(days[0], days[-1], versamento=versamenti)
     negozi = negozi_attivi_ordinati()
 
     summary = {"pending": 0, "worked": 0, "documents": 0, "missing_current_month": 0,
@@ -101,7 +110,7 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None):
                 summary["documents"] += valori["total"]
             valori = valori or {"total": 0, "worked": 0, "pending": 0, "versamenti_aperti": 0, "tipi": {}}
             presenti = spy["tipi"] | ({"CASSA"} if spy["casse"] else set())
-            mancanti = [t["label"] for t in TIPI_DOCUMENTO
+            mancanti = [t["label"] for t in tipi
                         if not valori["tipi"].get(t["id"])
                         and obbligatoria(regole.get(t["id"]), SYSSPY_PER_TIPO.get(t["id"]) in presenti)]
             if state in ("pending", "worked") and mancanti:
@@ -116,14 +125,16 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None):
                 "total": valori["total"],
                 "worked": valori["worked"],
                 "pending": valori["pending"],
-                "tipi": [(t["sigla"], t["label"], valori["tipi"].get(t["id"], 0)) for t in TIPI_DOCUMENTO],
+                "tipi": [(t["sigla"], t["label"], valori["tipi"].get(t["id"], 0)) for t in tipi],
                 "versamenti_aperti": valori["versamenti_aperti"],
                 "casse_sysspy": spy["casse"],
                 "squadrate": spy["squadrate"],
                 "note_aperte": n["n"],
                 "richieste_contatto": n["contatto"],
                 "mancanti": mancanti if valori["total"] else [],
-                "detail_url": "" if day > today else f"/primanota/giornata/{negozio_id}/{iso}/",
+                "detail_url": "" if day > today else (
+                    f"/primanota/versamenti/?negozio={negozio_id}&data_da={iso}&data_a={iso}" if versamenti
+                    else f"/primanota/giornata/{negozio_id}/{iso}/"),
             })
         righe.append({"store_id": negozio_id, "code": str(negozio.get("codice") or "").strip(),
                       "description": str(negozio.get("descrizione") or "").strip(), "cells": celle})

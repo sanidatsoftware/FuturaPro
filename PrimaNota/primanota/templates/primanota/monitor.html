@@ -1,11 +1,11 @@
 {% extends "primanota/base.html" %}
-{% block title %}Monitor Prima Nota{% endblock %}
+{% block title %}{% if versamenti_monitor %}Monitor Versamenti{% else %}Monitor Chiusure Fiscali{% endif %}{% endblock %}
 {% block style %}
 <style>
 .page-title{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:18px;margin-bottom:16px}
 .page-title h1{margin:0;color:#2d4055}.period-nav{display:flex;align-items:center;justify-content:center;gap:12px}.period-nav strong{min-width:220px;text-align:center}.title-actions{justify-self:end}
 .monitor-toolbar{background:#fff;border-radius:14px;padding:12px 14px;display:grid;grid-template-columns:minmax(520px,1fr) auto;gap:16px;align-items:center;box-shadow:0 4px 16px rgba(0,0,0,.08);margin-bottom:10px}
-.kpis{display:grid;grid-template-columns:repeat(6,120px);justify-content:end;gap:8px}.kpi{background:#f8fafc;border:1px solid #e1e7ee;border-radius:11px;padding:8px 7px;text-align:center}.kpi strong{display:block;font-size:23px;line-height:1;color:#2d4055}.kpi span{display:block;margin-top:4px;font-size:9px;text-transform:uppercase;font-weight:bold;color:#667085}
+.kpis{display:grid;grid-template-columns:repeat(5,120px);justify-content:end;gap:8px}.kpi{background:#f8fafc;border:1px solid #e1e7ee;border-radius:11px;padding:8px 7px;text-align:center}.kpi strong{display:block;font-size:23px;line-height:1;color:#2d4055}.kpi span{display:block;margin-top:4px;font-size:9px;text-transform:uppercase;font-weight:bold;color:#667085}
 .legend{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;margin:8px 0 10px;font-size:12px;font-weight:bold}.legend-item{display:flex;align-items:center;gap:7px}.legend-dot{width:16px;height:16px;border-radius:50%;border:1px solid rgba(0,0,0,.18)}
 .state-missing{background:#e53935}.state-incomplete{background:#fb8c00}.state-pending{background:#35a853}.state-worked{background:#1769e8}.state-future{background:#d5dbe3}
 .matrix-card{background:#fff;border-radius:14px;box-shadow:0 5px 18px rgba(0,0,0,.10);overflow:hidden}.matrix-scroll{overflow-x:auto}
@@ -31,7 +31,7 @@
 {% block content %}
 {% if error %}<div class="message-error">{{ error }}</div>{% else %}
 <div class="page-title">
-    <h1>👁 Monitor Prima Nota</h1>
+    <h1>👁 {% if versamenti_monitor %}Monitor Versamenti contante{% else %}Monitor Chiusure Fiscali{% endif %}</h1>
     <div class="period-nav">
         {% if monitor.view_mode == "week" %}
             <a class="btn btn-light" href="?vista=settimana&settimana={{ monitor.previous_week }}">«</a>
@@ -43,7 +43,7 @@
             <a class="btn btn-light" href="?anno={{ monitor.next_year }}&mese={{ monitor.next_month }}&vista=mese">»</a>
         {% endif %}
     </div>
-    <div class="title-actions">{% include "primanota/_menu.html" with attivo="monitor" %}</div>
+    <div class="title-actions">{% if versamenti_monitor %}{% include "primanota/_menu.html" with attivo="versamenti" %}{% else %}{% include "primanota/_menu.html" with attivo="monitor" %}{% endif %}</div>
 </div>
 
 <div class="monitor-toolbar">
@@ -68,20 +68,18 @@
         <div class="kpi"><strong>{{ monitor.summary.worked }}</strong><span>Giornate lavorate</span></div>
         <div class="kpi" title="Solo il mese corrente fino a oggi"><strong>{{ monitor.summary.missing_current_month }}</strong><span>Senza invio {{ monitor.current_month_label }}</span></div>
         <div class="kpi"><strong>{{ monitor.summary.documents }}</strong><span>Documenti ricevuti</span></div>
-        <div class="kpi"><strong>{{ monitor.summary.versamenti_aperti }}</strong><span>Versamenti da lavorare</span></div>
         <div class="kpi"><strong>{{ monitor.summary.anomalie }}</strong><span>Note aperte</span></div>
     </div>
 </div>
 
 <div class="legend">
-    <span class="legend-item"><span class="legend-dot state-missing"></span>Nessuna scansione</span>
+    <span class="legend-item"><span class="legend-dot state-missing"></span>{% if versamenti_monitor %}Nessun versamento{% else %}Nessuna scansione{% endif %}</span>
     <span class="legend-item"><span class="legend-dot state-incomplete"></span>Manca una scansione obbligatoria</span>
-    <span class="legend-item"><span class="legend-dot state-pending"></span>Scansioni presenti, da lavorare</span>
-    <span class="legend-item"><span class="legend-dot state-worked"></span>Scansioni lavorate</span>
+    <span class="legend-item"><span class="legend-dot state-pending"></span>{% if versamenti_monitor %}Versamento da lavorare{% else %}Scansioni presenti, da lavorare{% endif %}</span>
+    <span class="legend-item"><span class="legend-dot state-worked"></span>{% if versamenti_monitor %}Versamento lavorato{% else %}Scansioni lavorate{% endif %}</span>
     <span class="legend-item"><span class="legend-dot state-future"></span>Giorno futuro</span>
     <span class="legend-item"><span class="mark mark-nota" style="position:static">!</span>Anomalia/nota aperta</span>
     <span class="legend-item"><span class="mark mark-contatto" style="position:static">!</span>Richiesta contatto</span>
-    <span class="legend-item"><span class="mark mark-vers" style="position:static">V</span>Versamento da lavorare</span>
     <span class="legend-item"><span class="mark mark-spy" style="position:static">2</span>Casse SysSpy (rosso se non quadra)</span>
 </div>
 
@@ -104,7 +102,6 @@
                     {% if cell.detail_url %}<a class="status-link state-{{ cell.state }}" href="{{ cell.detail_url }}">{{ cell.total }}</a>
                     {% else %}<span class="status-static state-{{ cell.state }}">–</span>{% endif %}
                     {% if cell.richieste_contatto %}<span class="mark mark-contatto">!</span>{% elif cell.note_aperte %}<span class="mark mark-nota">!</span>{% endif %}
-                    {% if cell.versamenti_aperti %}<span class="mark mark-vers">V</span>{% endif %}
                     {% if cell.casse_sysspy %}<span class="mark {% if cell.squadrate %}mark-squadra{% else %}mark-spy{% endif %}">{{ cell.casse_sysspy }}</span>{% endif %}
                 </div>
             </td>

@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="csrf-token" content="{{ csrf_token }}">
-<title>{% block title %}Prima Nota{% endblock %}</title>
+<title>{% block title %}Chiusure Fiscali{% endblock %}</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f4f6f9;color:#263238}
@@ -89,6 +89,7 @@ function apriStampa(url){
         overlay.className = "stampa-overlay";
         overlay.innerHTML = `<div class="stampa-box"><div class="stampa-barra"><strong>Stampa</strong>
             <button class="btn btn-orange" id="stampaStampa" disabled>Stampa</button>
+            <a class="btn btn-dark" id="stampaScarica" style="display:none">Scarica PDF</a>
             <button class="btn btn-light" id="stampaChiudi">Chiudi</button></div>
             <div class="stampa-attesa" id="stampaAttesa">Preparazione del PDF in corso…</div></div>`;
         document.body.appendChild(overlay);
@@ -106,15 +107,24 @@ function apriStampa(url){
     attesa.style.display = "flex";
     attesa.textContent = "Preparazione del PDF in corso…";
     document.getElementById("stampaStampa").disabled = true;
+    document.getElementById("stampaScarica").style.display = "none";
     // Il PDF si scarica prima e poi si mostra: così si sa quando è pronto e si vedono gli errori.
     fetch(url, {credentials: "same-origin"})
         .then(async r => {
             if(!r.ok) throw new Error((await r.text()).slice(0, 200) || ("Errore " + r.status));
-            return r.blob();
+            // Nome del file deciso dal portale (sezione, negozio, date).
+            const m = /filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "");
+            return {pdf: await r.blob(), nome: m ? m[1] : "chiusure.pdf"};
         })
-        .then(pdf => {
+        .then(({pdf, nome}) => {
             const frame = document.createElement("iframe");
             frame.src = URL.createObjectURL(pdf);
+            frame.title = nome;
+            const scarica = document.getElementById("stampaScarica");
+            scarica.href = frame.src;
+            scarica.download = nome;
+            scarica.style.display = "inline-block";
+            overlay.querySelector(".stampa-barra strong").textContent = nome;
             attesa.style.display = "none";
             box.appendChild(frame);
             document.getElementById("stampaStampa").disabled = false;

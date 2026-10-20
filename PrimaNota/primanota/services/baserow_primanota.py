@@ -54,6 +54,8 @@ TIPI_DOCUMENTO = [
     {"id": VERSAMENTO_CONTANTE, "label": VERSAMENTO_CONTANTE, "chiave": "versamenti", "sigla": "V"},
 ]
 TIPI_VALIDI = {t["id"] for t in TIPI_DOCUMENTO}
+# Il negozio carica solo queste scansioni: chiusure fiscali e POS arrivano dal SysSpy.
+TIPI_CARICABILI_PV = [RESI, TRANSAZIONI_ABORTITE, VERSAMENTO_CONTANTE]
 
 
 def _tabella():

@@ -88,6 +88,11 @@ def can_manage_primanota(user):
     return bool(user) and get_user_role(user) in RUOLI_GESTIONE
 
 
+def can_see_versamenti(user):
+    """Sezione Versamenti e note sui versamenti: la sede (ufficio, Direttori, Amministratori), non i negozi."""
+    return bool(user) and (is_office_user(user) or get_user_role(user) in RUOLI_GESTIONE)
+
+
 def nome_utente(user):
     return (user or {}).get(UTENTE_NOME, "") or ""
 

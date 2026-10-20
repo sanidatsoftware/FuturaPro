@@ -1,5 +1,6 @@
 {% extends "primanota/base.html" %}
-{% block title %}Prima Nota PV{% endblock %}
+{% load primanota_formati %}
+{% block title %}Chiusure Fiscali PV{% endblock %}
 {% block style %}
 <style>
 .layout{display:grid;grid-template-columns:minmax(380px,560px) 1fr;gap:24px;align-items:start}
@@ -13,7 +14,7 @@
 {% endblock %}
 {% block content %}
 <div class="top-actions">
-    <h1>Prima Nota · {{ negozio }}</h1>
+    <h1>Chiusure Fiscali · {{ negozio }}</h1>
     <a class="btn btn-dark" href="/menu/">Menu</a>
 </div>
 {% if message %}<div class="message-ok">{{ message }}</div>{% endif %}
@@ -26,14 +27,14 @@
             <form method="post" enctype="multipart/form-data" id="uploadForm">
                 {% csrf_token %}
                 <div class="form-group">
-                    <label>Data prima nota</label>
+                    <label>Data documento</label>
                     <input type="date" name="data_documento" value="{{ ieri }}" required>
                 </div>
                 <div class="form-group">
                     <label>Tipo documento</label>
                     <select name="tipo_documento" required>
                         <option value="">Seleziona...</option>
-                        {% for tipo in tipi_documento %}<option value="{{ tipo.id }}">{{ tipo.label }}</option>{% endfor %}
+                        {% for tipo in tipi_caricabili %}<option value="{{ tipo.id }}">{{ tipo.label }}</option>{% endfor %}
                     </select>
                 </div>
                 <div class="form-group">
@@ -59,7 +60,7 @@
                 {% csrf_token %}
                 <input type="hidden" name="azione" value="nota">
                 <div class="form-group">
-                    <label>Data prima nota</label>
+                    <label>Data documento</label>
                     <input type="date" name="data" value="{{ ieri }}" required>
                 </div>
                 <div class="form-group">
@@ -82,6 +83,29 @@
 </div>
 
 <div class="card">
+    <h2>Le tue chiusure (ultimi 14 giorni)</h2>
+    <p class="small">Chiusure fiscali e POS lette dai SysSpy delle casse, con gli stessi controlli della sede. Apri la giornata
+        per vederle e, se qualcosa non torna, scrivi una nota.</p>
+    <table class="table">
+        <thead><tr><th>Giornata</th><th>Casse</th><th class="num">Totale giornaliero</th><th class="num">Chiusure POS</th><th>Controlli</th><th></th></tr></thead>
+        <tbody>
+        {% for g in giornate %}
+            <tr>
+                <td>{{ g.data|date:"D d/m/Y" }}</td>
+                <td>{{ g.casse }}{% if g.fiscale < g.casse %} <span class="badge badge-no">{{ g.fiscale }} chiusur{{ g.fiscale|pluralize:"a,e" }} fiscal{{ g.fiscale|pluralize:"e,i" }}</span>{% endif %}</td>
+                <td class="num">{{ g.totale|euro }}</td>
+                <td class="num">{{ g.pos|euro }}</td>
+                <td>{% if g.anomalie %}{% for a in g.anomalie %}<span class="badge badge-red">⚠ {{ a }}</span> {% endfor %}{% else %}<span class="badge badge-ok">✓ Nessuna anomalia</span>{% endif %}</td>
+                <td><a class="btn btn-light" href="/primanota/giornata/{{ negozio_id }}/{{ g.data|date:'Y-m-d' }}/">Apri giornata</a></td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="6">Nessun SysSpy archiviato negli ultimi giorni.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
     <h2>Ultimi documenti caricati</h2>
     <table class="table">
         <thead><tr><th>Data</th><th>Tipo</th><th>Cassa</th><th>Documento</th><th>Upload</th><th>Note</th><th>Lavorato</th><th>Azioni</th></tr></thead>
@@ -97,6 +121,26 @@
                 <td>{% if s.lavorato %}<span class="badge badge-ok">Lavorato</span>{% else %}<span class="badge badge-no">Non lavorato</span>{% endif %}</td>
                 <td>{% if not s.lavorato and not s.versamento_lavorato %}<button class="btn btn-dark" onclick="deleteScansione({{ s.id }})">Elimina</button>{% else %}—{% endif %}</td>
             </tr>
+            {% if s.versamento %}
+            <tr><td colspan="8" style="background:#fafbfc">
+                {% for n in s.note_versamento %}
+                    <div class="small" style="margin-bottom:6px">📝 {{ n.creata_il|date:"d/m/Y H:i" }} · {{ n.creata_da }}{% if n.inviata_a %} · inviata a {{ n.inviata_a }} ({{ n.esito_invio }}){% endif %}<br>
+                        <span style="color:#263238">{{ n.testo|linebreaksbr }}</span></div>
+                {% endfor %}
+                <details><summary class="small" style="cursor:pointer;font-weight:bold;color:#2d4055">Aggiungi una nota al versamento{% if destinatari %} e inviala per email{% endif %}</summary>
+                    <form method="post" style="margin-top:8px">{% csrf_token %}
+                        <input type="hidden" name="azione" value="nota_versamento">
+                        <input type="hidden" name="scansione_id" value="{{ s.id }}">
+                        <textarea name="testo" required placeholder="Nota sul versamento"></textarea>
+                        {% if destinatari %}
+                        <div class="small" style="margin:6px 0">Invia per email, con la scansione in allegato, a:</div>
+                        <div class="filters">{% for d in destinatari %}<label class="check"><input type="checkbox" name="destinatari" value="{{ d.id }}"> {{ d.nome }}</label>{% endfor %}</div>
+                        {% endif %}
+                        <button class="btn btn-dark" style="margin-top:8px">Salva nota</button>
+                    </form>
+                </details>
+            </td></tr>
+            {% endif %}
         {% empty %}
             <tr><td colspan="8">Nessun documento caricato.</td></tr>
         {% endfor %}

@@ -3,6 +3,7 @@ Stampa delle chiusure (fiscali o POS): scansioni caricate ed estratti SysSpy imp
 in una griglia su fogli A4, in un PDF da stampare sulla stampante predefinita o salvare.
 """
 
+import re
 from datetime import date
 
 import pymupdf
@@ -100,7 +101,19 @@ def _testo(pagina, rect, testo):
 TESTATA = 30
 
 
-def genera_pdf(voci, per_pagina=4, titolo=""):
+def nome_file(sezione, negozio, data_da, data_a, contenuto="tutto"):
+    """Es. «Chiusure_fiscali_5031_Pv_Adrano_Cappuccini_2026-10-17.pdf» o «..._Tutti_i_negozi_dal_..._al_....pdf»."""
+    parti = [SEZIONI[sezione]["titolo"], negozio or "Tutti i negozi"]
+    parti.append(data_da if data_da == data_a else f"dal {data_da} al {data_a}")
+    if contenuto == "scansioni":
+        parti.append("solo scansioni")
+    elif contenuto == "sysspy":
+        parti.append("solo SysSpy")
+    testo = "_".join(re.sub(r"[^\w-]+", "_", p.replace(" - ", " ")).strip("_") for p in parti)
+    return testo + ".pdf"
+
+
+def genera_pdf(voci, per_pagina=4, titolo="", nome=""):
     """Ogni punto vendita comincia su un foglio nuovo, con codice e nome in grassetto in testata."""
     colonne, righe_griglia = GRIGLIE.get(per_pagina, GRIGLIE[4])
     doc = pymupdf.open()
@@ -110,6 +123,7 @@ def genera_pdf(voci, per_pagina=4, titolo=""):
         pagina = doc.new_page(width=A4.width, height=A4.height)
         pagina.insert_text((MARGINE, MARGINE + 20), f"{titolo}: nessun documento nel periodo scelto.",
                            fontname="helv", fontsize=11)
+        doc.set_metadata({"title": nome.removesuffix(".pdf") or titolo})
         return doc.tobytes()
     per_foglio = colonne * righe_griglia
     negozio_corrente, posto, foglio = None, per_foglio, 0
@@ -139,4 +153,6 @@ def genera_pdf(voci, per_pagina=4, titolo=""):
                 pagina.insert_image(area, stream=dati, keep_proportion=True)
         except Exception as exc:
             _testo(pagina, area, f"Impossibile impaginare il documento:\n{exc}")
+    # Il titolo è quello che il browser propone come nome con «Salva come PDF».
+    doc.set_metadata({"title": nome.removesuffix(".pdf") or titolo, "author": "Chiusure Fiscali - TO.CAL"})
     return doc.tobytes(garbage=3, deflate=True)

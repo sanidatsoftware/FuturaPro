@@ -36,7 +36,7 @@ CARD_MENU = """        {% primanota_visibile utente as show_primanota %}
         {% if show_primanota %}
         <a class="module-card" href="/primanota/">
             <div class="icon">🧾</div>
-            <h2>Prima Nota</h2>
+            <h2>Chiusure Fiscali</h2>
             <p>Scansioni chiusure fiscali, POS, resi, abortite e versamenti, con i file scontrini delle casse.</p>
         </a>
         {% endif %}
@@ -134,7 +134,8 @@ def modifica_urls(testo):
 
 def modifica_menu(testo):
     if "primanota_visibile" in testo:
-        return testo
+        # Installazioni precedenti: la scheda si chiamava "Prima Nota".
+        return testo.replace("<h2>Prima Nota</h2>", "<h2>Chiusure Fiscali</h2>")
     if "{% load static %}" not in testo:
         raise ValueError("{% load static %} non trovato nel menu")
     testo = testo.replace("{% load static %}", "{% load static %}\n{% load primanota_menu %}", 1)

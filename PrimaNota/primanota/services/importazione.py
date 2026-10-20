@@ -160,11 +160,13 @@ def archivia(cond, origine, nome, dimensione, mtime, dati=None, analisi=None, sh
                 totale_scontrini=g["totale_scontrini"],
                 pagamenti={k: str(val) for k, val in g["pagamenti"].items()},
                 versione_analisi=sysspy.VERSIONE_ANALISI,
+                # [numero, ora, totale, pagato POS, abortito, cassiere, reso, correzioni (n), correzioni (€)]
                 elenco_scontrini=[
                     [d["numero"], d["ora"], str(d["totale"]) if d["totale"] is not None else None,
                      str(sum((v for k, v in d["pagamenti"].items() if k in sysspy.PAGAMENTI_POS), start=0)),
-                     d["abortito"]]
+                     d["abortito"], d["cassiere"], d["reso"], d["storni"] + d["annullamenti_riga"], str(d["correzioni"])]
                     for d in g["scontrini"]],
+                cassieri=a["cassieri"],
             )
             documenti = []
             for d in g["scontrini"]:

@@ -1,8 +1,14 @@
 <div class="nav">
+    {% if utente_negozio %}
+    <a class="btn btn-light" href="/primanota/upload/">Caricamento e chiusure</a>
+    {% else %}
     <a class="btn btn-light {% if attivo == 'admin' %}active{% endif %}" href="/primanota/admin/">Scansioni</a>
     <a class="btn btn-light {% if attivo == 'monitor' %}active{% endif %}" href="/primanota/monitor/">👁 Monitor</a>
+    {% if puo_versamenti %}<a class="btn btn-light {% if attivo == 'versamenti' %}active{% endif %}" href="/primanota/versamenti/">Versamenti</a>{% endif %}
     <a class="btn btn-light {% if attivo == 'note' %}active{% endif %}" href="/primanota/note/">Note e anomalie</a>
+    <a class="btn btn-light {% if attivo == 'statistiche' %}active{% endif %}" href="/primanota/statistiche/">Statistiche</a>
     <a class="btn btn-light {% if attivo == 'sysspy' %}active{% endif %}" href="/primanota/sysspy/">Archivio SysSpy</a>
-    {% if puo_gestire %}<a class="btn btn-light {% if attivo == 'condivisioni' %}active{% endif %}" href="/primanota/condivisioni/">Condivisioni negozi</a>{% endif %}
+    {% if puo_gestire %}<a class="btn btn-light {% if attivo == 'condivisioni' %}active{% endif %}" href="/primanota/condivisioni/">Impostazioni</a>{% endif %}
+    {% endif %}
     <a class="btn btn-dark" href="/menu/">Menu</a>
 </div>

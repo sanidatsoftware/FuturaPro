@@ -12,7 +12,7 @@ from django.test import Client, TestCase, override_settings
 
 from incarichi.services import baserow_client, baserow_layer
 from primanota import sysspy
-from primanota.models import Condivisione, DocumentoSysSpy, FileSysSpy, Nota
+from primanota.models import Condivisione, DocumentoSysSpy, FileSysSpy, Nota, RegolaDocumento
 from primanota.services import importazione
 
 DATI = Path(__file__).resolve().parent / "dati"
@@ -112,6 +112,12 @@ class Base(TestCase):
         return client.post("/primanota/upload/", {
             "data_documento": giorno, "tipo_documento": tipo, "cassa": cassa, "note": "",
             "documento": SimpleUploadedFile("scan.pdf", b"%PDF-1.4", content_type="application/pdf")})
+
+    def scansione_sede(self, tipo, giorno="2026-05-28", cassa=None):
+        """Chiusure fiscali e POS non le carica più il negozio: righe già presenti in Baserow."""
+        from primanota.services.baserow_primanota import crea_scansione
+        return crea_scansione(baserow_layer.UTENTI["pv@x"], 10, giorno, tipo,
+                              SimpleUploadedFile("scan.pdf", b"%PDF-1.4", content_type="application/pdf"), cassa=cassa)
 
     def importa_fixture(self):
         cartella = Path(self.archivio) / "share"
@@ -214,17 +220,21 @@ class TestPagine(Base):
 
     def test_il_negozio_carica_per_genere(self):
         pv = self.client_per("pv@x")
-        r = self.carica(pv, "Chiusura fiscale", cassa="1")
+        r = self.carica(pv, "Resi", cassa="1")
         self.assertRedirects(r, "/primanota/upload/?uploaded=1", fetch_redirect_response=False)
         riga = self.baserow.righe[1]
-        self.assertEqual((riga["Negozio"][0]["id"], riga["Tipo Documento"], riga["Cassa"]), (10, "Chiusura fiscale", 1))
+        self.assertEqual((riga["Negozio"][0]["id"], riga["Tipo Documento"], riga["Cassa"]), (10, "Resi", 1))
         self.assertFalse(riga["Lavorato"])
         self.assertContains(self.carica(pv, "Tipo inventato"), "Compila Data")
-        self.assertContains(pv.get("/primanota/upload/"), "Chiusura fiscale")
+        # Chiusure fiscali e POS arrivano dal SysSpy: il negozio carica solo resi, abortite e versamenti.
+        self.assertContains(self.carica(pv, "Chiusura fiscale"), "Compila Data")
+        pagina = pv.get("/primanota/upload/")
+        self.assertContains(pagina, '<option value="Transazioni abortite">')
+        self.assertNotContains(pagina, '<option value="Chiusura fiscale">')
 
     def test_giornata_affianca_scansioni_e_sysspy(self):
         self.importa_fixture()
-        self.carica(self.client_per("pv@x"), "Chiusure POS bancari")
+        self.scansione_sede("Chiusure POS bancari")
         r = self.client_per("ufficio@x").get("/primanota/giornata/10/2026-05-28/")
         self.assertContains(r, "TOTALE HOST EUR")             # chiusura POS dal SysSpy
         self.assertContains(r, "TOTALE GIORNALIERO")          # chiusura fiscale dal SysSpy
@@ -272,15 +282,21 @@ class TestPagine(Base):
         oggi = date.today()
         ieri = (oggi - timedelta(days=1)).isoformat() if oggi.day > 1 else oggi.isoformat()
         pv = self.client_per("pv@x")
-        self.carica(pv, "Chiusura fiscale", giorno=ieri)
+        RegolaDocumento.objects.create(tipo_documento="Chiusure POS bancari", obbligo=RegolaDocumento.SEMPRE)
+        self.scansione_sede("Chiusura fiscale", giorno=ieri)
         self.carica(pv, "Versamenti contante", giorno=ieri)
         Nota.objects.create(negozio_id=10, data=ieri, tipo=Nota.ANOMALIA, testo="x", creata_da="x")
         r = self.client_per("ufficio@x").get("/primanota/monitor/")
         self.assertEqual(r.status_code, 200)
         riga = next(x for x in r.context["monitor"]["rows"] if x["store_id"] == 10)
         cella = next(c for c in riga["cells"] if c["date"] == ieri)
-        self.assertEqual((cella["state"], cella["total"], cella["versamenti_aperti"], cella["note_aperte"]),
-                         ("incomplete", 2, 1, 1))
+        # Il monitor generale non conta i versamenti: hanno un monitor proprio.
+        self.assertEqual((cella["state"], cella["total"], cella["note_aperte"]), ("incomplete", 1, 1))
+        r = self.client_per("ufficio@x").get("/primanota/versamenti/monitor/")
+        riga = next(x for x in r.context["monitor"]["rows"] if x["store_id"] == 10)
+        cella_v = next(c for c in riga["cells"] if c["date"] == ieri)
+        self.assertEqual((cella_v["state"], cella_v["total"]), ("pending", 1))
+        self.assertIn("/primanota/versamenti/?negozio=10", cella_v["detail_url"])
         self.assertEqual(cella["mancanti"], ["Chiusure POS bancari"])
         self.assertEqual(cella["detail_url"], f"/primanota/giornata/10/{ieri}/")
         altro = next(x for x in r.context["monitor"]["rows"] if x["store_id"] == 11)
@@ -429,15 +445,17 @@ class TestDivisioneEControlli(Base):
         self.importa_fixture()   # la fixture contiene un'abortita e nessun reso
         r = self.client_per("ufficio@x").get("/primanota/giornata/10/2026-05-28/")
         sezioni = {s["tipo"]["id"]: s["obbligatoria"] for s in r.context["sezioni"]}
-        self.assertEqual(sezioni, {"Chiusura fiscale": True, "Chiusure POS bancari": True, "Resi": False,
-                                   "Transazioni abortite": True, "Versamenti contante": True})
+        # I versamenti non sono più nella giornata: hanno la sezione Versamenti.
+        # Chiusure fiscali e POS si leggono dal SysSpy: la scansione è facoltativa (salvo diversa regola).
+        self.assertEqual(sezioni, {"Chiusura fiscale": False, "Chiusure POS bancari": False, "Resi": False,
+                                   "Transazioni abortite": True})
         self.client_per("admin@x").post("/primanota/condivisioni/", {"azione": "regole", "regola_versamenti": "FACOLTATIVO"})
         self.assertEqual(RegolaDocumento.mappa()["Versamenti contante"], "FACOLTATIVO")
 
     def test_stampa_pdf(self):
         import pymupdf
         self.importa_fixture()
-        self.carica(self.client_per("pv@x"), "Chiusura fiscale", cassa="1")
+        self.scansione_sede("Chiusura fiscale", cassa=1)
         pdf_scansione = pymupdf.open()
         pdf_scansione.new_page().insert_text((50, 50), "SCANSIONE")
         with mock.patch("primanota.services.stampa._scarica", return_value=(pdf_scansione.tobytes(), "application/pdf")):
@@ -450,7 +468,11 @@ class TestDivisioneEControlli(Base):
         self.assertEqual(doc.page_count, 1)
         self.assertIn("TOTALE GIORNALIERO", testo)
         self.assertIn("SCANSIONE", testo)
-        self.assertEqual(self.client_per("pv@x").get("/primanota/stampa/").status_code, 302)
+        # Il negozio stampa le proprie chiusure, anche chiedendo quelle di un altro.
+        with mock.patch("primanota.services.stampa._scarica", return_value=(pdf_scansione.tobytes(), "application/pdf")):
+            r = self.client_per("altro_pv@x").get("/primanota/stampa/", {"sezione": "fiscale", "negozio": 10,
+                                                                          "data_da": "2026-05-28"})
+        self.assertNotIn("TOTALE GIORNALIERO", pymupdf.open(stream=r.content, filetype="pdf")[0].get_text())
 
 
 class TestCampoMenu(Base):
@@ -510,3 +532,89 @@ class TestStampaPerNegozio(TestCase):
         self.assertEqual(doc.page_count, 2)   # il secondo negozio non sta sul foglio del primo
         self.assertEqual([doc[i].get_text().splitlines()[0] for i in range(2)], ["5031 - Adrano", "5034 - Librino"])
 
+
+class TestVersamentiNoteStatistiche(Base):
+    def test_versamenti_solo_per_la_sede(self):
+        self.carica(self.client_per("pv@x"), "Versamenti contante")
+        self.assertEqual(self.client_per("pv@x").get("/primanota/versamenti/").status_code, 302)  # il negozio torna al caricamento
+        r = self.client_per("ufficio@x").get("/primanota/versamenti/", {"data_da": "2026-05-28"})
+        self.assertEqual(len(r.context["scansioni"]), 1)
+        # Nel riepilogo Scansioni i versamenti non compaiono più.
+        r = self.client_per("ufficio@x").get("/primanota/admin/", {"data_da": "2026-05-28"})
+        self.assertEqual(r.context["conteggio"], 0)
+
+    def test_nota_sul_versamento_inviata_per_email(self):
+        from primanota.models import DestinatarioEmail
+        d = DestinatarioEmail.objects.create(nome="Amministrazione", email="amm@x.it")
+        self.carica(self.client_per("pv@x"), "Versamenti contante")
+        with mock.patch("primanota.services.posta.invia") as invia:
+            r = self.client_per("pv@x").post("/primanota/upload/", {
+                "azione": "nota_versamento", "scansione_id": 1, "testo": "Mancano 10 euro", "destinatari": [d.id]})
+        self.assertRedirects(r, "/primanota/upload/?versamento=inviata", fetch_redirect_response=False)
+        destinatari, oggetto, corpo = invia.call_args.args
+        self.assertEqual(destinatari, ["amm@x.it"])
+        self.assertIn("Mancano 10 euro", corpo)
+        self.assertEqual(invia.call_args.kwargs["allegato_url"], "/media/up_scan.pdf")
+        nota = Nota.objects.get()
+        self.assertTrue(nota.versamento)
+        self.assertEqual((nota.scansione_id, nota.inviata_a, nota.esito_invio), (1, "amm@x.it", "Inviata"))
+        # La nota compare in testa al riepilogo della sede.
+        r = self.client_per("ufficio@x").get("/primanota/admin/")
+        self.assertEqual([n.testo for n, _ in r.context["note_negozi"]], ["Mancano 10 euro"])
+
+    def test_note_da_lavorare_e_lavorate(self):
+        vecchia = Nota.objects.create(negozio_id=10, data="2026-05-27", testo="vecchia", creata_da="x")
+        Nota.objects.create(negozio_id=10, data="2026-05-28", testo="nuova", creata_da="x")
+        Nota.objects.create(negozio_id=10, data="2026-05-28", testo="fatta", creata_da="x", chiusa=True)
+        uff = self.client_per("ufficio@x")
+        self.assertEqual([n.testo for n, _ in uff.get("/primanota/note/").context["elenco"]], ["nuova", "vecchia"])
+        self.assertEqual([n.testo for n, _ in uff.get("/primanota/note/?lavorate=1").context["elenco"]], ["fatta"])
+        self.assertTrue(vecchia.pk)
+
+    def test_statistiche(self):
+        self.importa_fixture()
+        r = self.client_per("ufficio@x").get("/primanota/statistiche/", {"data_da": "2026-05-28", "data_a": "2026-05-28"})
+        dati = r.context["dati"]
+        self.assertEqual((dati["kpi"]["totale"], dati["kpi"]["scontrini"], dati["kpi"]["abortite"]), (Decimal("18.00"), 2, 1))
+        self.assertEqual(dati["cassieri"][0]["nome"], "MARIO ROSSI")
+        self.assertEqual(dati["pagamenti"][0]["voce"], "Carta Credito")
+        self.assertContains(r, "18,00 €")
+
+    def test_nome_del_pdf(self):
+        from primanota.services.stampa import nome_file
+        self.assertEqual(nome_file("fiscale", "5031 - Pv Adrano", "2026-10-17", "2026-10-17"),
+                         "Chiusure_fiscali_5031_Pv_Adrano_2026-10-17.pdf")
+        self.assertEqual(nome_file("pos", "", "2026-10-01", "2026-10-17", "sysspy"),
+                         "Chiusure_POS_Tutti_i_negozi_dal_2026-10-01_al_2026-10-17_solo_SysSpy.pdf")
+
+
+class TestChiusureVisteDalNegozio(Base):
+    def test_il_negozio_vede_le_proprie_chiusure(self):
+        self.importa_fixture()
+        pv = self.client_per("pv@x")
+        self.assertContains(pv.get("/primanota/upload/"), "Le tue chiusure")
+        r = pv.get("/primanota/giornata/10/2026-05-28/")
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "TOTALE GIORNALIERO")          # chiusura fiscale
+        self.assertContains(r, "TOTALE HOST EUR")             # chiusura POS
+        self.assertContains(r, "✓ POS")                       # stessi controlli della sede
+        self.assertNotContains(r, "onchange=\"toggleLavorato")   # ma niente «lavorato»
+        self.assertNotContains(r, "/primanota/admin/")        # né il menu della sede
+        f = FileSysSpy.objects.get()
+        self.assertEqual(pv.get(f"/primanota/sysspy/{f.id}/").status_code, 200)
+        # Le giornate di un altro negozio no.
+        altro = self.client_per("altro_pv@x")
+        self.assertEqual(altro.get("/primanota/giornata/10/2026-05-28/").status_code, 403)
+        self.assertEqual(altro.get(f"/primanota/sysspy/{f.id}/").status_code, 404)
+        # Dalla giornata il negozio può scrivere una nota.
+        pv.post("/primanota/giornata/10/2026-05-28/", {"tipo": "ANOMALIA", "testo": "POS non torna"})
+        self.assertEqual(Nota.objects.get().testo, "POS non torna")
+
+    def test_ultime_giornate_nella_pagina_di_caricamento(self):
+        from primanota import views
+        self.importa_fixture()
+        oggi = date(2026, 5, 30)
+        with mock.patch("primanota.views.timezone.localdate", return_value=oggi):
+            giornate = views._giornate_recenti(10)
+        self.assertEqual([g["data"] for g in giornate], [date(2026, 5, 28)])
+        self.assertEqual((giornate[0]["casse"], giornate[0]["anomalie"]), (1, []))
