@@ -1139,3 +1139,52 @@ class TestScontriniSospesi(Base):
         self.assertContains(r, "Scontrini sospesi (4)")
         self.assertContains(r, "✓ Emesso 16/10 18:47 · scontrino 169")
         self.assertEqual(self.client_per("pv@x").get("/primanota/sospesi/").status_code, 302)
+
+
+class TestContenutoScontriniSospesi(Base):
+    """Il sospeso del SRI è il documento 0002 del SysSpy di prova (28/05/2026, cassa 1), emesso poi come 0003."""
+
+    SRI = ("SOSP.SCONTRINO  : SR010002113.148 Ora: 113300 Cassa: 1 Sct: 0002 Eur.: 5,40\n"
+           "SOSP.SCONTRINO  : SR010009999.148 Ora: 170000 Cassa: 1 Sct: 0099 Eur.: 9,99\n")
+
+    def prepara(self, emesso=True):
+        cartella = Path(self.archivio) / "share"
+        cartella.mkdir()
+        shutil.copy(DATI / "SysSpy.20260528.1", cartella)
+        testo = self.SRI + ("RICH.SOSPENSIONE: SR010002113.148 Ora: 115900 Cassa: 1 \n"
+                            "FINE RISTAMPA   : SR010002113.148 Ora: 120000 Cassa: 1 Sct: 3 Eur.: 0,00\n" if emesso else "")
+        (cartella / "CP260528.SRI.Cassa1").write_text(testo)
+        importazione.importa_condivisione(Condivisione.objects.create(negozio_id=10, codice_negozio="5048", percorso=str(cartella)))
+
+    def test_affiancati_e_righe_evidenziate(self):
+        from primanota.models import ScontrinoSospeso
+        self.prepara()
+        s = ScontrinoSospeso.objects.get(identificativo="SR010002113.148")
+        uff = self.client_per("ufficio@x")
+        d = uff.get(f"/primanota/sospesi/{s.id}/scontrini/").json()
+        self.assertTrue(d["sospeso"]["trovato"])
+        self.assertIn("SCONTRINO ANNULLATO", d["sospeso"]["testo"])
+        self.assertIn("DOC.1104-0002", d["sospeso"]["testo"])
+        self.assertTrue(d["emesso"]["trovato"])
+        self.assertIn("DOC.1104-0003", d["emesso"]["testo"])
+        # Quello senza SysSpy corrispondente dice perché manca.
+        altro = ScontrinoSospeso.objects.get(identificativo="SR010009999.148")
+        d = uff.get(f"/primanota/sospesi/{altro.id}/scontrini/").json()
+        self.assertFalse(d["sospeso"]["trovato"])
+        self.assertNotIn("emesso", d)
+        r = uff.get("/primanota/sospesi/", {"data_da": "2026-05-01", "data_a": "2026-05-31"})
+        self.assertContains(r, 'class="r-emesso"')
+        self.assertContains(r, 'class="r-sospeso"')
+
+    def test_pdf_degli_ancora_sospesi(self):
+        import pymupdf
+        self.prepara(emesso=False)
+        r = self.client_per("ufficio@x").get("/primanota/sospesi/", {"data_da": "2026-05-01", "data_a": "2026-05-31",
+                                                                     "stato": "sospeso", "formato": "pdf", "per_pagina": 4})
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertIn("Scontrini_sospesi_Tutti_i_negozi_dal_2026-05-01_al_2026-05-31_Ancora_sospesi.pdf", r["Content-Disposition"])
+        testo = " ".join("".join(p.get_text() for p in pymupdf.open(stream=r.content, filetype="pdf")).split())
+        self.assertIn("5048 - Motta S. Anastasia", testo)
+        self.assertIn("TEPELENE ACQUA NAT.P", testo)   # il contenuto dello scontrino sospeso
+        self.assertIn("documento 2", testo)
+        self.assertIn("Scontrino non trovato nel SysSpy", testo)   # il secondo non ha documento

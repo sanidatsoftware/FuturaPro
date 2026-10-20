@@ -7,6 +7,14 @@
 .kpis-stat{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:18px}
 .kpi-stat{background:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 4px 16px rgba(0,0,0,.08);text-decoration:none;color:inherit;border:2px solid transparent}
 .kpi-stat.attivo{border-color:#ff6a00}
+/* Righe evidenziate per stato: rosso ancora sospeso, giallo richiamato ma non emesso, verde emesso. */
+table.sospesi tr.r-sospeso td{background:#fdecec}
+table.sospesi tr.r-richiamato td{background:#fff6d6}
+table.sospesi tr.r-emesso td{background:#e8f6ec}
+table.sospesi tr.dettaglio td{background:#f6f8fb}
+.affiancati{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.affiancati h4{margin:0 0 6px;color:#2d4055}
+@media(max-width:1000px){.affiancati{grid-template-columns:1fr}}
 .kpi-stat strong{display:block;font-size:22px;color:#2d4055;line-height:1.1}
 .kpi-stat span{display:block;margin-top:6px;font-size:11px;text-transform:uppercase;font-weight:bold;color:#667085}
 </style>
@@ -26,6 +34,9 @@
         <label class="field">al <input type="date" name="data_a" value="{{ data_a }}"></label>
         <label class="field">Stato <select name="stato">{% for k, v in stati.items %}<option value="{{ k }}" {% if stato == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
         <button class="btn btn-orange">Cerca</button>
+        <label class="field">Per foglio <select id="perFoglio">{% for n in per_foglio %}<option value="{{ n }}" {% if n == 4 %}selected{% endif %}>{{ n }}</option>{% endfor %}</select></label>
+        <button class="btn btn-dark" type="button" onclick="stampaSospesi('sospeso')">🖨 PDF degli ancora sospesi</button>
+        <button class="btn btn-light" type="button" onclick="stampaSospesi(null)">🖨 PDF dell'elenco</button>
         <span class="small">Dai file CPaammgg.SRI.CassaN delle condivisioni ({{ file_letti }} file nel periodo), letti insieme ai SysSpy.</span>
     </form>
 </div>
@@ -38,12 +49,12 @@
 </div>
 
 <div class="card">
-    <table class="table">
+    <table class="table sospesi">
         <thead><tr><th>Negozio</th><th>Sospeso il</th><th>Cassa</th><th>Scontrino</th><th class="num">Importo</th><th>Stato</th>
-            <th>Richiamato</th><th>Emesso</th><th class="num">Importo emesso</th><th></th></tr></thead>
+            <th>Richiamato</th><th>Emesso</th><th class="num">Importo emesso</th><th></th><th></th></tr></thead>
         <tbody>
         {% for s in righe %}
-            <tr>
+            <tr class="r-{{ s.stato }}">
                 <td>{{ s.negozio_label }}</td>
                 <td>{{ s.data|date:"d/m/Y" }} {{ s.ora|time:"H:i:s" }}</td>
                 <td>{{ s.cassa|default:"—" }}</td>
@@ -55,14 +66,47 @@
                 <td>{% if s.richiamato_data %}{{ s.richiamato_data|date:"d/m/Y" }} {{ s.richiamato_ora|time:"H:i:s" }}{% if s.cassa_richiamo != s.cassa %} · cassa {{ s.cassa_richiamo }}{% endif %}{% else %}—{% endif %}</td>
                 <td>{% if s.emesso_data %}{{ s.emesso_data|date:"d/m/Y" }} {{ s.emesso_ora|time:"H:i:s" }} · scontrino {{ s.numero_emesso|default:"—" }}{% if s.cassa_emissione != s.cassa %} · cassa {{ s.cassa_emissione }}{% endif %}{% else %}—{% endif %}</td>
                 <td class="num">{% if s.importo_emesso is not None %}{{ s.importo_emesso|euro }}{% if s.differenza %}<br><span class="badge badge-no">{% if s.differenza > 0 %}+{% endif %}{{ s.differenza|euro }}</span>{% endif %}{% else %}—{% endif %}</td>
+                <td><button class="btn btn-light" type="button" onclick="mostraScontrini(this, {{ s.id }})">Scontrini</button></td>
                 <td><a href="/primanota/giornata/{{ s.negozio_id }}/{{ s.data|date:'Y-m-d' }}/">Giornata</a></td>
             </tr>
+            <tr class="dettaglio" id="dettaglio-{{ s.id }}" hidden><td colspan="11"><div class="affiancati"></div></td></tr>
         {% empty %}
-            <tr><td colspan="10">Nessuno scontrino sospeso per i filtri scelti.</td></tr>
+            <tr><td colspan="11">Nessuno scontrino sospeso per i filtri scelti.</td></tr>
         {% endfor %}
         </tbody>
     </table>
     <p class="small">«Ancora sospeso»: nei file letti non c'è il richiamo. «Richiamato, non emesso»: richiamato in cassa ma senza la FINE RISTAMPA
-        (emissione fiscale). La differenza in giallo indica articoli aggiunti o tolti dopo il richiamo.</p>
+        (emissione fiscale). La differenza in giallo indica articoli aggiunti o tolti dopo il richiamo.
+        «Scontrini» affianca il documento sospeso e quello emesso dopo il richiamo, presi dai SysSpy archiviati.</p>
 </div>
+{% endblock %}
+{% block script %}
+<script>
+function stampaSospesi(stato){
+    const q = new URLSearchParams(new FormData(document.querySelector("form.filters")));
+    if(stato) q.set("stato", stato);
+    q.set("per_pagina", document.getElementById("perFoglio").value);
+    q.set("formato", "pdf");
+    apriStampa("/primanota/sospesi/?" + q.toString());
+}
+// «Scontrini»: il documento sospeso e, accanto, quello emesso dopo il richiamo.
+function mostraScontrini(bottone, id){
+    const riga = document.getElementById("dettaglio-" + id), box = riga.querySelector(".affiancati");
+    riga.hidden = !riga.hidden;
+    if(riga.hidden || box.dataset.caricato) return;
+    box.textContent = "Lettura dei SysSpy…";
+    fetch(`/primanota/sospesi/${id}/scontrini/`, {credentials: "same-origin"}).then(r => r.json()).then(d => {
+        box.dataset.caricato = "1";
+        box.innerHTML = "";
+        const pannello = (v, vuoto) => {
+            const div = document.createElement("div");
+            const h = document.createElement("h4"), pre = document.createElement("div");
+            h.textContent = v ? v.titolo : vuoto; pre.className = "mono"; pre.textContent = v ? v.testo : "";
+            div.append(h); if(v) div.append(pre); else { const p = document.createElement("p"); p.className = "small"; p.textContent = "Non ancora richiamato ed emesso."; div.append(p); }
+            return div;
+        };
+        box.append(pannello(d.sospeso, "Sospeso"), pannello(d.emesso, "Emesso"));
+    }).catch(() => { box.textContent = "Lettura non riuscita."; });
+}
+</script>
 {% endblock %}

@@ -529,6 +529,7 @@ STATI_SOSPESI = OrderedDict([("", "Tutti"), ("sospeso", "Ancora sospesi"), ("ric
                               ("emesso", "Richiamati ed emessi")])
 
 
+@xframe_options_sameorigin  # il PDF si apre nella finestra di stampa della pagina stessa
 @_accesso(solo_ufficio=True)
 def sospesi(request):
     """Scontrini sospesi dalle casse: quelli ancora sospesi e quelli richiamati ed emessi fiscalmente."""
@@ -553,12 +554,53 @@ def sospesi(request):
     righe = [s for s in tutti if not stato or s.stato == stato]
     for s in righe:
         s.negozio_label = etichette.get(s.negozio_id, s.codice_negozio)
+
+    if request.GET.get("formato") == "pdf":
+        # Gli scontrini interi, più per foglio, con un foglio nuovo per ogni punto vendita.
+        from .services import sospesi as servizio
+        from .services.stampa import GRIGLIE, genera_pdf
+        ordine = {n["id"]: i for i, n in enumerate(negozi)}
+        voci = []
+        for s in sorted(righe, key=lambda s: (ordine.get(s.negozio_id, 9999), s.data, s.ora)):
+            stato_testo = {"sospeso": "ancora sospeso", "richiamato": "richiamato, non emesso", "emesso": "emesso"}[s.stato]
+            didascalia = (f"{s.data:%d/%m/%Y} {s.ora:%H:%M:%S} · cassa {s.cassa} · documento {s.numero} · "
+                          f"{str(s.importo).replace('.', ',')} EUR · {stato_testo}")   # il carattere della stampa non ha l'euro
+            voci.append((s.negozio_label, didascalia, "testo",
+                         servizio.testo_scontrino(s.negozio_id, s.data, s.cassa, s.numero) or servizio.NON_TROVATO))
+        try:
+            per_pagina = int(request.GET.get("per_pagina", 4))
+        except ValueError:
+            per_pagina = 4
+        n = negozio(int(filtro_negozio)) if filtro_negozio.isdigit() else None
+        nome = "_".join(re.sub(r"[^\w-]+", "_", t).strip("_") for t in (
+            "Scontrini_sospesi", etichetta_negozio(n) if n else "Tutti_i_negozi", f"dal {data_da} al {data_a}",
+            STATI_SOSPESI[stato] if stato else "tutti")) + ".pdf"
+        pdf = genera_pdf(voci, per_pagina=per_pagina if per_pagina in GRIGLIE else 4,
+                         titolo=f"Scontrini sospesi dal {date.fromisoformat(data_da):%d/%m/%Y} al {date.fromisoformat(data_a):%d/%m/%Y}",
+                         nome=nome)
+        risposta = HttpResponse(pdf, content_type="application/pdf")
+        risposta["Content-Disposition"] = f'inline; filename="{nome}"'
+        return risposta
     file_letti = FileSRI.objects.filter(data__range=(data_da, data_a))
     if filtro_negozio.isdigit():
         file_letti = file_letti.filter(negozio_id=int(filtro_negozio))
     return render(request, "primanota/sospesi.html", _contesto(
         request, righe=righe[:2000], riepilogo=riepilogo, stati=STATI_SOSPESI, stato=stato, negozi=negozi,
-        filtro_negozio=filtro_negozio, data_da=data_da, data_a=data_a, file_letti=file_letti.count()))
+        filtro_negozio=filtro_negozio, data_da=data_da, data_a=data_a, file_letti=file_letti.count(),
+        per_foglio=[1, 2, 4, 6, 8, 9]))
+
+
+@_accesso(solo_ufficio=True)
+def sospeso_scontrini(request, sospeso_id):
+    """Il documento sospeso e quello emesso dopo il richiamo, per affiancarli nella pagina."""
+    from .services import sospesi as servizio
+
+    s = get_object_or_404(ScontrinoSospeso, pk=sospeso_id)
+    dati = servizio.scontrini(s)
+    for v in dati.values():
+        v["trovato"] = bool(v["testo"])
+        v["testo"] = v["testo"] or servizio.NON_TROVATO
+    return JsonResponse(dati)
 
 
 @_accesso()
