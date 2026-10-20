@@ -8,6 +8,10 @@
 .form-group input,.form-group select,.form-group textarea{width:100%}
 .preview-box{border:2px dashed #ccc;border-radius:12px;min-height:480px;display:flex;align-items:center;justify-content:center;background:#fafafa;overflow:auto;text-align:center;color:#777}
 .preview-box iframe,.preview-box img{width:100%;height:600px;border:0;object-fit:contain;background:#fff}
+.voce{border:1px solid #e1e7ee;border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.voce-testa{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;color:#2d4055}
+.voce-campi{display:grid;grid-template-columns:1fr 90px;gap:8px}
+.voce-off{background:#f1f3f5;opacity:.55}.voce-off strong{color:#8a94a3}
 .file-info{margin-top:10px;background:#fff8d6;border:1px solid #d6b500;border-radius:8px;padding:10px;font-size:13px}
 @media(max-width:950px){.layout{grid-template-columns:1fr}}
 </style>
@@ -23,34 +27,38 @@
 <div class="layout">
     <div>
         <div class="card">
-            <h2>Carica scansione</h2>
+            <h2>Carica i documenti della giornata</h2>
             <form method="post" enctype="multipart/form-data" id="uploadForm">
                 {% csrf_token %}
                 <div class="form-group">
                     <label>Data documento</label>
-                    <input type="date" name="data_documento" value="{{ ieri }}" required>
+                    <input type="date" name="data_documento" id="dataDocumento" value="{{ giorno }}" required>
                 </div>
-                <div class="form-group">
-                    <label>Tipo documento</label>
-                    <select name="tipo_documento" required>
-                        <option value="">Seleziona...</option>
-                        {% for tipo in tipi_documento_tutti %}<option value="{{ tipo.id }}">{{ tipo.label }}</option>{% endfor %}
-                    </select>
+                <p class="small">Gli allegati <strong>obbligatori</strong> vanno caricati tutti insieme: senza, la giornata non si salva.
+                    Le voci in grigio non sono previste per questa giornata.</p>
+                {% for v in voci %}
+                <div class="voce {% if v.stato == 'non_richiesta' %}voce-off{% endif %}">
+                    <div class="voce-testa">
+                        <strong>{{ v.tipo.label }}</strong>
+                        {% if v.caricate %}<span class="badge badge-ok">✓ Già caricat{{ v.caricate|pluralize:"a,e" }}{% if v.caricate > 1 %} ({{ v.caricate }}){% endif %}</span>{% endif %}
+                        {% if v.stato == "obbligatoria" %}{% if v.manca %}<span class="badge badge-red">Obbligatoria</span>{% else %}<span class="badge badge-grey">Obbligatoria</span>{% endif %}
+                        {% elif v.stato == "in_attesa" %}<span class="badge badge-no" title="Diventa obbligatoria se il SysSpy della giornata ne contiene">Da verificare col SysSpy</span>
+                        {% else %}<span class="badge badge-grey">Non prevista</span>{% endif %}
+                    </div>
+                    <div class="voce-campi">
+                        <input type="file" name="documento_{{ v.tipo.chiave }}" class="documento" accept=".pdf,image/*"
+                               {% if v.stato == "non_richiesta" %}disabled{% elif v.manca %}required{% endif %}>
+                        <input type="number" name="cassa_{{ v.tipo.chiave }}" min="1" max="99" placeholder="Cassa" title="Cassa, se il documento è di una sola cassa"
+                               {% if v.stato == "non_richiesta" %}disabled{% endif %}>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label>Cassa (se il documento è di una sola cassa)</label>
-                    <input type="number" name="cassa" min="1" max="99">
-                </div>
-                <div class="form-group">
-                    <label>Documento</label>
-                    <input type="file" name="documento" id="documentoInput" accept=".pdf,image/*" required>
-                    <div id="fileInfo"></div>
-                </div>
-                <div class="form-group">
+                {% endfor %}
+                <div class="form-group" style="margin-top:14px">
                     <label>Note</label>
                     <textarea name="note" placeholder="Note facoltative..."></textarea>
                 </div>
-                <button type="submit" class="btn btn-orange">Invia documento</button>
+                <div id="mancanti" class="file-info" style="display:none"></div>
+                <button type="submit" class="btn btn-orange" id="salva">Salva giornata</button>
             </form>
         </div>
 
@@ -167,20 +175,35 @@
 {% endblock %}
 {% block script %}
 <script>
-const input = document.getElementById("documentoInput");
 const box = document.getElementById("previewBox");
-input.addEventListener("change", function(){
-    const file = input.files[0];
-    document.getElementById("fileInfo").innerHTML = file ? `<div class="file-info">✓ File acquisito: <strong>${file.name}</strong></div>` : "";
+const form = document.getElementById("uploadForm");
+// Cambiando data si ricaricano le voci: obbligatorie e non previste dipendono dalla giornata.
+document.getElementById("dataDocumento").addEventListener("change", function(){
+    if(this.value) location.href = "/primanota/upload/?data=" + this.value;
+});
+function anteprima(file){
     if(!file){ box.textContent = "Seleziona un PDF o un'immagine per visualizzare l'anteprima."; return; }
     const url = URL.createObjectURL(file);
     if(file.type === "application/pdf") box.innerHTML = `<iframe src="${url}"></iframe>`;
     else if(file.type.startsWith("image/")) box.innerHTML = `<img src="${url}" alt="Anteprima">`;
     else box.textContent = "Anteprima non disponibile per questo formato.";
+}
+function controllaMancanti(){
+    const mancanti = [...form.querySelectorAll("input.documento[required]")].filter(i => !i.files.length)
+        .map(i => i.closest(".voce").querySelector("strong").textContent);
+    const avviso = document.getElementById("mancanti");
+    avviso.style.display = mancanti.length ? "block" : "none";
+    avviso.textContent = mancanti.length ? "Da allegare per salvare: " + mancanti.join(", ") : "";
+    return !mancanti.length;
+}
+form.querySelectorAll("input.documento").forEach(i => i.addEventListener("change", function(){
+    anteprima(this.files[0]);
+    controllaMancanti();
+}));
+form.addEventListener("submit", function(e){
+    if(!controllaMancanti() || !this.checkValidity()){ e.preventDefault(); this.reportValidity(); return; }
+    const b = document.getElementById("salva"); b.disabled = true; b.textContent = "Invio in corso...";
 });
-document.getElementById("uploadForm").addEventListener("submit", function(e){
-    if(!this.checkValidity()) return;
-    const b = this.querySelector('button[type="submit"]'); b.disabled = true; b.textContent = "Invio in corso...";
-});
+controllaMancanti();
 </script>
 {% endblock %}

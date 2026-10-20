@@ -106,18 +106,21 @@ class Base(TestCase):
         sessione = c.session
         sessione["baserow_user_email"] = email
         sessione.save()
+        c.email = email
         return c
 
-    def carica(self, client, tipo, giorno="2026-05-28", cassa=""):
-        return client.post("/primanota/upload/", {
-            "data_documento": giorno, "tipo_documento": tipo, "cassa": cassa, "note": "",
-            "documento": SimpleUploadedFile("scan.pdf", b"%PDF-1.4", content_type="application/pdf")})
+    @staticmethod
+    def pdf(nome="scan.pdf"):
+        return SimpleUploadedFile(nome, b"%PDF-1.4", content_type="application/pdf")
+
+    def carica(self, client, tipo, giorno="2026-05-28", cassa=None):
+        """Una scansione già in Baserow, caricata dal negozio del client (il modulo vuole la giornata intera)."""
+        from primanota.services.baserow_primanota import crea_scansione
+        user = baserow_layer.UTENTI[client.email]
+        return crea_scansione(user, user["field_8147"][0]["id"], giorno, tipo, self.pdf(), cassa=cassa)
 
     def scansione_sede(self, tipo, giorno="2026-05-28", cassa=None):
-        """Chiusure fiscali e POS non le carica più il negozio: righe già presenti in Baserow."""
-        from primanota.services.baserow_primanota import crea_scansione
-        return crea_scansione(baserow_layer.UTENTI["pv@x"], 10, giorno, tipo,
-                              SimpleUploadedFile("scan.pdf", b"%PDF-1.4", content_type="application/pdf"), cassa=cassa)
+        return self.carica(self.client_per("pv@x"), tipo, giorno, cassa)
 
     def importa_fixture(self):
         cartella = Path(self.archivio) / "share"
@@ -218,19 +221,44 @@ class TestPagine(Base):
         # L'Amministratore entra anche senza la casella Menu_PrimaNota.
         self.assertEqual(self.client_per("admin@x").get("/primanota/condivisioni/").status_code, 200)
 
-    def test_il_negozio_carica_per_genere(self):
+    def test_il_negozio_salva_la_giornata_solo_con_gli_obbligatori(self):
+        from primanota.models import RegolaDocumento
+        self.importa_fixture()   # 28/05: SysSpy con un'abortita e nessun reso
+        RegolaDocumento.objects.create(tipo_documento="Chiusure POS bancari", obbligo=RegolaDocumento.FACOLTATIVO)
         pv = self.client_per("pv@x")
-        r = self.carica(pv, "Resi", cassa="1")
-        self.assertRedirects(r, "/primanota/upload/?uploaded=1", fetch_redirect_response=False)
-        riga = self.baserow.righe[1]
-        self.assertEqual((riga["Negozio"][0]["id"], riga["Tipo Documento"], riga["Cassa"]), (10, "Resi", 1))
-        self.assertFalse(riga["Lavorato"])
-        self.assertContains(self.carica(pv, "Tipo inventato"), "Compila Data")
-        # Il negozio carica tutti i generi; obbligatorie o facoltative le decidono le regole.
-        self.assertRedirects(self.carica(pv, "Chiusura fiscale"), "/primanota/upload/?uploaded=1", fetch_redirect_response=False)
-        pagina = pv.get("/primanota/upload/")
-        for tipo in ("Chiusura fiscale", "Chiusure POS bancari", "Resi", "Transazioni abortite", "Versamenti contante"):
-            self.assertContains(pagina, f'<option value="{tipo}">')
+        pagina = pv.get("/primanota/upload/", {"data": "2026-05-28"})
+        stati = {v["tipo"]["id"]: (v["stato"], v["manca"]) for v in pagina.context["voci"]}
+        self.assertEqual(stati, {"Chiusura fiscale": ("obbligatoria", True), "Chiusure POS bancari": ("non_richiesta", False),
+                                 "Resi": ("non_richiesta", False), "Transazioni abortite": ("obbligatoria", True),
+                                 "Versamenti contante": ("obbligatoria", True)})
+        self.assertContains(pagina, 'name="documento_pos" class="documento" accept=".pdf,image/*"\n                               disabled')
+        # Senza tutti gli obbligatori non si salva niente.
+        r = pv.post("/primanota/upload/", {"data_documento": "2026-05-28", "documento_fiscale": self.pdf(),
+                                           "documento_versamenti": self.pdf()})
+        self.assertContains(r, "Mancano gli allegati obbligatori: Transazioni abortite")
+        self.assertEqual(self.baserow.righe, {})
+        # Una voce non prevista non si allega.
+        r = pv.post("/primanota/upload/", {"data_documento": "2026-05-28", "documento_fiscale": self.pdf(),
+                                           "documento_abortite": self.pdf(), "documento_versamenti": self.pdf(),
+                                           "documento_pos": self.pdf()})
+        self.assertContains(r, "non previsti per questa giornata: Chiusure POS bancari")
+        self.assertEqual(self.baserow.righe, {})
+        r = pv.post("/primanota/upload/", {"data_documento": "2026-05-28", "documento_fiscale": self.pdf(),
+                                           "cassa_fiscale": "1", "documento_abortite": self.pdf(),
+                                           "documento_versamenti": self.pdf(), "note": "ok"})
+        self.assertRedirects(r, "/primanota/upload/?uploaded=1&data=2026-05-28", fetch_redirect_response=False)
+        righe = sorted((r["Tipo Documento"], r["Cassa"], r["Negozio"][0]["id"]) for r in self.baserow.righe.values())
+        self.assertEqual(righe, [("Chiusura fiscale", 1, 10), ("Transazioni abortite", None, 10), ("Versamenti contante", None, 10)])
+        # Con gli obbligatori già caricati si può aggiungere un documento da solo.
+        self.assertFalse(any(v["manca"] for v in pv.get("/primanota/upload/", {"data": "2026-05-28"}).context["voci"]))
+        r = pv.post("/primanota/upload/", {"data_documento": "2026-05-28", "documento_versamenti": self.pdf()})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(len(self.baserow.righe), 4)
+
+    def test_senza_sysspy_le_voci_che_ne_dipendono_restano_caricabili(self):
+        pv = self.client_per("pv@x")
+        stati = {v["tipo"]["id"]: v["stato"] for v in pv.get("/primanota/upload/", {"data": "2026-05-20"}).context["voci"]}
+        self.assertEqual((stati["Resi"], stati["Chiusura fiscale"]), ("in_attesa", "obbligatoria"))
 
     def test_giornata_affianca_scansioni_e_sysspy(self):
         self.importa_fixture()

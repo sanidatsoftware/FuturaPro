@@ -12,7 +12,7 @@ from scansioni.services.monitor_trasmissioni import MONTH_LABELS, WEEKDAY_LABELS
 from scansioni.services.baserow_scansioni import LOCAL_TZ
 
 from ..models import DocumentoSysSpy, FileSysSpy, Nota, RegolaDocumento
-from .regole import obbligatoria
+from .regole import SYSSPY_PER_TIPO, obbligatoria
 from .accesso import negozi_attivi_ordinati
 from .baserow_primanota import TIPI_DOCUMENTO, VERSAMENTO_CONTANTE, elenco_scansioni
 
@@ -31,10 +31,6 @@ def _sysspy_per_giorno(dal, al):
         cella = out.setdefault((r["file__negozio_id"], r["file__data"].isoformat()), {"casse": 0, "squadrate": 0, "tipi": set()})
         cella["tipi"].add(r["tipo"])
     return out
-
-
-SYSSPY_PER_TIPO = {"Resi": DocumentoSysSpy.RESO, "Transazioni abortite": DocumentoSysSpy.ABORTITO,
-                   "Chiusura fiscale": "CASSA", "Chiusure POS bancari": "CASSA"}
 
 
 def _note_aperte_per_giorno(dal, al, versamento=False):

@@ -14,7 +14,7 @@ from django.views.decorators.http import require_POST
 
 from .models import (Condivisione, DestinatarioEmail, DocumentoSysSpy, FileSysSpy, ImpostazioniEmail, Nota,
                      Pianificazione, RegolaDocumento)
-from .services.regole import obbligatoria
+from .services.regole import NON_RICHIESTA, obbligatoria, stato_giornate
 from .services import importazione
 from .services.accesso import (
     can_access_primanota,
@@ -100,43 +100,77 @@ def _giornate_recenti(negozio_id, giorni=14):
     Ultime giornate del negozio per la pagina di caricamento: totali e controlli dei SysSpy e
     scansioni obbligatorie (secondo le regole di Amministratore e Direttore) non ancora caricate.
     """
-    from .services.monitor import SYSSPY_PER_TIPO
-
     ieri = timezone.localdate() - timedelta(days=1)
     dal = ieri - timedelta(days=giorni - 1)
     per_giorno = OrderedDict()
     for i in range(giorni):
         d = ieri - timedelta(days=i)
         per_giorno[d] = {"data": d, "casse": 0, "totale": Decimal("0"), "pos": Decimal("0"), "anomalie": [],
-                         "fiscale": 0, "chiusure_pos": 0, "mancanti": [], "presenti": set()}
-    try:
-        caricate = elenco_scansioni(negozio_id=negozio_id, data_da=dal.isoformat(), data_a=ieri.isoformat())
-    except RuntimeError:
-        caricate = None   # Baserow non risponde: non si segnala niente come mancante
-    for d, tipo in DocumentoSysSpy.objects.filter(
-            file__negozio_id=negozio_id, file__data__range=(dal, ieri),
-            tipo__in=[DocumentoSysSpy.RESO, DocumentoSysSpy.ABORTITO]).values_list("file__data", "tipo").distinct():
-        per_giorno[d]["presenti"].add(tipo)
-    files = FileSysSpy.objects.filter(negozio_id=negozio_id, data__range=(dal, ieri))
-    for f in files.order_by("cassa"):
-        g = per_giorno[f.data]
-        g["presenti"].add("CASSA")
+                         "fiscale": 0, "chiusure_pos": 0, "mancanti": []}
+    for f in FileSysSpy.objects.filter(negozio_id=negozio_id, data__range=(dal, ieri)).order_by("cassa"):
         if f.cassa_vuota:
             continue
+        g = per_giorno[f.data]
         g["casse"] += 1
         g["totale"] += f.totale_giornaliero or f.totale_scontrini or 0
         g["pos"] += f.totale_pos or 0
         g["fiscale"] += bool(f.chiusura_fiscale)
         g["chiusure_pos"] += bool(f.chiusura_pos)
         g["anomalie"] += [f"Cassa {f.cassa}: {c['titolo']}" for c in f.controlli if c["esito"] == "attenzione"]
-    if caricate is not None:
-        regole = RegolaDocumento.mappa()
-        tipi_caricati = {(s["data_documento"], s["tipo_documento"]) for s in caricate}
-        for d, g in per_giorno.items():
-            g["mancanti"] = [t["label"] for t in TIPI_DOCUMENTO
-                             if (d.isoformat(), t["id"]) not in tipi_caricati
-                             and obbligatoria(regole.get(t["id"]), SYSSPY_PER_TIPO.get(t["id"]) in g["presenti"])]
+    try:
+        caricate = elenco_scansioni(negozio_id=negozio_id, data_da=dal.isoformat(), data_a=ieri.isoformat())
+    except RuntimeError:
+        return list(per_giorno.values())   # Baserow non risponde: non si segnala niente come mancante
+    for d, voci in stato_giornate(negozio_id, dal, ieri, caricate).items():
+        per_giorno[d]["mancanti"] = [v["tipo"]["label"] for v in voci if v["manca"]]
     return list(per_giorno.values())
+
+
+def _voci_caricamento(negozio_id, giorno):
+    """Generi della giornata per il modulo del negozio: stato secondo le regole e scansioni già caricate."""
+    d = date.fromisoformat(giorno)
+    caricate = elenco_scansioni(negozio_id=negozio_id, data_da=giorno, data_a=giorno)
+    return stato_giornate(negozio_id, d, d, caricate)[d]
+
+
+def _salva_giornata(request, user, negozio_id):
+    """
+    Salva le scansioni della giornata, una per genere. Non salva niente se manca un allegato
+    obbligatorio (secondo le regole) o se si allega un genere non richiesto. Restituisce l'errore o None.
+    """
+    giorno = _data(request.POST.get("data_documento"))
+    if not giorno:
+        return "Indica la data del documento."
+    voci = _voci_caricamento(negozio_id, giorno)
+    file_per_tipo = {v["tipo"]["id"]: request.FILES.get(f"documento_{v['tipo']['chiave']}") for v in voci}
+    mancanti = [v["tipo"]["label"] for v in voci if v["manca"] and not file_per_tipo[v["tipo"]["id"]]]
+    if mancanti:
+        return "Mancano gli allegati obbligatori: " + ", ".join(mancanti) + ". Nessun documento è stato salvato."
+    non_richiesti = [v["tipo"]["label"] for v in voci if v["stato"] == NON_RICHIESTA and file_per_tipo[v["tipo"]["id"]]]
+    if non_richiesti:
+        return "Documenti non previsti per questa giornata: " + ", ".join(non_richiesti) + "."
+    da_salvare = [v for v in voci if file_per_tipo[v["tipo"]["id"]]]
+    if not da_salvare:
+        return "Allega almeno un documento."
+    casse = {}
+    for v in da_salvare:
+        cassa = request.POST.get(f"cassa_{v['tipo']['chiave']}", "").strip()
+        if cassa and not cassa.isdigit():
+            return f"{v['tipo']['label']}: la cassa deve essere un numero."
+        casse[v["tipo"]["id"]] = int(cassa) if cassa else None
+    note = request.POST.get("note", "").strip()
+    salvati = []
+    for v in da_salvare:
+        t = v["tipo"]["id"]
+        try:
+            risultato = crea_scansione(user, negozio_id, giorno, t, file_per_tipo[t], cassa=casse[t], note=note)
+        except RuntimeError as exc:
+            risultato = {"error": str(exc)}
+        if "error" in risultato:
+            gia = f" Salvati: {', '.join(salvati)}." if salvati else ""
+            return f"{v['tipo']['label']}: {str(risultato['error']).rstrip('.')}.{gia}"
+        salvati.append(v["tipo"]["label"])
+    return None
 
 
 def _note_visibili(request):
@@ -204,26 +238,10 @@ def upload(request):
             Nota.objects.create(negozio_id=negozio_id, data=giorno, tipo=tipo, testo=testo, creata_da=nome_utente(user))
             return redirect("/primanota/upload/?nota=1")
     elif request.method == "POST":
-        giorno = _data(request.POST.get("data_documento"))
-        tipo = request.POST.get("tipo_documento", "").strip()
-        documento = request.FILES.get("documento")
-        cassa = request.POST.get("cassa", "").strip()
-        if not giorno or tipo not in TIPI_VALIDI or not documento:
-            error = "Compila Data, Tipo Documento e allega il file."
-        elif cassa and not cassa.isdigit():
-            error = "La cassa deve essere un numero."
-        else:
-            try:
-                risultato = crea_scansione(user, negozio_id, giorno, tipo, documento,
-                                           cassa=int(cassa) if cassa else None,
-                                           note=request.POST.get("note", "").strip())
-            except RuntimeError as exc:
-                risultato = {"error": str(exc)}
-            if "error" in risultato:
-                error = str(risultato["error"])
-            else:
-                # Post/Redirect/Get come in Scansioni PV: niente doppi invii.
-                return redirect("/primanota/upload/?uploaded=1")
+        error = _salva_giornata(request, user, negozio_id)
+        if not error:
+            # Post/Redirect/Get come in Scansioni PV: niente doppi invii.
+            return redirect(f"/primanota/upload/?uploaded=1&data={request.POST.get('data_documento')}")
 
     try:
         scansioni = elenco_scansioni(negozio_id=negozio_id, max_risultati=50)
@@ -236,7 +254,7 @@ def upload(request):
         s["note_versamento"] = note_versamenti.get(s["id"], [])
     message = None
     if request.GET.get("uploaded") == "1":
-        message = "Documento caricato correttamente."
+        message = "Documenti della giornata salvati correttamente."
     elif request.GET.get("nota") == "1":
         message = "Segnalazione inviata."
     elif request.GET.get("versamento") == "inviata":
@@ -246,8 +264,13 @@ def upload(request):
     elif request.GET.get("versamento") == "noninviata":
         error = "Nota salvata, ma l'invio email non è riuscito: avvisare la sede."
     ieri = (timezone.localdate() - timedelta(days=1)).isoformat()
+    giorno = _data(request.POST.get("data_documento") or request.GET.get("data"), ieri)
+    try:
+        voci = _voci_caricamento(negozio_id, giorno)
+    except RuntimeError as exc:
+        voci, error = [], error or str(exc)
     return render(request, "primanota/upload.html", _contesto(
-        request, scansioni=scansioni, error=error, message=message, ieri=ieri,
+        request, scansioni=scansioni, error=error, message=message, ieri=ieri, giorno=giorno, voci=voci,
         tipi_nota=Nota.TIPI, note=Nota.objects.filter(negozio_id=negozio_id, versamento=False)[:30],
         destinatari=DestinatarioEmail.objects.filter(attivo=True), giornate=_giornate_recenti(negozio_id),
         negozio_id=negozio_id,
