@@ -123,10 +123,12 @@ class Base(TestCase):
 
 class TestSysSpy(TestCase):
     def setUp(self):
-        self.a = sysspy.analizza("SysSpy.20260528.1", (DATI / "SysSpy.20260528.1").read_bytes())
+        self.file = sysspy.analizza("SysSpy.20260528.1", (DATI / "SysSpy.20260528.1").read_bytes())
+        self.assertEqual(len(self.file["giornate"]), 1)
+        self.a = self.file["giornate"][0]
 
     def test_data_cassa_negozio_dal_nome_e_dal_contenuto(self):
-        self.assertEqual((self.a["data"], self.a["cassa"], self.a["codice_negozio"]), (date(2026, 5, 28), 1, "5048"))
+        self.assertEqual((self.a["data"], self.file["cassa"], self.file["codice_negozio"]), (date(2026, 5, 28), 1, "5048"))
 
     def test_testo_senza_le_prime_quattro_colonne(self):
         self.assertNotIn("9949", self.a["testo"])
@@ -136,7 +138,7 @@ class TestSysSpy(TestCase):
         v = self.a["valori_fiscali"]
         self.assertEqual(v["totale_giornaliero"], Decimal("18.00"))
         self.assertEqual(v["corrisp_non_riscosso"], Decimal("18.00"))
-        self.assertEqual(v["num_scontrini_fiscali"], 3)
+        self.assertEqual(v["num_scontrini_fiscali"], 4)   # 3 scontrini + la chiusura
         self.assertEqual(self.a["totale_pos"], Decimal("18.00"))
         self.assertTrue(self.a["chiusura_fiscale"]["testo"].lstrip().startswith("TO.CAL. SRL"))
         pos = self.a["chiusure_pos"][0]["testo"]
@@ -152,6 +154,23 @@ class TestSysSpy(TestCase):
         # L'abortito non entra nella somma: torna con il totale giornaliero.
         self.assertEqual(self.a["totale_scontrini"], Decimal("18.00"))
 
+    def test_pagamenti(self):
+        # Carta Credito 18,00; contanti 0 dello scontrino con storno: non compare.
+        self.assertEqual(self.a["pagamenti"], {"Carta Credito": Decimal("18.00")})
+
+    def test_file_con_due_giornate(self):
+        # Come il PV 5034: il file del 13 contiene anche la giornata del 12 (file del 12 mancante).
+        testo = (DATI / "SysSpy.20260528.1").read_bytes().decode("utf-8-sig").replace("28/05/2026", "12/10/2026")
+        secondo = "\r\n".join(r.replace("12/10/2026", "13/10/2026") for r in testo.splitlines())
+        f = sysspy.analizza("SysSpy.20261013.1", (testo + secondo).encode())
+        self.assertEqual([g["data"] for g in f["giornate"]], [date(2026, 10, 12), date(2026, 10, 13)])
+        self.assertEqual([g["valori_fiscali"]["totale_giornaliero"] for g in f["giornate"]], [Decimal("18.00")] * 2)
+        self.assertEqual(f["data_file"], date(2026, 10, 13))
+
+    def test_ristampa_non_sposta_la_giornata(self):
+        righe = sysspy.righe("9832 01/01/2020 10:00   DOC.1-1\r\n9899 28/05/2026 13:09\r\n")
+        self.assertEqual([g for g, _ in sysspy.dividi_per_data(righe, date(2026, 5, 28))], [date(2026, 5, 28)])
+
     def test_importi_con_separatore_migliaia(self):
         self.assertEqual(sysspy.importo("TOTALE POS EUR  2.400,30"), Decimal("2400.30"))
 
@@ -161,7 +180,8 @@ class TestImportazione(Base):
         cond, cartella, stato = self.importa_fixture()
         self.assertEqual((stato["importati"], stato["errori"]), (1, 0), stato)
         f = FileSysSpy.objects.get()
-        self.assertEqual((f.data, f.cassa, f.totale_pos, f.differenza_pos), (date(2026, 5, 28), 1, Decimal("18.00"), 0))
+        self.assertEqual((f.data, f.data_file, f.cassa, f.totale_pos, f.pagato_pos),
+                         (date(2026, 5, 28), date(2026, 5, 28), 1, Decimal("18.00"), Decimal("18.00")))
         self.assertTrue(f.quadrato)
         self.assertTrue(Path(f.percorso_archivio).is_file())
         self.assertIn("/5048/2026/05/28/cassa_1/", f.percorso_archivio)
@@ -260,7 +280,7 @@ class TestPagine(Base):
         riga = next(x for x in r.context["monitor"]["rows"] if x["store_id"] == 10)
         cella = next(c for c in riga["cells"] if c["date"] == ieri)
         self.assertEqual((cella["state"], cella["total"], cella["versamenti_aperti"], cella["note_aperte"]),
-                         ("pending", 2, 1, 1))
+                         ("incomplete", 2, 1, 1))
         self.assertEqual(cella["mancanti"], ["Chiusure POS bancari"])
         self.assertEqual(cella["detail_url"], f"/primanota/giornata/10/{ieri}/")
         altro = next(x for x in r.context["monitor"]["rows"] if x["store_id"] == 11)
@@ -293,7 +313,8 @@ class TestMenu(Base):
         self.assertEqual(t.render(Context({"utente": baserow_layer.UTENTI["nomenu@x"]})), "False")
         self.assertEqual(t.render(Context({"utente": baserow_layer.UTENTI["admin@x"]})), "True")
         # Senza la casella Menu_PrimaNota non basta essere abilitati a Scansioni PV.
-        with override_settings(BASEROW_UTENTE_MENU_PRIMANOTA_FIELD=""):
+        with override_settings(BASEROW_UTENTE_MENU_PRIMANOTA_FIELD=""), \
+                mock.patch("primanota.services.accesso.campo_menu_primanota", return_value=None):
             self.assertEqual(t.render(Context({"utente": baserow_layer.UTENTI["pv@x"]})), "False")
         self.assertEqual(t.render(Context({"utente": None})), "False")
 
@@ -358,4 +379,85 @@ class TestImportaTutti(Base):
         self.assertEqual((stato["negozi"], stato["negozi_fatti"], stato["importati"]), (2, 2, 1))
         self.assertIn("5050: errore", "\n".join(stato["esiti"]))
         self.assertEqual(self.client_per("ufficio@x").post("/primanota/condivisioni/importa-tutti/").status_code, 403)
+
+
+class TestDivisioneEControlli(Base):
+    def test_giornata_recuperata_dal_file_del_giorno_dopo(self):
+        cartella = Path(self.archivio) / "share"
+        cartella.mkdir()
+        testo = (DATI / "SysSpy.20260528.1").read_bytes().decode("utf-8-sig")
+        giorno12 = testo.replace("28/05/2026", "12/10/2026")
+        giorno13 = "\r\n".join(r.replace("12/10/2026", "13/10/2026") for r in giorno12.splitlines())
+        (cartella / "SysSpy.20261013.1").write_bytes((giorno12 + giorno13).encode())
+        cond = Condivisione.objects.create(negozio_id=10, codice_negozio="5048", percorso=str(cartella))
+        importazione.importa_condivisione(cond)
+        dodici = FileSysSpy.objects.get(data=date(2026, 10, 12))
+        self.assertTrue(dodici.da_altro_file)
+        self.assertEqual(FileSysSpy.objects.count(), 2)
+        r = self.client_per("ufficio@x").get("/primanota/giornata/10/2026-10-12/")
+        self.assertContains(r, "dal file del 13/10")
+        self.assertContains(r, "TOTALE GIORNALIERO")
+
+    def test_rielabora_archivio(self):
+        self.importa_fixture()
+        f = FileSysSpy.objects.get()
+        FileSysSpy.objects.filter(pk=f.pk).update(pagamenti={}, data_file=None)
+        self.assertEqual(importazione.rielabora_archivio(), {"file": 1, "errori": 0})
+        f = FileSysSpy.objects.get()
+        self.assertEqual((f.data_file, f.pagamenti), (date(2026, 5, 28), {"Carta Credito": "18.00"}))
+
+    def test_spiegazione_differenza_pos(self):
+        self.importa_fixture()
+        f = FileSysSpy.objects.get()
+        f.totale_pos = Decimal("1212.00")  # il terminale ha incassato più di cassa e scontrini
+        c = {x["nome"]: x for x in f.controlli}
+        self.assertEqual(c["POS"]["esito"], "attenzione")
+        self.assertIn("terminale POS ha incassato 1.194,00 € in più", c["POS"]["spiegazione"])
+        f.totale_giornaliero = Decimal("16.01")
+        c = {x["nome"]: x for x in f.controlli}
+        self.assertIn("1,99 € in più", c["Scontrini"]["spiegazione"])
+
+    def test_cassa_vuota(self):
+        f = FileSysSpy(scontrini_trovati=0, totale_giornaliero=Decimal("0"), num_scontrini_fiscali=1)
+        self.assertEqual([c["titolo"] for c in f.controlli], ["Cassa non usata"])
+        self.assertTrue(f.quadrato)
+
+    def test_regole_scansioni_obbligatorie(self):
+        from primanota.models import RegolaDocumento
+        self.importa_fixture()   # la fixture contiene un'abortita e nessun reso
+        r = self.client_per("ufficio@x").get("/primanota/giornata/10/2026-05-28/")
+        sezioni = {s["tipo"]["id"]: s["obbligatoria"] for s in r.context["sezioni"]}
+        self.assertEqual(sezioni, {"Chiusura fiscale": True, "Chiusure POS bancari": True, "Resi": False,
+                                   "Transazioni abortite": True, "Versamenti contante": True})
+        self.client_per("admin@x").post("/primanota/condivisioni/", {"azione": "regole", "regola_versamenti": "FACOLTATIVO"})
+        self.assertEqual(RegolaDocumento.mappa()["Versamenti contante"], "FACOLTATIVO")
+
+    def test_stampa_pdf(self):
+        import pymupdf
+        self.importa_fixture()
+        self.carica(self.client_per("pv@x"), "Chiusura fiscale", cassa="1")
+        pdf_scansione = pymupdf.open()
+        pdf_scansione.new_page().insert_text((50, 50), "SCANSIONE")
+        with mock.patch("primanota.services.stampa._scarica", return_value=(pdf_scansione.tobytes(), "application/pdf")):
+            r = self.client_per("ufficio@x").get("/primanota/stampa/", {"sezione": "fiscale", "data_da": "2026-05-28",
+                                                                         "per_pagina": 4})
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        doc = pymupdf.open(stream=r.content, filetype="pdf")
+        testo = doc[0].get_text()
+        self.assertEqual(doc.page_count, 1)
+        self.assertIn("TOTALE GIORNALIERO", testo)
+        self.assertIn("SCANSIONE", testo)
+        self.assertEqual(self.client_per("pv@x").get("/primanota/stampa/").status_code, 302)
+
+
+class TestCampoMenu(Base):
+    def test_colonna_trovata_per_nome(self):
+        from primanota.services import accesso
+        accesso._campo_menu.update(valore=None, scade=0)
+        risposta = mock.Mock(json=lambda: [{"id": 7001, "name": "Menu_PrimaNota"}], raise_for_status=lambda: None)
+        with override_settings(BASEROW_UTENTE_MENU_PRIMANOTA_FIELD=""), \
+                mock.patch("primanota.services.accesso.requests.get", return_value=risposta) as get:
+            self.assertEqual(accesso.campo_menu_primanota(), "field_7001")
+            self.assertIn("/api/database/fields/table/272/", get.call_args.args[0])
+        accesso._campo_menu.update(valore=None, scade=0)
 

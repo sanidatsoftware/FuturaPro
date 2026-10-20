@@ -18,5 +18,7 @@ urlpatterns = [
     path("condivisioni/", views.condivisioni, name="primanota_condivisioni"),
     path("condivisioni/<int:negozio_id>/importa/", views.avvia_importazione, name="primanota_importa"),
     path("condivisioni/importa-tutti/", views.importa_tutti, name="primanota_importa_tutti"),
+    path("condivisioni/rielabora/", views.rielabora, name="primanota_rielabora"),
+    path("stampa/", views.stampa, name="primanota_stampa"),
     path("importazione/<str:lavoro>/", views.stato_importazione, name="primanota_importazione"),
 ]

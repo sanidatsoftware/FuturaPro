@@ -9,6 +9,8 @@ Le scansioni stanno in Baserow, come quelle di Scansioni PV. Qui stanno invece:
 I negozi restano quelli della tabella Baserow Negozi: qui si salva il loro id.
 """
 
+from decimal import Decimal
+
 from django.db import models
 
 
@@ -32,7 +34,9 @@ class Condivisione(models.Model):
 class FileSysSpy(models.Model):
     negozio_id = models.IntegerField(db_index=True)
     codice_negozio = models.CharField(max_length=20)
-    data = models.DateField(null=True, db_index=True)
+    data = models.DateField(null=True, db_index=True, help_text="Giornata a cui appartiene questa parte del file")
+    data_file = models.DateField(null=True, help_text="Data nel nome del file: può essere successiva se la cassa "
+                                                      "non ha prodotto il file del giorno")
     cassa = models.IntegerField(null=True)
     nome_file = models.CharField(max_length=100)
     percorso_origine = models.CharField(max_length=700)
@@ -58,11 +62,15 @@ class FileSysSpy(models.Model):
     matricola_stampante = models.CharField(max_length=30, blank=True)
     scontrini_trovati = models.IntegerField(default=0)
     totale_scontrini = models.DecimalField(max_digits=12, decimal_places=2, null=True)
+    pagamenti = models.JSONField(default=dict, blank=True, help_text="Totale per tipo di pagamento negli scontrini")
+    elenco_scontrini = models.JSONField(default=list, blank=True,
+                                        help_text="[numero, ora, totale, pagato con POS] per spiegare le differenze")
 
     class Meta:
         ordering = ["-data", "codice_negozio", "cassa"]
         constraints = [
-            models.UniqueConstraint(fields=["negozio_id", "percorso_origine"], name="primanota_sysspy_unico"),
+            # Un file può contenere più giornate: una riga per giornata.
+            models.UniqueConstraint(fields=["negozio_id", "percorso_origine", "data"], name="primanota_sysspy_giornata"),
         ]
         indexes = [models.Index(fields=["negozio_id", "data"])]
 
@@ -79,9 +87,31 @@ class FileSysSpy(models.Model):
         return self.totale_scontrini - self.totale_giornaliero
 
     @property
-    def quadrato(self):
-        return self.differenza_pos in (None, 0) and self.differenza_scontrini in (None, 0)
+    def pagato_pos(self):
+        """Carta Credito + Bancomat registrati negli scontrini."""
+        from .sysspy import PAGAMENTI_POS
+        if not self.pagamenti:
+            return None
+        return sum((Decimal(str(v)) for k, v in self.pagamenti.items() if k in PAGAMENTI_POS), Decimal("0"))
 
+    @property
+    def cassa_vuota(self):
+        """Cassa non usata: chiusura a zero e nessuno scontrino."""
+        return self.scontrini_trovati == 0 and not self.totale_giornaliero
+
+    @property
+    def da_altro_file(self):
+        return bool(self.data_file and self.data and self.data_file != self.data)
+
+    @property
+    def quadrato(self):
+        from .services.controlli import quadrato
+        return quadrato(self)
+
+    @property
+    def controlli(self):
+        from .services.controlli import controlli
+        return controlli(self)
 
 class DocumentoSysSpy(models.Model):
     """Documenti particolari trovati nel SysSpy, da mostrare accanto alle scansioni."""
@@ -166,3 +196,33 @@ class Pianificazione(models.Model):
                 ore, minuti = pezzo.split(":")
                 out.append((int(ore), int(minuti)))
         return sorted(set(out))
+
+
+class RegolaDocumento(models.Model):
+    """Quando una scansione è obbligatoria nella giornata di prima nota (decide l'Amministratore)."""
+
+    SEMPRE = "SEMPRE"
+    SE_SYSSPY = "SE_SYSSPY"
+    FACOLTATIVO = "FACOLTATIVO"
+    SCELTE = [
+        (SEMPRE, "Obbligatoria ogni giorno"),
+        (SE_SYSSPY, "Obbligatoria solo se il SysSpy ne contiene"),
+        (FACOLTATIVO, "Facoltativa"),
+    ]
+    PREDEFINITE = {
+        "Chiusura fiscale": SEMPRE,
+        "Chiusure POS bancari": SEMPRE,
+        "Resi": SE_SYSSPY,
+        "Transazioni abortite": SE_SYSSPY,
+        "Versamenti contante": SEMPRE,
+    }
+
+    tipo_documento = models.CharField(max_length=60, unique=True)
+    obbligo = models.CharField(max_length=20, choices=SCELTE, default=SEMPRE)
+
+    @classmethod
+    def mappa(cls):
+        out = dict(cls.PREDEFINITE)
+        out.update(dict(cls.objects.values_list("tipo_documento", "obbligo")))
+        return out
+

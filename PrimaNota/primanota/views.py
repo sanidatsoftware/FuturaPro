@@ -5,12 +5,13 @@ from datetime import date, timedelta
 from functools import wraps
 from pathlib import Path
 
-from django.http import FileResponse, Http404, HttpResponseForbidden, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .models import Condivisione, DocumentoSysSpy, FileSysSpy, Nota, Pianificazione
+from .models import Condivisione, DocumentoSysSpy, FileSysSpy, Nota, Pianificazione, RegolaDocumento
+from .services.regole import obbligatoria
 from .services import importazione
 from .services.accesso import (
     can_access_primanota,
@@ -177,7 +178,7 @@ def admin(request):
     return render(request, "primanota/admin.html", _contesto(
         request, giornate=list(giornate.values()), negozi=list(negozi.values()), error=error,
         filtro_negozio=filtro_negozio, filtro_tipo=filtro_tipo, data_da=data_da, data_a=data_a,
-        solo_non_lavorati=solo_non_lavorati, conteggio=len(scansioni),
+        solo_non_lavorati=solo_non_lavorati, conteggio=len(scansioni), per_foglio=[1, 2, 4, 6, 8, 9],
         note_aperte=Nota.objects.filter(chiusa=False).count(),
         richieste_contatto=Nota.objects.filter(chiusa=False, tipo=Nota.RICHIESTA_CONTATTO).count()))
 
@@ -218,6 +219,7 @@ def giornata(request, negozio_id, giorno):
         TRANSAZIONI_ABORTITE: [(f"Cassa {d.file.cassa} · {d.numero} · {d.ora}", d.testo) for d in docs(DocumentoSysSpy.ABORTITO)],
         VERSAMENTO_CONTANTE: [],
     }
+    regole = RegolaDocumento.mappa()
     sezioni = []
     for t in TIPI_DOCUMENTO:
         sezioni.append({
@@ -225,17 +227,26 @@ def giornata(request, negozio_id, giorno):
             "scansioni": [s for s in scansioni if s["tipo_documento"] == t["id"]],
             "anteprime": anteprime[t["id"]],
             "versamento": t["id"] == VERSAMENTO_CONTANTE,
+            "obbligatoria": obbligatoria(regole.get(t["id"]), bool(anteprime[t["id"]])),
         })
     altre = [s for s in scansioni if s["tipo_documento"] not in TIPI_VALIDI]
 
-    contanti = [(f.cassa, f.corrisp_riscosso - f.corrisp_non_riscosso) for f in files
-                if f.corrisp_riscosso is not None and f.corrisp_non_riscosso is not None]
+    casse = []
+    for f in files:
+        controlli = f.controlli
+        casse.append({
+            "file": f, "controlli": controlli,
+            "anomalie": any(c["esito"] == "attenzione" for c in controlli),
+            "da_spiegare": bool(controlli) and not f.cassa_vuota,
+            "contanti": (f.pagamenti or {}).get("Contanti"),
+            "buoni": (f.pagamenti or {}).get("Buoni Pasto"),
+        })
     corrente = date.fromisoformat(giorno)
     return render(request, "primanota/giornata.html", _contesto(
         request, negozio=n, negozio_label=etichetta_negozio(n), negozio_id=negozio_id,
         giorno=giorno, giorno_fmt=corrente.strftime("%d/%m/%Y"),
         precedente=(corrente - timedelta(days=1)).isoformat(), successivo=(corrente + timedelta(days=1)).isoformat(),
-        sezioni=sezioni, altre=altre, files=files, contanti=contanti, error=error,
+        sezioni=sezioni, altre=altre, files=files, casse=casse, error=error,
         storni=docs(DocumentoSysSpy.STORNO, DocumentoSysSpy.ANNULLAMENTO), pos_negate=docs(DocumentoSysSpy.POS_NEGATO),
         note=Nota.objects.filter(negozio_id=negozio_id, data=giorno), tipi_nota=Nota.TIPI))
 
@@ -363,6 +374,12 @@ def sysspy_scarica(request, file_id):
 def condivisioni(request):
     piano = Pianificazione.corrente()
     errore_orari = None
+    if request.method == "POST" and request.POST.get("azione") == "regole":
+        for t in TIPI_DOCUMENTO:
+            valore = request.POST.get(f"regola_{t['chiave']}")
+            if valore in dict(RegolaDocumento.SCELTE):
+                RegolaDocumento.objects.update_or_create(tipo_documento=t["id"], defaults={"obbligo": valore})
+        return redirect("/primanota/condivisioni/?salvato=1")
     if request.method == "POST" and request.POST.get("azione") == "pianificazione":
         orari = request.POST.get("orari", "").strip()
         ora_ricostruzione = request.POST.get("ricostruzione_ora", "").strip()
@@ -403,6 +420,7 @@ def condivisioni(request):
     righe = [(n, esistenti.get(n["id"])) for n in negozi_attivi_ordinati()]
     return render(request, "primanota/condivisioni.html", _contesto(
         request, righe=righe, piano=piano, giorni=Pianificazione.GIORNI, errore_orari=errore_orari,
+        regole=[(t, RegolaDocumento.mappa().get(t["id"])) for t in TIPI_DOCUMENTO], scelte_regole=RegolaDocumento.SCELTE,
         salvato=request.GET.get("salvato") == "1"))
 
 
@@ -412,6 +430,12 @@ def avvia_importazione(request, negozio_id):
     cond = get_object_or_404(Condivisione, negozio_id=negozio_id)
     lavoro = importazione.avvia_in_background(cond, completa=request.POST.get("completa") == "1")
     return redirect(f"/primanota/importazione/{lavoro}/")
+
+
+@require_POST
+@_accesso(solo_ufficio=True, solo_gestione=True)
+def rielabora(request):
+    return redirect(f"/primanota/importazione/{importazione.avvia_rielaborazione_in_background()}/")
 
 
 @require_POST
@@ -433,3 +457,39 @@ def stato_importazione(request, lavoro):
     if not stato:
         raise Http404
     return render(request, "primanota/importazione.html", _contesto(request, lavoro=lavoro, stato=stato))
+
+
+# La stampa scarica e impagina gli allegati: si limita il periodo.
+MAX_GIORNI_STAMPA = 31
+
+
+@_accesso(solo_ufficio=True)
+def stampa(request):
+    """PDF A4 delle chiusure fiscali o POS (scansioni + estratti SysSpy), più documenti per foglio."""
+    from .services import stampa as servizio
+
+    sezione = request.GET.get("sezione", "fiscale")
+    if sezione not in servizio.SEZIONI:
+        raise Http404
+    ieri = (timezone.localdate() - timedelta(days=1)).isoformat()
+    data_da = _data(request.GET.get("data_da"), ieri)
+    data_a = _data(request.GET.get("data_a"), data_da)
+    if (date.fromisoformat(data_a) - date.fromisoformat(data_da)).days >= MAX_GIORNI_STAMPA:
+        return HttpResponse(f"Scegliere al massimo {MAX_GIORNI_STAMPA} giorni.", status=400)
+    negozio_id = request.GET.get("negozio") or None
+    try:
+        per_pagina = int(request.GET.get("per_pagina", 4))
+    except ValueError:
+        per_pagina = 4
+    contenuto = request.GET.get("contenuto", "tutto")
+    try:
+        voci = servizio.elementi(sezione, negozio_id=int(negozio_id) if negozio_id else None,
+                                 data_da=data_da, data_a=data_a, contenuto=contenuto)
+    except RuntimeError as exc:
+        return HttpResponse(str(exc), status=502)
+    titolo = f"{servizio.SEZIONI[sezione]['titolo']} dal {date.fromisoformat(data_da):%d/%m/%Y} al {date.fromisoformat(data_a):%d/%m/%Y}"
+    pdf = servizio.genera_pdf(voci, per_pagina=per_pagina, titolo=titolo)
+    risposta = HttpResponse(pdf, content_type="application/pdf")
+    risposta["Content-Disposition"] = f'inline; filename="{sezione}_{data_da}_{data_a}.pdf"'
+    return risposta
+

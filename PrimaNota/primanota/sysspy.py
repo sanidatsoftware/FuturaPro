@@ -204,6 +204,7 @@ def scontrini(elenco):
                 if t.strip().startswith("SUBTOT."):
                     totale = importo(t)
         out.append({
+            "pagamenti": _pagamenti(blocco, totale),
             "numero": m.group(3),
             "ora": m.group(2),
             "totale": totale,
@@ -216,6 +217,44 @@ def scontrini(elenco):
         })
         inizio = i + 1
     return out
+
+
+CODICE_PAGAMENTO = "8239"   # Carta Credito, Bancomat, Buoni Pasto, ...
+# Pagamenti che passano dal POS bancario: la loro somma deve coincidere con la chiusura POS
+# e con il "CORRISP. NON RISCOSSI" della chiusura fiscale (verificato sui file di Motta).
+PAGAMENTI_POS = ("Carta Credito", "Bancomat")
+
+
+def _pagamenti(blocco, totale):
+    """
+    Come è stato pagato uno scontrino: {"Carta Credito": 18.00, "Contanti": 2.50, ...}.
+    I pagamenti non in contanti sono le righe 8239; i contanti sono il resto del totale
+    (così il resto dato al cliente è già escluso).
+    """
+    out = {}
+    for c, t in blocco:
+        if c != CODICE_PAGAMENTO:
+            continue
+        valore = importo(t)
+        if valore is not None:
+            voce = IMPORTO_RE.sub("", t).strip() or "Altro"
+            out[voce] = out.get(voce, Decimal("0")) + valore
+    if totale is not None:
+        contanti = totale - sum(out.values(), Decimal("0"))
+        if contanti:
+            out["Contanti"] = contanti
+    return out
+
+
+def somma_pagamenti(docs):
+    """Totale per tipo di pagamento degli scontrini validi (esclusi gli abortiti)."""
+    out = {}
+    for d in docs:
+        if d["abortito"]:
+            continue
+        for voce, valore in d["pagamenti"].items():
+            out[voce] = out.get(voce, Decimal("0")) + valore
+    return dict(sorted(out.items()))
 
 
 def pos_negate(elenco):
@@ -246,41 +285,91 @@ def codice_negozio(elenco):
     return ""
 
 
+# Righe con data e ora che chiudono una stampa: la stampa appartiene a quella data.
+# Le ristampe (codice 9832) riportano la data del documento originale e non contano.
+CODICI_DATA = {"9899", "9999", "8232"}
+# Oltre questi giorni di distanza dalla data del nome file la data stampata si considera errata.
+MAX_GIORNI_SCARTO = 7
+
+
+def dividi_per_data(elenco, data_file=None):
+    """
+    Divide le righe per giornata. Un SysSpy può contenere anche le stampe dei giorni
+    precedenti (cassa non chiusa, file del giorno mancante): ogni stampa va alla data
+    e ora con cui termina. Restituisce [(data, righe)] in ordine di data.
+    """
+    giornate = {}
+    ordine = []
+    buffer = []
+    ultima = data_file
+    for riga in elenco:
+        buffer.append(riga)
+        m = TIMESTAMP_RE.match(riga[1]) if riga[0] in CODICI_DATA else None
+        if not m:
+            continue
+        try:
+            giorno = datetime.strptime(m.group(1), "%d/%m/%Y").date()
+        except ValueError:
+            continue
+        if data_file and abs((giorno - data_file).days) > MAX_GIORNI_SCARTO:
+            giorno = data_file
+        if giorno not in giornate:
+            giornate[giorno] = []
+            ordine.append(giorno)
+        giornate[giorno].extend(buffer)
+        buffer = []
+        ultima = giorno
+    if buffer:
+        if ultima not in giornate:
+            giornate[ultima] = []
+            ordine.append(ultima)
+        giornate[ultima].extend(buffer)
+    return sorted(((g, giornate[g]) for g in ordine), key=lambda x: (x[0] is None, x[0]))
+
+
+def analizza_giornata(elenco):
+    """Chiusure, valori e documenti di una porzione di file (una giornata)."""
+    fiscale = chiusura_fiscale(elenco)
+    pos = chiusure_pos(elenco)
+    docs = scontrini(elenco)
+    return {
+        "testo": testo_pulito(elenco),
+        "righe": len(elenco),
+        "chiusure_pos": pos,
+        "totale_pos": sum((p["totale_pos"] for p in pos if p["totale_pos"] is not None), Decimal("0")) if pos else None,
+        "chiusura_fiscale": fiscale,
+        "valori_fiscali": fiscale["valori"] if fiscale else {},
+        "scontrini": docs,
+        # Gli scontrini abortiti non entrano nel totale giornaliero della cassa.
+        "totale_scontrini": sum((d["totale"] for d in docs if d["totale"] is not None and not d["abortito"]), Decimal("0")),
+        "pagamenti": somma_pagamenti(docs),
+        "pos_negate": pos_negate(elenco),
+    }
+
+
 def analizza(nome_file, raw):
     """
-    Analizza un file SysSpy e restituisce tutto ciò che serve all'archivio:
-    testo pulito, data, cassa, chiusure, valori e documenti particolari.
+    Analizza un file SysSpy: data e cassa dal nome, poi una voce per ogni giornata
+    contenuta nel file (di solito una sola).
     """
     elenco = righe(raw)
     data, cassa = data_e_cassa_da_nome(nome_file)
-    fiscale = chiusura_fiscale(elenco)
-    valori = fiscale["valori"] if fiscale else {}
-    if cassa is None and valori.get("numero_cassa"):
-        cassa = valori["numero_cassa"]
-    if data is None:
-        for _, t in elenco:
-            m = TIMESTAMP_RE.match(t)
-            if m:
-                data = datetime.strptime(m.group(1), "%d/%m/%Y").date()
-                break
-    pos = chiusure_pos(elenco)
-    totale_pos = sum((p["totale_pos"] for p in pos if p["totale_pos"] is not None), Decimal("0")) if pos else None
-    docs = scontrini(elenco)
-    # Gli scontrini abortiti non entrano nel totale giornaliero della cassa.
-    totale_scontrini = sum((d["totale"] for d in docs if d["totale"] is not None and not d["abortito"]), Decimal("0"))
+    giornate = []
+    for giorno, parte in dividi_per_data(elenco, data):
+        g = analizza_giornata(parte)
+        g["data"] = giorno or data
+        giornate.append(g)
+    if cassa is None:
+        cassa = next((g["valori_fiscali"].get("numero_cassa") for g in giornate if g["valori_fiscali"].get("numero_cassa")), None)
+    if data is None and giornate:
+        data = giornate[-1]["data"]
     return {
-        "data": data,
+        "data_file": data,
         "cassa": cassa,
         "codice_negozio": codice_negozio(elenco),
         "testo": testo_pulito(elenco),
         "righe": len(elenco),
-        "chiusure_pos": pos,
-        "totale_pos": totale_pos,
-        "chiusura_fiscale": fiscale,
-        "valori_fiscali": valori,
-        "scontrini": docs,
-        "totale_scontrini": totale_scontrini,
-        "pos_negate": pos_negate(elenco),
+        "giornate": giornate,
     }
 
 

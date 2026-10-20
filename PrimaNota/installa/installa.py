@@ -365,12 +365,22 @@ def main():
         if not python:
             raise RuntimeError("non trovo il Python con Django del portale: rilanciare con --python /percorso/python")
         print(f"  Python del portale: {python}")
-        if not esegui([python, "-m", "pip", "install", "-q", "smbprotocol", "cryptography"], portale):
-            avviso("pip non è riuscito: installare a mano smbprotocol e cryptography")
+        if not esegui([python, "-m", "pip", "install", "-q", "smbprotocol", "cryptography", "pymupdf"], portale):
+            avviso("pip non è riuscito: installare a mano smbprotocol, cryptography e pymupdf")
         if not esegui([python, "manage.py", "migrate", "primanota"], portale):
             raise RuntimeError("migrate non riuscito")
         if not esegui([python, "manage.py", "check"], portale):
             raise RuntimeError("il controllo del portale ha trovato errori")
+
+        titolo("Rielaborazione dei SysSpy già archiviati")
+        # Divide per giornata i file già importati (es. la giornata del 12 finita nel file del 13)
+        # e calcola pagamenti e controlli nuovi. Legge solo l'archivio sul server: può durare qualche minuto.
+        print("  Può richiedere qualche minuto se l'archivio è grande…")
+        if esegui([python, "manage.py", "importa_sysspy", "--rielabora"], portale):
+            ok("archivio rielaborato")
+        else:
+            avviso("rielaborazione non riuscita: ripeterla dal portale (Condivisioni negozi > Rielabora archivio)")
+        dai_a(utente, archivio)
     except Exception as exc:
         print(f"\n  ✗ {exc}\n  Rimetto a posto i file dalla copia di sicurezza…")
         backup.ripristina()

@@ -11,20 +11,30 @@ from django.db.models import Count, Q
 from scansioni.services.monitor_trasmissioni import MONTH_LABELS, WEEKDAY_LABELS, _build_days, _month_shift, _safe_int
 from scansioni.services.baserow_scansioni import LOCAL_TZ
 
-from ..models import FileSysSpy, Nota
+from ..models import DocumentoSysSpy, FileSysSpy, Nota, RegolaDocumento
+from .regole import obbligatoria
 from .accesso import negozi_attivi_ordinati
 from .baserow_primanota import TIPI_DOCUMENTO, elenco_scansioni
 
 
 def _sysspy_per_giorno(dal, al):
     out = {}
-    for f in FileSysSpy.objects.filter(data__range=(dal, al)).only(
-            "negozio_id", "data", "totale_pos", "corrisp_non_riscosso", "totale_scontrini", "totale_giornaliero"):
-        cella = out.setdefault((f.negozio_id, f.data.isoformat()), {"casse": 0, "squadrate": 0})
+    for f in FileSysSpy.objects.filter(data__range=(dal, al)).defer(
+            "elenco_scontrini", "chiusura_pos", "chiusura_fiscale"):
+        cella = out.setdefault((f.negozio_id, f.data.isoformat()), {"casse": 0, "squadrate": 0, "tipi": set()})
         cella["casse"] += 1
         if not f.quadrato:
             cella["squadrate"] += 1
+    # Resi e abortite trovati nel SysSpy: servono alle regole "obbligatoria solo se nel SysSpy".
+    for r in (DocumentoSysSpy.objects.filter(file__data__range=(dal, al), tipo__in=[DocumentoSysSpy.RESO, DocumentoSysSpy.ABORTITO])
+              .values("file__negozio_id", "file__data", "tipo").distinct()):
+        cella = out.setdefault((r["file__negozio_id"], r["file__data"].isoformat()), {"casse": 0, "squadrate": 0, "tipi": set()})
+        cella["tipi"].add(r["tipo"])
     return out
+
+
+SYSSPY_PER_TIPO = {"Resi": DocumentoSysSpy.RESO, "Transazioni abortite": DocumentoSysSpy.ABORTITO,
+                   "Chiusura fiscale": "CASSA", "Chiusure POS bancari": "CASSA"}
 
 
 def _note_aperte_per_giorno(dal, al):
@@ -66,6 +76,7 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None):
             cella["versamenti_aperti"] += 1
 
     sysspy = _sysspy_per_giorno(days[0], days[-1])
+    regole = RegolaDocumento.mappa()
     note = _note_aperte_per_giorno(days[0], days[-1])
     negozi = negozi_attivi_ordinati()
 
@@ -78,7 +89,7 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None):
         for day in days:
             iso = day.isoformat()
             valori = aggregato.get((negozio_id, iso))
-            spy = sysspy.get((negozio_id, iso), {"casse": 0, "squadrate": 0})
+            spy = sysspy.get((negozio_id, iso), {"casse": 0, "squadrate": 0, "tipi": set()})
             n = note.get((negozio_id, iso), {"n": 0, "contatto": 0})
             if day > today:
                 state = "future"
@@ -89,9 +100,14 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None):
                 summary[state] += 1
                 summary["documents"] += valori["total"]
             valori = valori or {"total": 0, "worked": 0, "pending": 0, "versamenti_aperti": 0, "tipi": {}}
+            presenti = spy["tipi"] | ({"CASSA"} if spy["casse"] else set())
+            mancanti = [t["label"] for t in TIPI_DOCUMENTO
+                        if not valori["tipi"].get(t["id"])
+                        and obbligatoria(regole.get(t["id"]), SYSSPY_PER_TIPO.get(t["id"]) in presenti)]
+            if state in ("pending", "worked") and mancanti:
+                state = "incomplete"
             summary["versamenti_aperti"] += valori["versamenti_aperti"]
             summary["anomalie"] += n["n"]
-            mancanti = [t["label"] for t in TIPI_DOCUMENTO[:2] if not valori["tipi"].get(t["id"])]
             celle.append({
                 "date": iso,
                 "day_number": day.day,

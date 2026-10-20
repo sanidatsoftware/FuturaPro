@@ -10,7 +10,7 @@
     <code>\\server\condivisione\cartella</code> (SMB) oppure un percorso già montato sul server, ad esempio <code>/mnt/negozi/5048</code>.
     La password resta cifrata; lasciandola vuota si mantiene quella salvata.
 </div>
-{% if salvato %}<div class="message-ok">Orari salvati.</div>{% endif %}
+{% if salvato %}<div class="message-ok">Impostazioni salvate.</div>{% endif %}
 {% if errore_orari %}<div class="message-error">{{ errore_orari }}</div>{% endif %}
 <div class="grid2">
     <div class="card">
@@ -22,6 +22,11 @@
         <form method="post" action="/primanota/condivisioni/importa-tutti/" style="display:inline"
               onsubmit="return confirm('Rileggere e riarchiviare tutti i file di tutti i negozi? Può richiedere molto tempo.')">{% csrf_token %}
             <input type="hidden" name="completa" value="1"><button class="btn btn-light">Ricostruisci tutti</button></form>
+        <form method="post" action="/primanota/condivisioni/rielabora/" style="display:inline"
+              onsubmit="return confirm('Rileggere i file già archiviati con le regole attuali (es. divisione per giornata)?')">{% csrf_token %}
+            <button class="btn btn-light">Rielabora archivio</button></form>
+        <p class="small">«Rielabora archivio» non va sulle condivisioni: rilegge i file già archiviati sul server. Usarlo dopo un
+            aggiornamento della Prima Nota, ad esempio per attribuire alle giornate giuste il contenuto finito nel file del giorno dopo.</p>
     </div>
     <div class="card">
         <h3>Importazione automatica</h3>
@@ -37,6 +42,20 @@
         </form>
         <p class="small">Ultima esecuzione automatica: {{ piano.ultimo_esito|default:"nessuna" }}</p>
     </div>
+</div>
+
+<div class="card">
+    <h3>Scansioni obbligatorie</h3>
+    <form method="post" class="filters">{% csrf_token %}
+        <input type="hidden" name="azione" value="regole">
+        {% for t, valore in regole %}
+        <label class="field">{{ t.label }}
+            <select name="regola_{{ t.chiave }}">{% for k, v in scelte_regole %}<option value="{{ k }}" {% if valore == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+        {% endfor %}
+        <button class="btn btn-dark">Salva</button>
+    </form>
+    <p class="small">Decide quando una scansione risulta «Mancante» nella giornata e nel monitor (arancione). «Solo se il SysSpy ne contiene»:
+        ad esempio i resi sono richiesti solo nei giorni in cui il SysSpy contiene un reso.</p>
 </div>
 
 <div class="card">

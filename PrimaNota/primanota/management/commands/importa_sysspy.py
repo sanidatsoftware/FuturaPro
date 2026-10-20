@@ -3,7 +3,8 @@ import fcntl
 from django.core.management.base import BaseCommand
 
 from primanota.models import Condivisione
-from primanota.services.importazione import archivio_dir, esegui_pianificazione, importa_condivisione, importa_tutte
+from primanota.services.importazione import (
+    archivio_dir, esegui_pianificazione, importa_condivisione, importa_tutte, rielabora_archivio)
 
 
 class Command(BaseCommand):
@@ -12,10 +13,20 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--negozio", help="Solo questo codice negozio")
         parser.add_argument("--completa", action="store_true", help="Rilegge anche i file già archiviati")
+        parser.add_argument("--rielabora", action="store_true",
+                            help="Rilegge i file già archiviati (senza condivisioni) con le regole attuali")
         parser.add_argument("--pianificato", action="store_true",
                             help="Per il crontab: lavora solo agli orari decisi nel portale (Condivisioni negozi)")
 
     def handle(self, *args, **opzioni):
+        if opzioni["rielabora"]:
+            negozio_id = None
+            if opzioni["negozio"]:
+                cond = Condivisione.objects.filter(codice_negozio=opzioni["negozio"]).first()
+                negozio_id = cond.negozio_id if cond else -1
+            esito = rielabora_archivio(negozio_id, scrivi=self.stdout.write)
+            self.stdout.write(f"Rielaborati {esito['file']} file, {esito['errori']} errori")
+            return
         if opzioni["pianificato"]:
             archivio_dir().mkdir(parents=True, exist_ok=True)
             # Se l'esecuzione precedente è ancora in corso, questa non parte.

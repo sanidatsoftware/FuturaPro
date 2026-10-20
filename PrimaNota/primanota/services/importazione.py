@@ -91,65 +91,113 @@ def _file_condivisione(cond):
 
 
 def archivia(cond, origine, nome, dimensione, mtime, dati):
-    """Archivia un file già letto. Restituisce il FileSysSpy salvato."""
+    """
+    Archivia un file già letto: l'originale una volta sola, poi una riga per ogni
+    giornata contenuta nel file (con il suo testo pulito). Restituisce le righe salvate.
+    """
     a = sysspy.analizza(nome, dati)
-    giorno = a["data"]
+    data_file = a["data_file"]
     cartella = archivio_dir() / cond.codice_negozio
-    cartella = cartella / (giorno.strftime("%Y/%m/%d") if giorno else "senza_data") / f"cassa_{a['cassa'] or 0}"
+    cartella = cartella / (data_file.strftime("%Y/%m/%d") if data_file else "senza_data") / f"cassa_{a['cassa'] or 0}"
     cartella.mkdir(parents=True, exist_ok=True)
     originale = cartella / nome
-    originale.write_bytes(dati)
-    testo = cartella / (nome + ".txt.gz")
-    with gzip.open(testo, "wt", encoding="utf-8") as fh:
-        fh.write(a["testo"])
+    if not originale.exists() or originale.read_bytes() != dati:
+        originale.write_bytes(dati)
+    sha = hashlib.sha256(dati).hexdigest()
 
-    v = a["valori_fiscali"]
-    pos = a["chiusure_pos"]
-    campi = dict(
-        codice_negozio=cond.codice_negozio,
-        data=giorno,
-        cassa=a["cassa"],
-        nome_file=nome,
-        percorso_archivio=str(originale),
-        percorso_testo=str(testo),
-        dimensione=dimensione,
-        modificato_il=mtime,
-        sha256=hashlib.sha256(dati).hexdigest(),
-        righe=a["righe"],
-        codice_negozio_letto=a["codice_negozio"],
-        chiusura_pos="\n\n".join(p["testo"] for p in pos),
-        chiusura_fiscale=a["chiusura_fiscale"]["testo"] if a["chiusura_fiscale"] else "",
-        totale_pos=a["totale_pos"],
-        totale_host=sum((p["totale_host"] for p in pos if p["totale_host"] is not None), start=0) if pos else None,
-        totale_giornaliero=v.get("totale_giornaliero"),
-        totale_annulli=v.get("totale_annulli"),
-        totale_resi=v.get("totale_resi"),
-        corrisp_riscosso=v.get("corrisp_riscosso"),
-        corrisp_non_riscosso=v.get("corrisp_non_riscosso"),
-        num_scontrini_fiscali=v.get("num_scontrini_fiscali"),
-        matricola_stampante=v.get("matricola_stampante") or "",
-        scontrini_trovati=len(a["scontrini"]),
-        totale_scontrini=a["totale_scontrini"],
-    )
+    salvati = []
     with transaction.atomic():
-        f, _ = FileSysSpy.objects.update_or_create(
-            negozio_id=cond.negozio_id, percorso_origine=origine, defaults=campi)
-        f.documenti.all().delete()
-        documenti = []
-        for s in a["scontrini"]:
-            if s["abortito"]:
-                tipi = [DocumentoSysSpy.ABORTITO]
-            else:
-                tipi = ([DocumentoSysSpy.RESO] if s["reso"] else []) \
-                    + ([DocumentoSysSpy.STORNO] if s["storni"] else []) \
-                    + ([DocumentoSysSpy.ANNULLAMENTO] if s["annullamenti_riga"] else [])
-            for tipo in tipi:
-                documenti.append(DocumentoSysSpy(
-                    file=f, tipo=tipo, numero=s["numero"], ora=s["ora"], importo=s["totale"], testo=s["testo"]))
-        for n in a["pos_negate"]:
-            documenti.append(DocumentoSysSpy(file=f, tipo=DocumentoSysSpy.POS_NEGATO, ora=n["ora"], testo=n["testo"]))
-        DocumentoSysSpy.objects.bulk_create(documenti)
-    return f
+        # Le giornate di una lettura precedente dello stesso file si rifanno da capo.
+        FileSysSpy.objects.filter(negozio_id=cond.negozio_id, percorso_origine=origine).delete()
+        for g in a["giornate"]:
+            giorno = g["data"]
+            suffisso = "" if giorno == data_file else f".{giorno:%Y%m%d}"
+            testo = cartella / f"{nome}{suffisso}.txt.gz"
+            with gzip.open(testo, "wt", encoding="utf-8") as fh:
+                fh.write(g["testo"])
+            v = g["valori_fiscali"]
+            pos = g["chiusure_pos"]
+            f = FileSysSpy.objects.create(
+                negozio_id=cond.negozio_id,
+                percorso_origine=origine,
+                codice_negozio=cond.codice_negozio,
+                data=giorno,
+                data_file=data_file,
+                cassa=a["cassa"],
+                nome_file=nome,
+                percorso_archivio=str(originale),
+                percorso_testo=str(testo),
+                dimensione=dimensione,
+                modificato_il=mtime,
+                sha256=sha,
+                righe=g["righe"],
+                codice_negozio_letto=a["codice_negozio"],
+                chiusura_pos="\n\n".join(p["testo"] for p in pos),
+                chiusura_fiscale=g["chiusura_fiscale"]["testo"] if g["chiusura_fiscale"] else "",
+                totale_pos=g["totale_pos"],
+                totale_host=sum((p["totale_host"] for p in pos if p["totale_host"] is not None), start=0) if pos else None,
+                totale_giornaliero=v.get("totale_giornaliero"),
+                totale_annulli=v.get("totale_annulli"),
+                totale_resi=v.get("totale_resi"),
+                corrisp_riscosso=v.get("corrisp_riscosso"),
+                corrisp_non_riscosso=v.get("corrisp_non_riscosso"),
+                num_scontrini_fiscali=v.get("num_scontrini_fiscali"),
+                matricola_stampante=v.get("matricola_stampante") or "",
+                scontrini_trovati=len(g["scontrini"]),
+                totale_scontrini=g["totale_scontrini"],
+                pagamenti={k: str(val) for k, val in g["pagamenti"].items()},
+                elenco_scontrini=[
+                    [d["numero"], d["ora"], str(d["totale"]) if d["totale"] is not None else None,
+                     str(sum((v for k, v in d["pagamenti"].items() if k in sysspy.PAGAMENTI_POS), start=0)),
+                     d["abortito"]]
+                    for d in g["scontrini"]],
+            )
+            documenti = []
+            for d in g["scontrini"]:
+                if d["abortito"]:
+                    tipi = [DocumentoSysSpy.ABORTITO]
+                else:
+                    tipi = ([DocumentoSysSpy.RESO] if d["reso"] else []) \
+                        + ([DocumentoSysSpy.STORNO] if d["storni"] else []) \
+                        + ([DocumentoSysSpy.ANNULLAMENTO] if d["annullamenti_riga"] else [])
+                for tipo in tipi:
+                    documenti.append(DocumentoSysSpy(
+                        file=f, tipo=tipo, numero=d["numero"], ora=d["ora"], importo=d["totale"], testo=d["testo"]))
+            for n in g["pos_negate"]:
+                documenti.append(DocumentoSysSpy(file=f, tipo=DocumentoSysSpy.POS_NEGATO, ora=n["ora"], testo=n["testo"]))
+            DocumentoSysSpy.objects.bulk_create(documenti)
+            salvati.append(f)
+    return salvati
+
+
+def rielabora_archivio(negozio_id=None, scrivi=None):
+    """
+    Rilegge i SysSpy già archiviati (senza andare sulle condivisioni) con le regole
+    attuali: serve dopo un aggiornamento, ad esempio per dividere i file per giornata.
+    """
+    righe = FileSysSpy.objects.order_by("negozio_id", "percorso_origine")
+    if negozio_id:
+        righe = righe.filter(negozio_id=negozio_id)
+    visti, fatti, errori = set(), 0, 0
+    condivisioni = {c.negozio_id: c for c in Condivisione.objects.all()}
+    for f in righe.values("negozio_id", "percorso_origine", "percorso_archivio", "nome_file", "dimensione",
+                          "modificato_il", "codice_negozio"):
+        chiave = (f["negozio_id"], f["percorso_origine"])
+        if chiave in visti:
+            continue
+        visti.add(chiave)
+        cond = condivisioni.get(f["negozio_id"]) or Condivisione(negozio_id=f["negozio_id"],
+                                                                 codice_negozio=f["codice_negozio"])
+        try:
+            dati = Path(f["percorso_archivio"]).read_bytes()
+            archivia(cond, f["percorso_origine"], f["nome_file"], f["dimensione"], f["modificato_il"], dati)
+            fatti += 1
+        except Exception as exc:
+            log.exception("Rielaborazione di %s", f["percorso_archivio"])
+            errori += 1
+            if scrivi:
+                scrivi(f"{f['percorso_archivio']}: {exc}")
+    return {"file": fatti, "errori": errori}
 
 
 @contextmanager
@@ -312,6 +360,24 @@ def avvia_tutte_in_background(completa=False):
     def esegui():
         try:
             importa_tutte(completa, LAVORI[lavoro_id], stop)
+        finally:
+            close_old_connections()
+
+    threading.Thread(target=esegui, daemon=True).start()
+    return lavoro_id
+
+
+def avvia_rielaborazione_in_background():
+    lavoro_id = f"rielabora-{int(timezone.now().timestamp())}"
+    LAVORI[lavoro_id] = {"stato": "in corso", "negozio": "archivio (rielaborazione)", "_stop": threading.Event()}
+
+    def esegui():
+        try:
+            esito = rielabora_archivio()
+            LAVORI[lavoro_id].update(stato="completata", importati=esito["file"], errori=esito["errori"],
+                                     messaggio=f"Rielaborati {esito['file']} file già archiviati")
+        except Exception as exc:
+            LAVORI[lavoro_id].update(stato="errore", messaggio=str(exc))
         finally:
             close_old_connections()
 

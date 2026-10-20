@@ -30,6 +30,22 @@
     </form>
 </div>
 
+<div class="card">
+    <form method="get" action="/primanota/stampa/" target="_blank" class="filters">
+        <strong>Stampa</strong>
+        <label class="field">Sezione <select name="sezione"><option value="fiscale">Chiusure fiscali</option><option value="pos">Chiusure POS</option></select></label>
+        <label class="field">Negozio
+            <select name="negozio"><option value="">Tutti</option>
+                {% for n in negozi %}<option value="{{ n.id }}" {% if filtro_negozio == n.id|stringformat:"s" %}selected{% endif %}>{{ n.codice }} - {{ n.descrizione }}</option>{% endfor %}
+            </select></label>
+        <label class="field">Dal <input type="date" name="data_da" value="{{ data_da }}"></label>
+        <label class="field">Al <input type="date" name="data_a" value="{{ data_a }}"></label>
+        <label class="field">Contenuto <select name="contenuto"><option value="tutto">Scansioni e SysSpy</option><option value="scansioni">Solo scansioni</option><option value="sysspy">Solo SysSpy</option></select></label>
+        <label class="field">Per foglio <select name="per_pagina">{% for n in per_foglio %}<option value="{{ n }}" {% if n == 4 %}selected{% endif %}>{{ n }}</option>{% endfor %}</select></label>
+        <button class="btn btn-dark">Crea PDF da stampare</button>
+    </form>
+</div>
+
 {% for g in giornate %}
 <div class="card">
     <div class="top-actions" style="margin-bottom:8px">

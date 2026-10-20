@@ -17,7 +17,7 @@ PRIMA NOTA - INSTALLAZIONE AUTOMATICA
    - crea in Baserow la tabella "Prima Nota Scansioni" con tutti i campi e, nella
      tabella Utenti, la casella "Menu_PrimaNota": chiede email e password di un
      utente Baserow amministratore (Invio per saltare);
-   - installa smbprotocol e cryptography ed esegue "manage.py migrate primanota";
+   - installa smbprotocol, cryptography e pymupdf (per la stampa) ed esegue "manage.py migrate primanota";
    - controlla il portale con "manage.py check": se qualcosa non va rimette i file
      come prima e si ferma;
    - aggiunge al crontab il controllo dell'importazione automatica ogni 5 minuti:

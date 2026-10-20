@@ -24,44 +24,75 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
     <h2>File scontrini (SysSpy) · {{ files|length }} cass{{ files|length|pluralize:"a,e" }}</h2>
     {% if files %}
     <table class="table">
-        <thead><tr><th>Cassa</th><th class="num">Totale giornaliero</th><th class="num">Somma scontrini</th><th class="num">Totale POS</th>
-            <th class="num">Corrisp. non riscosso</th><th class="num">Riscosso − POS</th><th class="num">Annulli</th><th class="num">Resi</th>
-            <th class="num">Scontrini</th><th>Quadratura</th><th></th></tr></thead>
+        <thead><tr><th>Cassa</th><th class="num">Totale giornaliero</th><th class="num">Somma scontrini</th><th class="num">Chiusura POS</th>
+            <th class="num">Corrisp. non riscosso</th><th class="num">Carta + Bancomat</th><th class="num">Contanti</th><th class="num">Buoni pasto</th>
+            <th class="num">Annulli</th><th>Controlli</th><th></th></tr></thead>
         <tbody>
-        {% for f in files %}
+        {% for r in casse %}{% with f=r.file %}
             <tr>
-                <td><strong>{{ f.cassa }}</strong>{% if f.codice_negozio_letto and f.codice_negozio_letto != f.codice_negozio %}<br><span class="badge badge-red">Nel file negozio {{ f.codice_negozio_letto }}</span>{% endif %}</td>
+                <td><strong>{{ f.cassa }}</strong>
+                    {% if f.da_altro_file %}<br><span class="badge badge-grey" title="Il file del giorno mancava: questa parte è nel file del {{ f.data_file|date:'d/m/Y' }}">dal file del {{ f.data_file|date:"d/m" }}</span>{% endif %}
+                    {% if f.codice_negozio_letto and f.codice_negozio_letto != f.codice_negozio %}<br><span class="badge badge-red">Nel file negozio {{ f.codice_negozio_letto }}</span>{% endif %}</td>
+                {% if f.cassa_vuota %}
+                <td colspan="8" class="small">Cassa non usata (chiusura a zero, nessuno scontrino)</td>
+                {% else %}
                 <td class="num">{{ f.totale_giornaliero|default:"—" }}</td>
                 <td class="num">{{ f.totale_scontrini|default:"—" }}</td>
                 <td class="num">{{ f.totale_pos|default:"—" }}</td>
                 <td class="num">{{ f.corrisp_non_riscosso|default:"—" }}</td>
-                <td class="num">{% for c, v in contanti %}{% if c == f.cassa %}{{ v }}{% endif %}{% endfor %}</td>
+                <td class="num">{{ f.pagato_pos|default:"—" }}</td>
+                <td class="num">{{ r.contanti|default:"—" }}</td>
+                <td class="num">{{ r.buoni|default:"—" }}</td>
                 <td class="num">{{ f.totale_annulli|default:"—" }}</td>
-                <td class="num">{{ f.totale_resi|default:"—" }}</td>
-                <td class="num">{{ f.scontrini_trovati }}{% if f.num_scontrini_fiscali %} / {{ f.num_scontrini_fiscali }}{% endif %}</td>
+                {% endif %}
                 <td>
-                    {% if not f.chiusura_fiscale %}<span class="badge badge-no">Chiusura fiscale non ancora nel file</span>
-                    {% else %}
-                        {% if f.differenza_pos == 0 %}<span class="badge badge-ok">✓ POS</span>{% elif f.differenza_pos is not None %}<span class="badge badge-red">⚠ POS {{ f.differenza_pos }} €</span>{% endif %}
-                        {% if f.differenza_scontrini == 0 %}<span class="badge badge-ok">✓ Scontrini</span>{% elif f.differenza_scontrini is not None %}<span class="badge badge-red">⚠ Scontrini {{ f.differenza_scontrini }} €</span>{% endif %}
-                    {% endif %}
+                    {% if not f.chiusura_fiscale and not f.cassa_vuota %}<span class="badge badge-no">Chiusura fiscale non nel file</span>{% endif %}
+                    {% for c in r.controlli %}
+                        <a href="#controlli-{{ f.id }}" class="badge {% if c.esito == 'ok' %}badge-ok{% elif c.esito == 'attenzione' %}badge-red{% else %}badge-grey{% endif %}" style="text-decoration:none">{% if c.esito == 'ok' %}✓{% elif c.esito == 'attenzione' %}⚠{% endif %} {{ c.titolo }}</a>
+                    {% endfor %}
                 </td>
                 <td><a href="/primanota/sysspy/{{ f.id }}/">Testo completo</a></td>
             </tr>
-        {% endfor %}
+        {% endwith %}{% endfor %}
         </tbody>
     </table>
-    <p class="small">«Scontrini»: documenti trovati nel file / numero scontrini fiscali della chiusura. «Somma scontrini» esclude le transazioni abortite.
-        «Riscosso − POS» è l'incasso non elettronico da confrontare con il versamento contante.</p>
+    <p class="small">«Carta + Bancomat» e «Contanti» sono calcolati dagli scontrini (abortiti esclusi). I contanti sono quelli da
+        confrontare con il versamento. Cliccando un controllo si apre la spiegazione.</p>
+
+    {% for r in casse %}{% if r.da_spiegare %}
+    <details id="controlli-{{ r.file.id }}" {% if r.anomalie %}open{% endif %}>
+        <summary>Cassa {{ r.file.cassa }}: spiegazione dei controlli</summary>
+        {% for c in r.controlli %}
+        <div style="margin:8px 0 14px 16px">
+            <strong>{% if c.esito == 'ok' %}✓{% elif c.esito == 'attenzione' %}⚠{% endif %} {{ c.titolo }}</strong>
+            <div>{{ c.spiegazione }}</div>
+            {% if c.valori %}<table class="table" style="width:auto;margin-top:6px">
+                {% for etichetta, valore in c.valori %}<tr><td>{{ etichetta }}</td><td class="num">{{ valore|default:"—" }}</td></tr>{% endfor %}
+            </table>{% endif %}
+        </div>
+        {% endfor %}
+        {% if r.file.pagamenti %}<div class="small" style="margin-left:16px">Pagamenti negli scontrini:
+            {% for k, v in r.file.pagamenti.items %}{{ k }} {{ v }}{% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+    </details>
+    {% endif %}{% endfor %}
     {% else %}
-    <p class="vuoto">Nessun SysSpy archiviato per questa giornata.</p>
+    <p class="vuoto">Nessun SysSpy archiviato per questa giornata. Se la cassa non ha prodotto il file, il contenuto
+        viene recuperato dal SysSpy dei giorni successivi appena importato.</p>
     {% endif %}
+</div>
+
+<div class="card filters">
+    <strong>Stampa (A4, più documenti per foglio):</strong>
+    <a class="btn btn-dark" target="_blank" href="/primanota/stampa/?sezione=fiscale&negozio={{ negozio_id }}&data_da={{ giorno }}&data_a={{ giorno }}">Chiusure fiscali</a>
+    <a class="btn btn-dark" target="_blank" href="/primanota/stampa/?sezione=pos&negozio={{ negozio_id }}&data_da={{ giorno }}&data_a={{ giorno }}">Chiusure POS</a>
 </div>
 
 {% for sez in sezioni %}
 <div class="card sezione">
     <h2>{{ sez.tipo.label }}
-        {% if sez.scansioni %}<span class="badge badge-ok">{{ sez.scansioni|length }} scansion{{ sez.scansioni|length|pluralize:"e,i" }}</span>{% else %}<span class="badge badge-red">Mancante</span>{% endif %}
+        {% if sez.scansioni %}<span class="badge badge-ok">{{ sez.scansioni|length }} scansion{{ sez.scansioni|length|pluralize:"e,i" }}</span>
+        {% elif sez.obbligatoria %}<span class="badge badge-red">Mancante</span>
+        {% else %}<span class="badge badge-grey">Non richiesta</span>{% endif %}
     </h2>
     <div class="grid2">
         <div>
