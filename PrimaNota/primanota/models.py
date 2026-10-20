@@ -268,3 +268,17 @@ class DestinatarioEmail(models.Model):
     def __str__(self):
         return f"{self.nome} <{self.email}>"
 
+
+class CollegamentoBuoniPasto(models.Model):
+    """Database SQL Server dei buoni pasto (una sola riga), deciso da Amministratore o Direttore."""
+
+    host = models.CharField(max_length=200, blank=True, default="192.168.1.194")
+    database = models.CharField(max_length=200, blank=True, default="Scontrini")
+    utente = models.CharField(max_length=200, blank=True)
+    password_cifrata = models.TextField(blank=True)
+    modificato_da = models.CharField(max_length=200, blank=True)
+    modificato_il = models.DateTimeField(null=True, blank=True)
+
+    @classmethod
+    def corrente(cls):
+        return cls.objects.first() or cls()

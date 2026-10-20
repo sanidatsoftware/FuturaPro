@@ -1,0 +1,93 @@
+{% extends "primanota/base.html" %}
+{% load primanota_formati %}
+{% block title %}Buoni Pasto per Emettitore{% endblock %}
+{% block style %}
+<style>
+.pv-scelta{border:1px solid #ced7e2;border-radius:8px;background:#fff;max-height:150px;overflow:auto;padding:6px 10px;min-width:300px;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:2px 14px}
+.pv-scelta label{font-size:13px;display:flex;gap:6px;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.c{text-align:center}
+.table tr.fascia-a td{background:#ffffff}
+.table tr.fascia-b td{background:#eef1f4}
+.table tr.subtotale td{background:#dde3ea;font-weight:bold;color:#2d4055}
+.table tr.totale td{background:#2d4055;color:#fff;font-weight:bold}
+.barra{height:12px;background:#2a78d6;border-radius:0 4px 4px 0;min-width:2px}
+.layout-bp{display:grid;grid-template-columns:minmax(320px,440px) 1fr;gap:18px;align-items:start}
+@media(max-width:1000px){.layout-bp{grid-template-columns:1fr}}
+</style>
+{% endblock %}
+{% block content %}
+<div class="top-actions">
+    <h1>Buoni Pasto per Emettitore</h1>
+    {% if puo_gestire %}<a class="btn btn-light" href="/primanota/buoni-pasto/collegamento/">⚙ Collegamento database</a>{% endif %}
+    {% include "primanota/_menu.html" with attivo="buoni_pasto" %}
+</div>
+{% if not configurato %}<div class="message-error">Il collegamento al database dei buoni pasto non è ancora configurato:
+    {% if puo_gestire %}indicarlo in <a href="/primanota/buoni-pasto/collegamento/">Collegamento database</a>.{% else %}lo imposta il Direttore o l'Amministratore.{% endif %}</div>{% endif %}
+<div class="card">
+    <form method="get" class="filters" id="filtriBp">
+        <label class="field">Dal <input type="date" name="data_da" value="{{ data_da }}" required></label>
+        <label class="field">Al <input type="date" name="data_a" value="{{ data_a }}" required></label>
+        <div class="field">Punti vendita <span class="small" style="font-weight:normal">(nessuno scelto = tutti)</span>
+            <div class="pv-scelta">
+                {% for n in negozi %}<label><input type="checkbox" name="pv" value="{{ n.codice }}" {% if n.codice|stringformat:"s" in scelti %}checked{% endif %}> {{ n.codice }} - {{ n.descrizione }}</label>{% endfor %}
+            </div>
+            <span class="small" style="font-weight:normal"><a href="#" onclick="return segnaPv(true)">Tutti</a> · <a href="#" onclick="return segnaPv(false)">Nessuno</a></span>
+        </div>
+        <button class="btn btn-orange">Cerca</button>
+        {% if risultato %}
+        <button class="btn btn-dark" type="button" onclick="apriStampa(urlFormato('pdf'))">🖨 Stampa PDF</button>
+        <a class="btn btn-light" href="#" onclick="location.href = urlFormato('csv'); return false">Esporta Excel</a>
+        {% endif %}
+    </form>
+</div>
+{% if error %}<div class="message-error">{{ error }}</div>{% endif %}
+
+{% if risultato %}
+<div class="layout-bp">
+    <div class="card">
+        <h3>Totale per emettitore</h3>
+        <p class="small">{{ periodo }} · {{ descrizione_pv }}</p>
+        <table class="table">
+            <thead><tr><th class="c">Causale</th><th>Emettitore</th><th class="num">Importo</th><th class="num">Quota</th></tr></thead>
+            <tbody>
+            {% for e in risultato.per_emettitore %}
+                <tr><td class="c">{{ e.causale }}</td><td>{{ e.emettitore }}<div class="barra" style="width:{{ e.quota|quota:100 }}%;margin-top:4px" title="{{ e.quota|perc }}"></div></td>
+                    <td class="num">{{ e.importo|euro }}</td><td class="num">{{ e.quota|perc }}</td></tr>
+            {% endfor %}
+            <tr class="totale"><td></td><td>Totale</td><td class="num">{{ risultato.totale|euro }}</td><td class="num">100%</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>Dettaglio per punto vendita</h3>
+        <table class="table">
+            <thead><tr><th class="c" style="width:90px">PV</th><th>Nome negozio</th><th class="c" style="width:70px">Causale</th><th>Emettitore</th><th class="num" style="width:150px">Importo</th></tr></thead>
+            <tbody>
+            {% for g in risultato.gruppi %}
+                {% for r in g.righe %}
+                <tr class="{% if forloop.parentloop.counter|divisibleby:2 %}fascia-b{% else %}fascia-a{% endif %}">
+                    <td class="c">{{ g.pv }}</td><td>{{ g.nome }}</td><td class="c">{{ r.causale }}</td><td>{{ r.emettitore }}</td><td class="num">{{ r.importo|euro }}</td></tr>
+                {% endfor %}
+                <tr class="subtotale"><td></td><td colspan="3">Totale {{ g.pv }} {{ g.nome }}</td><td class="num">{{ g.totale|euro }}</td></tr>
+            {% endfor %}
+            <tr class="totale"><td></td><td colspan="3">Totale generale</td><td class="num">{{ risultato.totale|euro }}</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% elif risultato is not None %}
+<div class="card">Nessun incasso in buoni pasto per il periodo e i punti vendita scelti.</div>
+{% endif %}
+{% endblock %}
+{% block script %}
+<script>
+function segnaPv(stato){ document.querySelectorAll('.pv-scelta input').forEach(i => i.checked = stato); return false; }
+function urlFormato(formato){
+    const q = new URLSearchParams(new FormData(document.getElementById("filtriBp")));
+    q.set("formato", formato);
+    return "/primanota/buoni-pasto/?" + q.toString();
+}
+</script>
+{% endblock %}

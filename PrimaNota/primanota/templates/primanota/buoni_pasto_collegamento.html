@@ -1,0 +1,25 @@
+{% extends "primanota/base.html" %}
+{% block title %}Collegamento database buoni pasto{% endblock %}
+{% block content %}
+<div class="top-actions">
+    <h1>Collegamento al database dei buoni pasto</h1>
+    <a class="btn btn-light" href="/primanota/buoni-pasto/">« Buoni Pasto per Emettitore</a>
+    {% include "primanota/_menu.html" with attivo="buoni_pasto" %}
+</div>
+{% if messaggio %}<div class="message-ok">{{ messaggio }}</div>{% endif %}
+{% if errore %}<div class="message-error">{{ errore }}</div>{% endif %}
+<div class="card" style="max-width:760px">
+    <p class="small">Database SQL Server da cui si leggono gli incassi in buoni pasto (cassa centrale, causali 18-25).
+        Lo modificano solo Direttore e Amministratore; la password è salvata cifrata e non viene mai mostrata.</p>
+    <form method="post" class="filters">{% csrf_token %}
+        <label class="field">Server <input name="host" value="{{ c.host }}" required placeholder="192.168.1.194"></label>
+        <label class="field">Database <input name="database" value="{{ c.database }}" placeholder="Scontrini"></label>
+        <label class="field">Utente <input name="utente" value="{{ c.utente }}" required autocomplete="off"></label>
+        <label class="field">Password <input name="password" type="password" autocomplete="new-password"
+            placeholder="{% if c.password_cifrata %}(salvata: lasciare vuoto per non cambiarla){% endif %}" style="min-width:300px"></label>
+        <button class="btn btn-dark" name="azione" value="salva">Salva</button>
+        <button class="btn btn-orange" name="azione" value="prova">Salva e prova</button>
+    </form>
+    {% if c.modificato_il %}<p class="small" style="margin-top:12px">Ultima modifica: {{ c.modificato_da }}, {{ c.modificato_il|date:"d/m/Y H:i" }}</p>{% endif %}
+</div>
+{% endblock %}

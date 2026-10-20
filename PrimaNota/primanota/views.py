@@ -790,6 +790,83 @@ def statistiche_pdf(request):
     return risposta
 
 
+@xframe_options_sameorigin  # il PDF si apre nella finestra di stampa della pagina stessa
+@_accesso(solo_ufficio=True)
+def buoni_pasto(request):
+    """Buoni pasto per emettitore: incassi per punto vendita e causale (18-25) dal database delle statistiche."""
+    from .services import buoni_pasto as servizio
+
+    oggi = timezone.localdate()
+    data_da = _data(request.GET.get("data_da"), oggi.replace(day=1).isoformat() if oggi.day > 1
+                    else (oggi - timedelta(days=1)).replace(day=1).isoformat())
+    data_a = _data(request.GET.get("data_a"), (oggi - timedelta(days=1)).isoformat())
+    if data_a < data_da:
+        data_da, data_a = data_a, data_da
+    negozi = negozi_attivi_ordinati()
+    scelti = [p for p in request.GET.getlist("pv") if p.strip()]
+    formato = request.GET.get("formato", "")
+    risultato = error = None
+    if "data_da" in request.GET:   # la query parte solo quando si preme «Cerca»
+        try:
+            risultato = servizio.riepilogo(servizio.interroga(data_da, data_a, scelti))
+        except RuntimeError as exc:
+            error = str(exc)
+    da, a = date.fromisoformat(data_da), date.fromisoformat(data_a)
+    periodo = f"dal {da:%d/%m/%Y} al {a:%d/%m/%Y}"
+    nome_pv = {str(n.get("codice")): etichetta_negozio(n) for n in negozi}
+    descrizione_pv = ", ".join(nome_pv.get(p, p) for p in scelti) if scelti else "Tutti i punti vendita"
+    base_nome = "_".join(re.sub(r"[^\w-]+", "_", t).strip("_") for t in
+                         ("Buoni_pasto_per_emettitore", "_".join(scelti) if scelti else "Tutti", f"dal {data_da} al {data_a}"))
+
+    if formato in ("csv", "pdf"):
+        if error or risultato is None:
+            return HttpResponse(error or "Indicare il periodo.", status=502 if error else 400)
+        if formato == "csv":
+            risposta = HttpResponse(servizio.csv(risultato), content_type="text/csv; charset=utf-8")
+            risposta["Content-Disposition"] = f'attachment; filename="{base_nome}.csv"'
+            return risposta
+        risposta = HttpResponse(servizio.pdf(risultato, periodo, descrizione_pv, base_nome + ".pdf"),
+                                content_type="application/pdf")
+        risposta["Content-Disposition"] = f'inline; filename="{base_nome}.pdf"'
+        return risposta
+
+    return render(request, "primanota/buoni_pasto.html", _contesto(
+        request, risultato=risultato, error=error, data_da=data_da, data_a=data_a, negozi=negozi, scelti=scelti,
+        periodo=periodo, descrizione_pv=descrizione_pv, configurato=bool(servizio.configurazione())))
+
+
+@_accesso(solo_ufficio=True, solo_gestione=True)
+def buoni_pasto_collegamento(request):
+    """Server, database, utente e password del database dei buoni pasto: solo Direttore e Amministratore."""
+    from .models import CollegamentoBuoniPasto
+    from .services import buoni_pasto as servizio
+
+    c = CollegamentoBuoniPasto.corrente()
+    messaggio = errore = None
+    if request.method == "POST":
+        c.host = request.POST.get("host", "").strip()
+        c.database = request.POST.get("database", "").strip() or "Scontrini"
+        c.utente = request.POST.get("utente", "").strip()
+        if request.POST.get("password"):   # vuota = resta quella salvata
+            c.password_cifrata = importazione.cifra(request.POST["password"])
+        if not c.host or not c.utente:
+            errore = "Indicare almeno server e utente."
+        else:
+            c.modificato_da = nome_utente(request.utente_primanota)
+            c.modificato_il = timezone.now()
+            c.save()
+            messaggio = "Collegamento salvato."
+            if request.POST.get("azione") == "prova":
+                try:
+                    servizio.prova(servizio.configurazione())
+                    messaggio = "Collegamento salvato e provato: il database risponde."
+                except RuntimeError as exc:
+                    errore = f"Salvato, ma la prova non è riuscita: {exc}"
+                    messaggio = None
+    return render(request, "primanota/buoni_pasto_collegamento.html", _contesto(
+        request, c=c, messaggio=messaggio, errore=errore))
+
+
 @_accesso(solo_ufficio=True, solo_gestione=True)
 def impostazioni_email(request):
     """Destinatari delle note sui versamenti; la posta è quella configurata nel portale."""

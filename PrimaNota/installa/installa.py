@@ -369,8 +369,8 @@ def main():
         if not python:
             raise RuntimeError("non trovo il Python con Django del portale: rilanciare con --python /percorso/python")
         print(f"  Python del portale: {python}")
-        if not esegui([python, "-m", "pip", "install", "-q", "smbprotocol", "cryptography", "pymupdf"], portale):
-            avviso("pip non è riuscito: installare a mano smbprotocol, cryptography e pymupdf")
+        if not esegui([python, "-m", "pip", "install", "-q", "smbprotocol", "cryptography", "pymupdf", "pymssql"], portale):
+            avviso("pip non è riuscito: installare a mano smbprotocol, cryptography, pymupdf e pymssql")
         if not esegui([python, "manage.py", "migrate", "primanota"], portale):
             raise RuntimeError("migrate non riuscito")
         if not esegui([python, "manage.py", "check"], portale):

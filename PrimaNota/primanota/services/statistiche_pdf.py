@@ -244,8 +244,13 @@ def genera_pdf(dati, titolo, sottotitolo, nome, andamento="linea", negozi="barre
                      euro(c["correzioni_euro"]), _numero(c["abortite"], 0)) for c in dati["cassieri"]])
     )
 
+    return documento_pdf(html, titolo, sottotitolo, nome, archivio)
+
+
+def documento_pdf(html, titolo, sottotitolo, nome, archivio=None, css=""):
+    """HTML → PDF A4 orizzontale su più pagine, con piè di pagina (titolo, periodo, pagina n di m)."""
     uscita = io.BytesIO()
-    story = pymupdf.Story(html=html, user_css=CSS, archive=archivio)
+    story = pymupdf.Story(html=html, user_css=CSS + css, archive=archivio)
     writer = pymupdf.DocumentWriter(uscita)
     corpo = PAGINA + (MARGINE, MARGINE, -MARGINE, -MARGINE - 14)
     altro = True

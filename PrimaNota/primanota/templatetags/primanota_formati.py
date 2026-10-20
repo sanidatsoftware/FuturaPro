@@ -33,8 +33,8 @@ def perc(valore):
 
 @register.filter
 def quota(valore, massimo):
-    """Larghezza in % di una barra rispetto al valore massimo."""
+    """Larghezza in % di una barra rispetto al valore massimo, col punto decimale (va nel CSS, non si localizza)."""
     try:
-        return round(float(valore) / float(massimo) * 100, 2) if float(massimo) else 0
-    except (TypeError, ValueError):
-        return 0
+        return f"{float(valore) / float(massimo) * 100:.2f}" if float(massimo) else "0"
+    except (TypeError, ValueError, ZeroDivisionError):
+        return "0"

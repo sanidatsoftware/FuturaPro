@@ -7,7 +7,7 @@
     <a class="btn btn-light {% if attivo == 'versamenti' %}active{% endif %}" href="/primanota/versamenti/">Consultazione versamenti</a>
     <a class="btn btn-light {% if attivo == 'versamenti_note' %}active{% endif %}" href="/primanota/versamenti/note/">Note sui versamenti</a>
     <a class="btn btn-light" href="/primanota/">« Documenti Amministrativi</a>
-    {% elif attivo == "statistiche" %}
+    {% elif attivo == "statistiche" or attivo == "buoni_pasto" %}
     <a class="btn btn-light" href="/primanota/">« Documenti Amministrativi</a>
     {% else %}
     <a class="btn btn-light {% if attivo == 'admin' %}active{% endif %}" href="/primanota/admin/">Scansioni</a>

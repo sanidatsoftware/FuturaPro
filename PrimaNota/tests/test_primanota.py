@@ -743,3 +743,88 @@ class TestStatistichePdf(Base):
         for comando in ('id="zoomPiu"', 'id="zoomMeno"', 'data-valore="colonne"', 'data-valore="torta"', 'id="stampaPdf"'):
             self.assertContains(r, comando)
         self.assertEqual(r.context["grafici"]["pagamenti"], [{"etichetta": "Carta Credito", "valore": 18.0}])
+
+
+class TestBuoniPasto(Base):
+    RIGHE = [("5031", "Pv Adrano", 18, "DAY RISTOSERVICE", Decimal("120.50")),
+             ("5031", "Pv Adrano", 21, "EDENRED", Decimal("80.00")),
+             ("5048", "Pv Motta", 18, "DAY RISTOSERVICE", Decimal("30.00"))]
+
+    def test_query_con_parametri(self):
+        import sys
+        from primanota.services import buoni_pasto
+        cursore = mock.MagicMock()
+        cursore.fetchall.return_value = self.RIGHE
+        modulo = mock.MagicMock(Error=Exception)
+        modulo.connect.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = cursore
+        with mock.patch.dict(sys.modules, {"pymssql": modulo}), \
+                override_settings(BUONI_PASTO_DB={"host": "sql", "database": "Scontrini", "user": "u", "password": "p"}):
+            righe = buoni_pasto.interroga("2026-10-01", "2026-10-19", ["5031", "5048' OR 1=1 --"])
+        sql, parametri = cursore.execute.call_args.args
+        self.assertIn("AND r.pv IN (%s, %s)", sql)
+        self.assertNotIn("5031", sql)   # i punti vendita non entrano nel testo SQL
+        self.assertEqual(parametri, ("20261001", "20261019", "5031", "5048' OR 1=1 --"))
+        self.assertEqual(modulo.connect.call_args.kwargs["server"], "sql")
+        self.assertEqual(righe[0], ("5031", "Pv Adrano", 18, "DAY RISTOSERVICE", Decimal("120.50")))
+
+    def test_pagina_totali_e_stampe(self):
+        uff = self.client_per("ufficio@x")
+        with mock.patch("primanota.services.buoni_pasto.interroga") as interroga:
+            r = uff.get("/primanota/buoni-pasto/")
+            interroga.assert_not_called()   # la query parte solo con «Cerca»
+            interroga.return_value = self.RIGHE
+            r = uff.get("/primanota/buoni-pasto/", {"data_da": "2026-10-01", "data_a": "2026-10-19", "pv": ["5031", "5048"]})
+            self.assertEqual(interroga.call_args.args, ("2026-10-01", "2026-10-19", ["5031", "5048"]))
+            ris = r.context["risultato"]
+            self.assertEqual([(g["pv"], g["totale"]) for g in ris["gruppi"]], [("5031", Decimal("200.50")), ("5048", Decimal("30.00"))])
+            self.assertEqual([(e["emettitore"], e["importo"]) for e in ris["per_emettitore"]],
+                             [("DAY RISTOSERVICE", Decimal("150.50")), ("EDENRED", Decimal("80.00"))])
+            self.assertEqual(ris["totale"], Decimal("230.50"))
+            self.assertContains(r, "Totale generale")
+            self.assertContains(r, 'class="fascia-b"')   # fasce alternate per punto vendita
+            csv = uff.get("/primanota/buoni-pasto/", {"data_da": "2026-10-01", "data_a": "2026-10-19", "formato": "csv"})
+            self.assertIn("5031;Pv Adrano;18;DAY RISTOSERVICE;120,50", csv.content.decode("utf-8-sig"))
+            self.assertIn("Buoni_pasto_per_emettitore_Tutti_dal_2026-10-01_al_2026-10-19.csv", csv["Content-Disposition"])
+            pdf = uff.get("/primanota/buoni-pasto/", {"data_da": "2026-10-01", "data_a": "2026-10-19", "formato": "pdf"})
+        import pymupdf
+        testo = pymupdf.open(stream=pdf.content, filetype="pdf")[0].get_text()
+        self.assertIn("Totale 5031 Pv Adrano", testo)
+        self.assertIn("230,50 €", testo)
+        self.assertEqual(self.client_per("pv@x").get("/primanota/buoni-pasto/").status_code, 302)
+        self.assertContains(uff.get("/primanota/"), "Buoni Pasto per Emettitore")
+
+    def test_errore_di_collegamento(self):
+        with override_settings(BUONI_PASTO_DB=None):
+            r = self.client_per("ufficio@x").get("/primanota/buoni-pasto/", {"data_da": "2026-10-01", "data_a": "2026-10-19"})
+        self.assertContains(r, "non configurato")
+
+    def test_larghezza_barre_non_localizzata(self):
+        from primanota.templatetags.primanota_formati import quota
+        with override_settings(LANGUAGE_CODE="it", USE_THOUSAND_SEPARATOR=True):
+            self.assertEqual(quota(49.5, 100), "49.50")
+
+
+class TestCollegamentoBuoniPasto(Base):
+    def test_solo_direttore_e_amministratore(self):
+        from primanota.models import CollegamentoBuoniPasto
+        from primanota.services import buoni_pasto
+        self.assertEqual(self.client_per("ufficio@x").get("/primanota/buoni-pasto/collegamento/").status_code, 403)
+        self.assertEqual(self.client_per("pv@x").get("/primanota/buoni-pasto/collegamento/").status_code, 302)
+        d = self.client_per("direttore@x")
+        with mock.patch("primanota.services.buoni_pasto.prova") as prova:
+            r = d.post("/primanota/buoni-pasto/collegamento/", {"host": "10.0.0.5", "database": "Scontrini", "utente": "lettore",
+                                                                "password": "segreta", "azione": "prova"})
+        self.assertContains(r, "il database risponde")
+        self.assertEqual(prova.call_args.args[0], {"host": "10.0.0.5", "database": "Scontrini", "user": "lettore", "password": "segreta"})
+        c = CollegamentoBuoniPasto.objects.get()
+        self.assertNotIn("segreta", c.password_cifrata)
+        self.assertNotContains(r, "segreta")
+        # Password vuota: resta quella salvata.
+        self.client_per("admin@x").post("/primanota/buoni-pasto/collegamento/", {"host": "10.0.0.6", "utente": "lettore", "password": ""})
+        self.assertEqual(buoni_pasto.configurazione()["password"], "segreta")
+        self.assertEqual(buoni_pasto.configurazione()["host"], "10.0.0.6")
+        # Il link al collegamento lo vede solo chi può gestirlo; le consultazioni restano della sede.
+        self.assertContains(d.get("/primanota/buoni-pasto/"), "/primanota/buoni-pasto/collegamento/")
+        self.assertNotContains(self.client_per("ufficio@x").get("/primanota/buoni-pasto/"), "/primanota/buoni-pasto/collegamento/")
+        for url in ("/primanota/statistiche/", "/primanota/buoni-pasto/"):
+            self.assertRedirects(self.client_per("pv@x").get(url), "/primanota/upload/", fetch_redirect_response=False)
