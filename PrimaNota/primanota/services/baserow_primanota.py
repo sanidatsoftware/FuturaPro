@@ -44,6 +44,7 @@ CHIUSURA_POS = "Chiusure POS bancari"
 RESI = "Resi"
 TRANSAZIONI_ABORTITE = "Transazioni abortite"
 VERSAMENTO_CONTANTE = "Versamenti contante"
+FATTURE_SPESE = "Fatture spese del giorno"
 
 # Ordine di presentazione in tutte le pagine. "chiave" è usata negli URL e nel monitor.
 TIPI_DOCUMENTO = [
@@ -51,6 +52,7 @@ TIPI_DOCUMENTO = [
     {"id": CHIUSURA_POS, "label": CHIUSURA_POS, "chiave": "pos", "sigla": "P"},
     {"id": RESI, "label": RESI, "chiave": "resi", "sigla": "R"},
     {"id": TRANSAZIONI_ABORTITE, "label": TRANSAZIONI_ABORTITE, "chiave": "abortite", "sigla": "A"},
+    {"id": FATTURE_SPESE, "label": FATTURE_SPESE, "chiave": "fatture", "sigla": "S"},
     {"id": VERSAMENTO_CONTANTE, "label": VERSAMENTO_CONTANTE, "chiave": "versamenti", "sigla": "V"},
 ]
 TIPI_VALIDI = {t["id"] for t in TIPI_DOCUMENTO}

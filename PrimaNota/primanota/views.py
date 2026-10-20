@@ -36,6 +36,7 @@ from .services.baserow_primanota import (
     RESI,
     CHIUSURA_FISCALE,
     CHIUSURA_POS,
+    FATTURE_SPESE,
     VERSAMENTO_CONTANTE,
     aggiorna_lavorato,
     crea_scansione,
@@ -359,7 +360,20 @@ def giornata(request, negozio_id, giorno):
         RESI: [(f"Cassa {d.file.cassa} · {d.numero} · {d.ora}", d.testo) for d in docs(DocumentoSysSpy.RESO)],
         TRANSAZIONI_ABORTITE: [(f"Cassa {d.file.cassa} · {d.numero} · {d.ora}", d.testo) for d in docs(DocumentoSysSpy.ABORTITO)],
         VERSAMENTO_CONTANTE: [],
+        FATTURE_SPESE: [],
     }
+    # Spese del giorno con fattura dalla prima nota: chiedono la scansione della fattura.
+    fatture_errore = None
+    try:
+        from .services.prima_nota import spese_con_fattura
+        for m in spese_con_fattura(n.get("codice"), giorno):
+            righe = [f"Importo: {m['importo']:.2f} €".replace(".", ",")]
+            righe += [x for x in (m["descrizione"], m["documento"] and f"Documento: {m['documento']}") if x]
+            if m["note"]:
+                righe.append(f"Note: {m['note']}")
+            anteprime[FATTURE_SPESE].append((f"Prima nota · n. {m['progressivo']} · {m['ora']}", "\n".join(righe)))
+    except RuntimeError as exc:
+        fatture_errore = str(exc)
     regole = RegolaDocumento.mappa()
     sezioni = []
     for t in TIPI_DOCUMENTO:
@@ -370,6 +384,8 @@ def giornata(request, negozio_id, giorno):
             "scansioni": [s for s in scansioni if s["tipo_documento"] == t["id"]],
             "anteprime": anteprime[t["id"]],
             "versamento": t["id"] == VERSAMENTO_CONTANTE,
+            "fonte": "prima nota" if t["id"] == FATTURE_SPESE else "SysSpy",
+            "errore_fonte": fatture_errore if t["id"] == FATTURE_SPESE else None,
             "obbligatoria": obbligatoria(regole.get(t["id"]), bool(anteprime[t["id"]])),
         })
     altre = [s for s in scansioni if s["tipo_documento"] not in TIPI_VALIDI]   # i versamenti sono in Gestione Versamenti
@@ -861,6 +877,15 @@ def fasce_orarie(request):
     vista = request.GET.get("vista") if request.GET.get("vista") in servizio.VISTE else "negozi"
     misura = request.GET.get("misura") if request.GET.get("misura") in servizio.MISURE else "valore"
     media = request.GET.get("media") == "1"
+    dalle = servizio.minuti(request.GET.get("dalle"), 7 * 60)
+    alle = servizio.minuti(request.GET.get("alle"), 22 * 60)
+    if alle <= dalle:
+        dalle, alle = 0, 24 * 60
+    try:
+        passo = int(request.GET.get("passo", 15))
+    except ValueError:
+        passo = 15
+    passo = passo if passo in servizio.PASSI else 15
     scelti = [p for p in request.GET.getlist("pv") if p.strip()]
     reparti_scelti = [r for r in request.GET.getlist("reparto") if r.strip()]
     negozi = negozi_attivi_ordinati()
@@ -874,14 +899,15 @@ def fasce_orarie(request):
         else:
             try:
                 righe, clienti = servizio.interroga(data_da, data_a, vista, scelti, reparti_scelti if vista == "reparti" else ())
-                risultato = servizio.componi(righe, clienti)
+                risultato = servizio.componi(righe, clienti, dalle=dalle, alle=alle, passo=passo)
             except RuntimeError as exc:
                 error = str(exc)
     da, a = date.fromisoformat(data_da), date.fromisoformat(data_a)
     periodo = f"dal {da:%d/%m/%Y} al {a:%d/%m/%Y}"
     descrizione = ", ".join(nome_pv.get(p, p) for p in scelti) if scelti else "Tutti i punti vendita"
     titolo = f"Vendite per fasce orarie {servizio.VISTE[vista].lower()}"
-    sottotitolo = (f"{periodo} · {descrizione} · {servizio.MISURE[misura]}"
+    sottotitolo = (f"{periodo} · dalle {servizio.orario(dalle)} alle {servizio.orario(alle)} · fasce di "
+                   f"{servizio.PASSI[passo]} · {descrizione} · {servizio.MISURE[misura]}"
                    + (" (media giornaliera)" if media else ""))
     base_nome = "_".join(re.sub(r"[^\w-]+", "_", t).strip("_") for t in
                          ("Fasce_orarie", vista, "_".join(scelti) if scelti else "Tutti", f"dal {data_da} al {data_a}", misura))
@@ -908,10 +934,10 @@ def fasce_orarie(request):
     return render(request, "primanota/fasce_orarie.html", _contesto(
         request, data_da=data_da, data_a=data_a, vista=vista, misura=misura, media=media, scelti=scelti,
         reparti_scelti=reparti_scelti, negozi=negozi, elenco_reparti=elenco_reparti, risultato=risultato, tab=tab,
-        error=error, viste=servizio.VISTE, misure=servizio.MISURE, sottotitolo=sottotitolo, scala=servizio.SCALA,
+        error=error, viste=servizio.VISTE, misure=servizio.MISURE, passi=servizio.PASSI, passo=passo,
+        dalle=servizio.orario(dalle), alle=servizio.orario(alle), sottotitolo=sottotitolo, scala=servizio.SCALA,
         scure=servizio.SCURE, configurato=bool(cassa_centrale.configurazione()),
-        ora_di_punta=servizio.etichetta_ora(risultato["ora_di_punta"]) if risultato and risultato["ora_di_punta"] is not None else "",
-        grafico={"ore": tab["ore"], "valori": [float(v) for v in tab["colonne"]]} if tab else {}))
+        grafico={"fasce": tab["fasce"], "valori": [float(v) for v in tab["colonne"]]} if tab else {}))
 
 
 MAX_GIORNI_PRIMA_NOTA = 31

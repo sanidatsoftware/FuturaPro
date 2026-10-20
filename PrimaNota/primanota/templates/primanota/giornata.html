@@ -114,12 +114,13 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
             {% endfor %}
         </div>
         <div>
-            <h3>Dati SysSpy</h3>
+            <h3>Dati {{ sez.fonte }}</h3>
+            {% if sez.errore_fonte %}<p class="small">Prima nota non consultabile: {{ sez.errore_fonte }}</p>{% endif %}
             {% for titolo, testo in sez.anteprime %}
                 <div class="small"><strong>{{ titolo }}</strong></div>
                 <div class="mono">{{ testo }}</div>
             {% empty %}
-                <p class="vuoto">Niente da mostrare nei SysSpy di questa giornata.</p>
+                <p class="vuoto">Niente da mostrare {% if sez.fonte == "prima nota" %}nella prima nota{% else %}nei SysSpy{% endif %} di questa giornata.</p>
             {% endfor %}
             {% if sez.tipo.chiave == "abortite" and pos_negate %}
                 <details><summary>Pagamenti POS negati ({{ pos_negate|length }})</summary>

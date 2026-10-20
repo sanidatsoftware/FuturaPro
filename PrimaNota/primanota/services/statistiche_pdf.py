@@ -134,20 +134,15 @@ def _categorie(p, area, titolo, voci, tipo):
         dati = _raggruppa(voci)
         r = min(area.height / 2 - 4, 85, 11 * MAX_SPICCHI)
         centro = pymupdf.Point(area.x0 + r + 4, area.y0 + area.height / 2)
+        # Ogni spicchio è un poligono (arco esterno + arco interno): forma indipendente dalla versione di PyMuPDF.
         inizio = -90.0
         for i, (_, v) in enumerate(dati):
             angolo = 360 * v / totale
             if angolo <= 0:
                 continue
-            if angolo >= 359.99:
-                p.draw_circle(centro, r, color=None, fill=_rgb(CATEGORIE[i]))
-            else:
-                a = math.radians(inizio)
-                bordo = pymupdf.Point(centro.x + r * math.cos(a), centro.y + r * math.sin(a))
-                # Angolo negativo = senso orario sullo schermo; bordo bianco come spazio tra gli spicchi.
-                p.draw_sector(centro, bordo, -angolo, color=(1, 1, 1), fill=_rgb(CATEGORIE[i]), width=1.5)
+            p.draw_polyline(_spicchio(centro, r, r * 0.55, inizio, angolo), color=(1, 1, 1),
+                            fill=_rgb(CATEGORIE[i]), width=1.5 if angolo < 359.99 else 0, closePath=True)
             inizio += angolo
-        p.draw_circle(centro, r * 0.55, color=None, fill=(1, 1, 1))
         # Legenda: nome e, sotto, importo e quota (i colori chiari non bastano da soli).
         x0, y0 = centro.x + r + 20, centro.y - (len(dati) - 1) * 11 + 3
         for i, (nome, v) in enumerate(dati):
@@ -166,6 +161,15 @@ def _categorie(p, area, titolo, voci, tipo):
         w = max(1.5, traccia * v / massimo)
         p.draw_rect(pymupdf.Rect(area.x0 + nome_l, yy + 3, area.x0 + nome_l + w, yy + riga - 3), color=None, fill=BLU)
         _scrivi(p, area.x1, yy + riga * 0.65, f"{euro(v)} · {_numero(v / totale * 100, 1)}%", 8, TESTO_2, destra=True)
+
+
+def _spicchio(centro, esterno, interno, inizio, ampiezza):
+    """Punti di uno spicchio di ciambella da inizio per ampiezza gradi (senso orario), un punto per grado."""
+    passi = max(2, int(ampiezza) + 1)
+    angoli = [math.radians(inizio + ampiezza * k / (passi - 1)) for k in range(passi)]
+    fuori = [pymupdf.Point(centro.x + esterno * math.cos(a), centro.y + esterno * math.sin(a)) for a in angoli]
+    dentro = [pymupdf.Point(centro.x + interno * math.cos(a), centro.y + interno * math.sin(a)) for a in reversed(angoli)]
+    return fuori + dentro
 
 
 def _due_categorie(negozi, tipo_negozi, pagamenti, tipo_pagamenti):

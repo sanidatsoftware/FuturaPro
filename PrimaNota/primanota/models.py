@@ -234,7 +234,7 @@ class RegolaDocumento(models.Model):
     FACOLTATIVO = "FACOLTATIVO"
     SCELTE = [
         (SEMPRE, "Obbligatoria ogni giorno"),
-        (SE_SYSSPY, "Obbligatoria solo se il SysSpy ne contiene"),
+        (SE_SYSSPY, "Obbligatoria solo se la giornata ne contiene (SysSpy o prima nota)"),
         (FACOLTATIVO, "Facoltativa"),
     ]
     PREDEFINITE = {
@@ -243,6 +243,8 @@ class RegolaDocumento(models.Model):
         "Resi": SE_SYSSPY,
         "Transazioni abortite": SE_SYSSPY,
         "Versamenti contante": SEMPRE,
+        # Con «spese del giorno con fattura» (causale 17) nella prima nota va allegata la fattura.
+        "Fatture spese del giorno": SE_SYSSPY,
     }
 
     tipo_documento = models.CharField(max_length=60, unique=True)

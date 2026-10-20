@@ -1,11 +1,15 @@
 from datetime import timedelta
 
 from ..models import DocumentoSysSpy, FileSysSpy, RegolaDocumento
-from .baserow_primanota import TIPI_DOCUMENTO
+from .baserow_primanota import FATTURE_SPESE, TIPI_DOCUMENTO
 
-# Che cosa deve contenere il SysSpy della giornata perché la regola "solo se nel SysSpy" chieda la scansione.
+# Che cosa deve contenere la giornata perché la regola "solo se la giornata ne contiene" chieda la scansione.
 SYSSPY_PER_TIPO = {"Resi": DocumentoSysSpy.RESO, "Transazioni abortite": DocumentoSysSpy.ABORTITO,
-                   "Chiusura fiscale": "CASSA", "Chiusure POS bancari": "CASSA"}
+                   "Chiusura fiscale": "CASSA", "Chiusure POS bancari": "CASSA",
+                   FATTURE_SPESE: "SPESE_FATTURA"}
+# Da dove arriva quel dato: finché la fonte non c'è (SysSpy non arrivato, prima nota non registrata)
+# la scansione si può caricare ma non è obbligatoria.
+FONTE_PER_TIPO = {FATTURE_SPESE: "PRIMA_NOTA"}
 
 # Stato di un genere di scansione in una giornata del negozio.
 OBBLIGATORIA = "obbligatoria"
@@ -22,8 +26,18 @@ def obbligatoria(regola, presente_nel_sysspy):
     return False
 
 
+def segni_prima_nota(presenze, codice, giorno):
+    """«PRIMA_NOTA» se la giornata ha movimenti in prima nota, «SPESE_FATTURA» se ha spese con fattura."""
+    p = (presenze or {}).get((str(codice), giorno))
+    if not p:
+        return set()
+    return {"PRIMA_NOTA"} | ({"SPESE_FATTURA"} if p["fatture"] else set())
+
+
 def presenti_nel_sysspy(negozio_id, dal, al):
-    """{giorno: {"CASSA", "RESO", "ABORTITO"}} dai SysSpy archiviati del negozio."""
+    """{giorno: {"CASSA", "RESO", "ABORTITO", "PRIMA_NOTA", "SPESE_FATTURA"}} da SysSpy archiviati e prima nota."""
+    from .accesso import negozio
+    from .prima_nota import presenze
     out = {}
     for d in FileSysSpy.objects.filter(negozio_id=negozio_id, data__range=(dal, al)).values_list("data", flat=True):
         out.setdefault(d, set()).add("CASSA")
@@ -31,6 +45,11 @@ def presenti_nel_sysspy(negozio_id, dal, al):
             file__negozio_id=negozio_id, file__data__range=(dal, al),
             tipo__in=[DocumentoSysSpy.RESO, DocumentoSysSpy.ABORTITO]).values_list("file__data", "tipo").distinct():
         out.setdefault(d, set()).add(tipo)
+    codice = (negozio(negozio_id) or {}).get("codice")
+    if codice:
+        p = presenze(dal, al, [codice])
+        for (pv, giorno) in (p or {}):
+            out.setdefault(giorno, set()).update(segni_prima_nota(p, pv, giorno))
     return out
 
 
@@ -52,7 +71,7 @@ def stato_giornate(negozio_id, dal, al, caricate):
         voci = []
         for t in TIPI_DOCUMENTO:
             regola = regole.get(t["id"])
-            if regola == RegolaDocumento.SE_SYSSPY and "CASSA" not in spy:
+            if regola == RegolaDocumento.SE_SYSSPY and FONTE_PER_TIPO.get(t["id"], "CASSA") not in spy:
                 stato = IN_ATTESA
             elif obbligatoria(regola, SYSSPY_PER_TIPO.get(t["id"]) in spy):
                 stato = OBBLIGATORIA

@@ -12,7 +12,8 @@ from scansioni.services.monitor_trasmissioni import MONTH_LABELS, WEEKDAY_LABELS
 from scansioni.services.baserow_scansioni import LOCAL_TZ
 
 from ..models import DocumentoSysSpy, FileSysSpy, Nota, RegolaDocumento
-from .regole import SYSSPY_PER_TIPO, obbligatoria
+from .prima_nota import presenze
+from .regole import SYSSPY_PER_TIPO, obbligatoria, segni_prima_nota
 from .accesso import negozi_attivi_ordinati
 from .baserow_primanota import TIPI_DOCUMENTO, VERSAMENTO_CONTANTE, elenco_scansioni
 
@@ -81,6 +82,7 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
             cella["versamenti_aperti"] += 1
 
     sysspy = _sysspy_per_giorno(days[0], days[-1])
+    prima_nota = None if versamenti else presenze(days[0], days[-1])
     regole = RegolaDocumento.mappa()
     note = _note_aperte_per_giorno(days[0], days[-1], versamento=versamenti)
     negozi = negozi_attivi_ordinati()
@@ -105,7 +107,8 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
                 summary[state] += 1
                 summary["documents"] += valori["total"]
             valori = valori or {"total": 0, "worked": 0, "pending": 0, "versamenti_aperti": 0, "tipi": {}}
-            presenti = spy["tipi"] | ({"CASSA"} if spy["casse"] else set())
+            presenti = (spy["tipi"] | ({"CASSA"} if spy["casse"] else set())
+                        | segni_prima_nota(prima_nota, negozio.get("codice"), day))
             mancanti = [t["label"] for t in tipi
                         if not valori["tipi"].get(t["id"])
                         and obbligatoria(regole.get(t["id"]), SYSSPY_PER_TIPO.get(t["id"]) in presenti)]

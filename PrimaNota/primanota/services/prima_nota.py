@@ -210,3 +210,61 @@ def _causali(g):
             c[col] = sum((m["importo"] for m in movimenti), ZERO) if movimenti else None
         c["note"] = sum(1 for m in c["movimenti"] if m["note"])
     return list(per_causale.values())
+
+
+# ---------------------------------------------------------------- spese del giorno con fattura
+
+CAUSALE_SPESE_FATTURA = 17
+
+QUERY_PRESENZE = """
+SELECT r.pv, r.data, COUNT(*),
+       SUM(CASE WHEN r.causale = 17 THEN 1 ELSE 0 END),
+       SUM(CASE WHEN r.causale = 17 THEN r.importo ELSE 0 END)
+  FROM WEBNETSRV.newdis.dbo.ONLCassaCentrale AS r
+ WHERE r.data BETWEEN %s AND %s
+   AND {non_annullata}
+   {filtro_pv}
+ GROUP BY r.pv, r.data
+"""
+
+
+def presenze(dal, al, codici=()):
+    """
+    {(pv, giorno): {"movimenti", "fatture", "importo_fatture"}} per sapere quali giornate hanno la prima nota
+    e spese del giorno con fattura (causale 17). None se il database non è configurato o non risponde:
+    in quel caso la scansione della fattura resta caricabile ma non obbligatoria. Risultato tenuto 10 minuti.
+    """
+    from django.core.cache import cache
+
+    c = configurazione()
+    if not c:
+        return None
+    codici = sorted({str(x).strip() for x in codici if str(x).strip()})
+    chiave = f"primanota:presenze:{dal}:{al}:{','.join(codici)}"
+    trovato = cache.get(chiave)
+    if trovato is not None:
+        return trovato
+    try:
+        righe = esegui(c, QUERY_PRESENZE.format(non_annullata=NON_ANNULLATA, filtro_pv=_filtro(codici)),
+                       (str(dal).replace("-", ""), str(al).replace("-", ""), *codici))
+    except RuntimeError:
+        return None
+    out = {}
+    for pv, giorno, movimenti, fatture, importo in righe:
+        g = _data(giorno)
+        if g:
+            out[(_testo(pv), g)] = {"movimenti": int(movimenti or 0), "fatture": int(fatture or 0),
+                                    "importo_fatture": _importo(importo)}
+    cache.set(chiave, out, 600)
+    return out
+
+
+def spese_con_fattura(codice_pv, giorno):
+    """Movimenti «spese del giorno con fattura» di un punto vendita e giorno (descrizione, documento, importo, note)."""
+    c = configurazione()
+    if not c:
+        raise RuntimeError(NON_CONFIGURATO)
+    data = str(giorno).replace("-", "")
+    righe = esegui(c, QUERY_MOVIMENTI.format(non_annullata=NON_ANNULLATA, filtro_pv="AND r.pv = %s AND r.causale = %s"),
+                   (data, data, str(codice_pv), CAUSALE_SPESE_FATTURA), dizionari=True)
+    return [_movimento(r) for r in righe]

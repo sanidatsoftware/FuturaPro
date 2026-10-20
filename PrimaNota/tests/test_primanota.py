@@ -230,6 +230,7 @@ class TestPagine(Base):
         stati = {v["tipo"]["id"]: (v["stato"], v["manca"]) for v in pagina.context["voci"]}
         self.assertEqual(stati, {"Chiusura fiscale": ("obbligatoria", True), "Chiusure POS bancari": ("non_richiesta", False),
                                  "Resi": ("non_richiesta", False), "Transazioni abortite": ("obbligatoria", True),
+                                 "Fatture spese del giorno": ("in_attesa", False),   # prima nota non consultabile
                                  "Versamenti contante": ("obbligatoria", True)})
         self.assertContains(pagina, 'name="documento_pos" class="documento" accept=".pdf,image/*"\n                               disabled')
         # Senza tutti gli obbligatori non si salva niente.
@@ -474,7 +475,7 @@ class TestDivisioneEControlli(Base):
         sezioni = {s["tipo"]["id"]: s["obbligatoria"] for s in r.context["sezioni"]}
         # I versamenti non sono più nella giornata: hanno la sezione Versamenti.
         self.assertEqual(sezioni, {"Chiusura fiscale": True, "Chiusure POS bancari": True, "Resi": False,
-                                   "Transazioni abortite": True})
+                                   "Transazioni abortite": True, "Fatture spese del giorno": False})
         self.client_per("admin@x").post("/primanota/condivisioni/", {"azione": "regole", "regola_versamenti": "FACOLTATIVO"})
         self.assertEqual(RegolaDocumento.mappa()["Versamenti contante"], "FACOLTATIVO")
 
@@ -905,55 +906,65 @@ class TestPrimaNota(Base):
 
 
 class TestFasceOrarie(Base):
-    # (codice, descrizione, ora, valore, pezzi, clienti, giorni) come dalle viste del database Statistiche
-    NEGOZI = [("5031", "PV ADRANO", 8, Decimal("1200.50"), 600, 90, 7), ("5031", "PV ADRANO", 9, Decimal("1800.00"), 900, 120, 7),
-              ("5048", "PV MOTTA", 9, Decimal("700.00"), 300, 50, 6), ("5048", "PV MOTTA", 18, Decimal("2100.00"), 1000, 150, 6)]
-    REPARTI = [("10", "ORTOFRUTTA", 9, Decimal("500"), 200, 80, 7), ("20", "MACELLERIA", 9, Decimal("2000"), 1000, 100, 7),
-               ("20", "MACELLERIA", 18, Decimal("2100"), 1000, 120, 6)]
+    # (codice, descrizione, minuto di inizio fascia, tipo cliente, valore, pezzi, clienti, giorni) dalle tabelle *2
+    NEGOZI = [("5031", "PV ADRANO", 8 * 60, 0, Decimal("700.50"), 350, 50, 7), ("5031", "PV ADRANO", 8 * 60 + 15, 0, Decimal("500"), 250, 40, 7),
+              ("5031", "PV ADRANO", 9 * 60, 0, Decimal("1500"), 700, 100, 7), ("5031", "PV ADRANO", 9 * 60, 1, Decimal("300"), 200, 20, 7),
+              ("5048", "PV MOTTA", 9 * 60 + 45, 0, Decimal("700"), 300, 50, 6), ("5048", "PV MOTTA", 18 * 60, 0, Decimal("2100"), 1000, 150, 6),
+              ("5048", "PV MOTTA", 6 * 60 + 45, 0, Decimal("99"), 10, 1, 1)]
+    REPARTI = [("10", "ORTOFRUTTA", 9 * 60, 0, Decimal("500"), 200, 80, 7), ("20", "MACELLERIA", 9 * 60 + 15, 0, Decimal("2000"), 1000, 100, 7),
+               ("20", "MACELLERIA", 18 * 60, 0, Decimal("2100"), 1000, 120, 6)]
 
     def esegui_finto(self):
         def esegui(c, sql, parametri=(), dizionari=False):
             self.query.append((sql, parametri))
-            if "DescrizioneReparti" in sql:
+            if "DescrizioneReparti AS r" in sql:
                 return [("10", "ORTOFRUTTA"), ("20", "MACELLERIA"), ("3", "PANE")]
-            return self.REPARTI if "View_StatFascieOrarieReparti" in sql else self.NEGOZI
+            return self.REPARTI if "VenditeReparto2" in sql else self.NEGOZI
         self.query = []
         return mock.patch.multiple("primanota.services.fasce_orarie", esegui=esegui, configurazione=lambda: {"host": "x"})
 
-    def test_per_punto_vendita(self):
+    def test_quarti_d_ora_e_orario(self):
         uff = self.client_per("direttore@x")
         with self.esegui_finto():
-            r = uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19"})
+            uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19"})
             self.assertEqual(self.query, [])   # senza «Cerca» nessuna query
-            r = uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19", "pv": ["5031", "5048"], "cerca": "1"})
+            r = uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19", "pv": ["5031", "5048"],
+                                                    "cerca": "1", "dalle": "07:00", "alle": "22:00", "passo": "15"})
         sql, parametri = self.query[0]
+        self.assertIn("VenditeFasceOrarie2", sql)
+        self.assertIn("JOIN Statistiche.dbo.FasceOrarie2 AS f", sql)
         self.assertEqual(parametri, ("20261013", "20261020", "5031", "5048"))   # fino a fine giornata del 19
-        self.assertIn("NumNegozio IN (%s, %s)", sql)
         ris, tab = r.context["risultato"], r.context["tab"]
-        self.assertEqual(tab["ore"], ["08-09", "09-10", "18-19"])
+        # La fascia delle 6:45 è fuori dall'orario scelto.
+        self.assertEqual(tab["fasce"], ["08:00-08:15", "08:15-08:30", "09:00-09:15", "09:45-10:00", "18:00-18:15"])
         self.assertEqual(ris["totale"], {"valore": Decimal("5800.50"), "pezzi": 2800, "clienti": 410})
-        self.assertEqual(r.context["ora_di_punta"], "09-10")   # 1800 + 700
-        self.assertEqual([x["etichetta"] for x in tab["righe"]], ["5031 PV ADRANO", "5048 PV MOTTA"])
-        self.assertEqual(tab["righe"][1]["celle"][0], (Decimal("0"), None))   # Motta alle 8: niente
-        self.assertEqual(tab["righe"][1]["celle"][2][1], 6)   # la cella più alta ha il colore più scuro
-        self.assertContains(r, "2.100,00")
+        self.assertEqual(ris["di_punta"], "18:00-18:15")
+        self.assertEqual([(t["tipo"], t["valore"]) for t in ris["per_tipo"]], [(0, Decimal("5500.50")), (1, Decimal("300"))])
+        self.assertContains(r, "Per tipo cliente")
+        self.assertEqual(tab["righe"][1]["celle"][-1][1], 6)   # la cella più alta ha il colore più scuro
+        # Raggruppate per ora e solo dalle 8 alle 10.
         with self.esegui_finto():
             r = uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19", "cerca": "1",
-                                                    "misura": "pezzi", "media": "1"})
-        self.assertEqual(r.context["tab"]["righe"][0]["totale"], Decimal("1500") / 7)
-        self.assertContains(r, "214,3")   # 1500 pezzi in 7 giorni
+                                                    "dalle": "08:00", "alle": "10:00", "passo": "60", "misura": "pezzi", "media": "1"})
+        tab = r.context["tab"]
+        self.assertEqual(tab["fasce"], ["08:00-09:00", "09:00-10:00"])
+        self.assertEqual(tab["righe"][0]["celle"][0][0], Decimal("600") / 7)   # 350 + 250 pezzi in 7 giorni
+        self.assertEqual(tab["righe"][1]["totale"], Decimal("300") / 6)
+        self.assertContains(r, "dalle 08:00 alle 10:00")
 
     def test_per_reparto_clienti_dai_negozi(self):
         uff = self.client_per("direttore@x")
         with self.esegui_finto():
             r = uff.get("/primanota/fasce-orarie/", {"vista": "reparti", "data_da": "2026-10-13", "data_a": "2026-10-19",
-                                                    "reparto": ["10", "20"], "cerca": "1", "misura": "clienti"})
-        sql_reparti = next(s for s, p in self.query if "View_StatFascieOrarieReparti" in s)
+                                                    "reparto": ["10", "20"], "cerca": "1", "misura": "clienti", "passo": "60"})
+        sql_reparti = next(s for s, p in self.query if "VenditeReparto2" in s)
         self.assertIn("CodRepartoVenditeReparto IN (%s, %s)", sql_reparti)
+        self.assertIn("f.NumeroFasciaOraria = r.FasciaOraVenditeReparto", sql_reparti)
         ris = r.context["risultato"]
         self.assertEqual([e["etichetta"] for e in ris["righe"]], ["10 ORTOFRUTTA", "20 MACELLERIA"])
-        # I clienti totali per ora sono quelli dei negozi (120 + 50 alle 9), non 80 + 100 dei reparti.
-        self.assertEqual(ris["per_ora"][9]["clienti"], 170)
+        # I clienti totali delle 9 sono quelli dei punti vendita (50 + 40... solo le fasce delle 9: 100 + 20 + 50),
+        # non 80 + 100 dei reparti.
+        self.assertEqual(ris["per_fascia"][9 * 60]["clienti"], 170)
         self.assertContains(r, "PANE")   # elenco dei reparti nei filtri
         self.assertContains(r, "lo stesso cliente compra in più reparti")
 
@@ -962,16 +973,27 @@ class TestFasceOrarie(Base):
         uff = self.client_per("direttore@x")
         with self.esegui_finto():
             csv = uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19", "formato": "csv"})
-            pdf = uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19", "formato": "pdf"})
+            pdf = uff.get("/primanota/fasce-orarie/", {"data_da": "2026-10-13", "data_a": "2026-10-19", "formato": "pdf",
+                                                      "dalle": "00:00", "alle": "24:00"})
         righe = csv.content.decode("utf-8-sig").splitlines()
-        self.assertEqual(righe[0], "Punto vendita;08-09;09-10;18-19;Totale")
-        self.assertEqual(righe[1], "5031 PV ADRANO;1.200,50;1.800,00;0,00;3.000,50")
+        self.assertEqual(righe[0], "Punto vendita;08:00-08:15;08:15-08:30;09:00-09:15;09:45-10:00;18:00-18:15;Totale")
+        self.assertEqual(righe[1], "5031 PV ADRANO;700,50;500,00;1.800,00;0,00;0,00;3.000,50")
         self.assertIn("Fasce_orarie_negozi_Tutti_dal_2026-10-13_al_2026-10-19_valore.pdf", pdf["Content-Disposition"])
         testo = pymupdf.open(stream=pdf.content, filetype="pdf")[0].get_text()
-        self.assertIn("5.800,50", testo)
+        self.assertIn("5.899,50", testo)   # dalle 0 alle 24 entra anche la fascia delle 6:45
         self.assertEqual(self.client_per("pv@x").get("/primanota/fasce-orarie/").status_code, 302)
         self.assertContains(uff.get("/primanota/statistiche/"), "Vendite per Fasce Orarie")
 
+    def test_pdf_a_blocchi_di_colonne(self):
+        from primanota.services import fasce_orarie
+        righe = [("5031", "PV ADRANO", m, 0, Decimal("10"), 1, 1, 1) for m in range(7 * 60, 22 * 60, 15)]
+        ris = fasce_orarie.componi(righe, dalle=7 * 60, alle=22 * 60, passo=15)
+        self.assertEqual(len(ris["fasce"]), 60)
+        import pymupdf
+        doc = pymupdf.open(stream=fasce_orarie.pdf(ris, "valore", False, "negozi", "Prova", "sotto", "x.pdf"), filetype="pdf")
+        testo = "".join(p.get_text() for p in doc)
+        self.assertEqual(" ".join(testo.split()).count("% sul totale"), 4)   # 60 fasce in 4 tabelle da 16
+        self.assertIn("600,00", testo)
 
 class TestMenuStatistiche(Base):
     def test_tre_sezioni_solo_per_direttori_e_amministratori(self):
@@ -1006,3 +1028,56 @@ class TestElaborazioneInCorso(Base):
                 r = d.get(url)
                 self.assertContains(r, f'data-attesa="{testo}…"')
                 self.assertContains(r, "function mostraAttesa(")
+
+
+class TestFattureSpese(Base):
+    def setUp(self):
+        super().setUp()
+        from django.core.cache import cache
+        cache.clear()
+
+    def prima_nota(self, presenze, spese=()):
+        """Prima nota simulata: giornate presenti e righe di «spese del giorno con fattura»."""
+        def esegui(c, sql, parametri=(), dizionari=False):
+            if "COUNT(*)" in sql and "causale = 17" in sql:
+                return presenze
+            return list(spese)
+        return mock.patch.multiple("primanota.services.prima_nota", esegui=esegui, configurazione=lambda: {"host": "x"})
+
+    def stati(self, giorno="2026-05-28"):
+        r = self.client_per("pv@x").get("/primanota/upload/", {"data": giorno})
+        return {v["tipo"]["id"]: (v["stato"], v["manca"]) for v in r.context["voci"]}
+
+    def test_obbligatoria_solo_con_spese_con_fattura(self):
+        # Prima nota della giornata senza spese con fattura: la voce non è prevista.
+        with self.prima_nota([("5048", 20260528, 12, 0, Decimal("0"))]):
+            self.assertEqual(self.stati()["Fatture spese del giorno"], ("non_richiesta", False))
+        from django.core.cache import cache
+        cache.clear()
+        # Con una spesa con fattura (causale 17) la scansione è obbligatoria.
+        with self.prima_nota([("5048", 20260528, 13, 1, Decimal("27.20"))]):
+            self.assertEqual(self.stati()["Fatture spese del giorno"], ("obbligatoria", True))
+            self.carica(self.client_per("pv@x"), "Fatture spese del giorno")
+            self.assertEqual(self.stati()["Fatture spese del giorno"], ("obbligatoria", False))
+
+    def test_monitor_e_giornata(self):
+        from primanota.models import RegolaDocumento
+        for t in ("Chiusura fiscale", "Chiusure POS bancari"):
+            RegolaDocumento.objects.create(tipo_documento=t, obbligo=RegolaDocumento.FACOLTATIVO)
+        ieri = date.today() - timedelta(days=1)
+        spesa = {"anno": 2026, "progressivo": 335832, "pv": "5048", "data": ieri.strftime("%Y%m%d"), "ora": "085653",
+                 "causale": 17, "segno": "E", "importo": Decimal("27.20"), "int_ragsoc": "", "tipo_doc_rif": "",
+                 "num_doc_rif": "", "data_doc_rif": "00000000", "note": "cassone elettronica acquisto interruttori",
+                 "causale_descr": "SPESE DEL GIORNO CON FATTURA", "nome_negozio": "PV MOTTA"}
+        self.carica(self.client_per("pv@x"), "Resi", giorno=ieri.isoformat())
+        with self.prima_nota([("5048", int(ieri.strftime("%Y%m%d")), 13, 1, Decimal("27.20"))], [spesa]):
+            r = self.client_per("ufficio@x").get("/primanota/monitor/", {"anno": ieri.year, "mese": ieri.month})
+            riga = next(x for x in r.context["monitor"]["rows"] if x["store_id"] == 10)
+            cella = next(c for c in riga["cells"] if c["date"] == ieri.isoformat())
+            self.assertIn("Fatture spese del giorno", cella["mancanti"])
+            r = self.client_per("ufficio@x").get(f"/primanota/giornata/10/{ieri.isoformat()}/")
+        sezione = next(s for s in r.context["sezioni"] if s["tipo"]["id"] == "Fatture spese del giorno")
+        self.assertTrue(sezione["obbligatoria"])
+        self.assertContains(r, "Dati prima nota")
+        self.assertContains(r, "Importo: 27,20 €")
+        self.assertContains(r, "cassone elettronica acquisto interruttori")
