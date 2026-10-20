@@ -173,19 +173,14 @@ def _salva_giornata(request, user, negozio_id):
     return None
 
 
-def _note_visibili(request):
-    """Note dei negozi: quelle sui versamenti solo per la sede."""
-    note = Nota.objects.all()
-    if not can_see_versamenti(request.utente_primanota):
-        note = note.filter(versamento=False)
-    return note
-
-
 @_accesso()
 def home(request):
+    """Documenti Amministrativi: il negozio va al caricamento, la sede sceglie la sezione."""
     if is_store_user(request.utente_primanota):
         return redirect("/primanota/upload/")
-    return redirect("/primanota/admin/")
+    return render(request, "primanota/home.html", _contesto(
+        request, note_chiusure=Nota.objects.filter(versamento=False, chiusa=False).count(),
+        note_versamenti=Nota.objects.filter(versamento=True, chiusa=False).count()))
 
 
 @_accesso()
@@ -320,7 +315,7 @@ def admin(request):
 
 def _note_negozi(request, filtro_negozio, negozi):
     """Segnalazioni dei negozi ancora da lavorare, dalla più recente: in testa al riepilogo."""
-    note = _note_visibili(request).filter(chiusa=False)
+    note = Nota.objects.filter(chiusa=False, versamento=False)
     if filtro_negozio.isdigit():
         note = note.filter(negozio_id=int(filtro_negozio))
     return [(n, etichetta_negozio(negozi.get(n.negozio_id)) or n.negozio_id) for n in note[:50]]
@@ -377,8 +372,7 @@ def giornata(request, negozio_id, giorno):
             "versamento": t["id"] == VERSAMENTO_CONTANTE,
             "obbligatoria": obbligatoria(regole.get(t["id"]), bool(anteprime[t["id"]])),
         })
-    altre = [s for s in scansioni if s["tipo_documento"] not in TIPI_VALIDI]
-    versamenti = [s for s in scansioni if s["versamento"]] if can_see_versamenti(request.utente_primanota) else []
+    altre = [s for s in scansioni if s["tipo_documento"] not in TIPI_VALIDI]   # i versamenti sono in Gestione Versamenti
 
     casse = []
     for f in files:
@@ -405,8 +399,7 @@ def giornata(request, negozio_id, giorno):
         precedente=(corrente - timedelta(days=1)).isoformat(), successivo=(corrente + timedelta(days=1)).isoformat(),
         sezioni=sezioni, altre=altre, files=files, casse=casse, error=error,
         storni=docs(DocumentoSysSpy.STORNO, DocumentoSysSpy.ANNULLAMENTO), pos_negate=docs(DocumentoSysSpy.POS_NEGATO),
-        versamenti=versamenti,
-        note=_note_visibili(request).filter(negozio_id=negozio_id, data=giorno), tipi_nota=Nota.TIPI))
+        note=Nota.objects.filter(negozio_id=negozio_id, data=giorno, versamento=False), tipi_nota=Nota.TIPI))
 
 
 @_accesso(solo_ufficio=True)
@@ -465,15 +458,22 @@ def chiudi_nota(request, nota_id):
     return redirect(request.POST.get("ritorno") or f"/primanota/giornata/{nota.negozio_id}/{nota.data.isoformat()}/")
 
 
-@_accesso(solo_ufficio=True)
-def note(request):
+def _elenco_note(request, versamento):
     """Segnalazioni dei negozi dalla più recente; di default solo quelle da lavorare."""
     lavorate = request.GET.get("lavorate") == "1"
-    elenco = _note_visibili(request).filter(chiusa=lavorate)
+    tutte = Nota.objects.filter(versamento=versamento)
     negozi = {n["id"]: etichetta_negozio(n) for n in negozi_attivi_ordinati()}
-    elenco = [(nota, negozi.get(nota.negozio_id, nota.negozio_id)) for nota in elenco.order_by("-creata_il")[:300]]
+    elenco = [(nota, negozi.get(nota.negozio_id, nota.negozio_id))
+              for nota in tutte.filter(chiusa=lavorate).order_by("-creata_il")[:300]]
     return render(request, "primanota/note.html", _contesto(
-        request, elenco=elenco, lavorate=lavorate, da_lavorare=_note_visibili(request).filter(chiusa=False).count()))
+        request, elenco=elenco, lavorate=lavorate, da_lavorare=tutte.filter(chiusa=False).count(),
+        note_versamenti=versamento))
+
+
+@_accesso(solo_ufficio=True)
+def note(request):
+    """Note e anomalie delle Chiusure Fiscali (quelle sui versamenti sono in Gestione Versamenti)."""
+    return _elenco_note(request, versamento=False)
 
 
 @_accesso(solo_ufficio=True)
@@ -721,7 +721,15 @@ def versamenti(request):
                    reverse=True)
     return render(request, "primanota/versamenti.html", _contesto(
         request, scansioni=scansioni, negozi=list(negozi.values()), error=error, filtro_negozio=filtro_negozio,
-        data_da=data_da, data_a=data_a, solo_da_lavorare=solo_da_lavorare))
+        data_da=data_da, data_a=data_a, solo_da_lavorare=solo_da_lavorare,
+        note_da_lavorare=Nota.objects.filter(versamento=True, chiusa=False).count()))
+
+
+@_accesso(solo_ufficio=True)
+@_solo_sede
+def versamenti_note(request):
+    """Note dei negozi sui versamenti."""
+    return _elenco_note(request, versamento=True)
 
 
 MAX_GIORNI_STATISTICHE = 366

@@ -36,8 +36,8 @@ CARD_MENU = """        {% primanota_visibile utente as show_primanota %}
         {% if show_primanota %}
         <a class="module-card" href="/primanota/">
             <div class="icon">🧾</div>
-            <h2>Chiusure Fiscali</h2>
-            <p>Scansioni chiusure fiscali, POS, resi, abortite e versamenti, con i file scontrini delle casse.</p>
+            <h2>Documenti Amministrativi</h2>
+            <p>Chiusure fiscali, gestione versamenti e statistiche, con i file scontrini delle casse.</p>
         </a>
         {% endif %}
 
@@ -134,8 +134,11 @@ def modifica_urls(testo):
 
 def modifica_menu(testo):
     if "primanota_visibile" in testo:
-        # Installazioni precedenti: la scheda si chiamava "Prima Nota".
-        return testo.replace("<h2>Prima Nota</h2>", "<h2>Chiusure Fiscali</h2>")
+        # Installazioni precedenti: la scheda si chiamava "Prima Nota" e poi "Chiusure Fiscali".
+        for vecchio in ("Prima Nota", "Chiusure Fiscali"):
+            testo = testo.replace(f"<h2>{vecchio}</h2>", "<h2>Documenti Amministrativi</h2>")
+        return re.sub(r"<p>Scansioni chiusure fiscali, POS, resi, abortite e versamenti[^<]*</p>",
+                      "<p>Chiusure fiscali, gestione versamenti e statistiche, con i file scontrini delle casse.</p>", testo)
     if "{% load static %}" not in testo:
         raise ValueError("{% load static %} non trovato nel menu")
     testo = testo.replace("{% load static %}", "{% load static %}\n{% load primanota_menu %}", 1)
@@ -429,7 +432,7 @@ def main():
     titolo("Fatto")
     print(f"""  Ora:
   1. {"portale già riavviato" if riavviato else "riavviare il portale come di consueto"};
-  2. Menu > Prima Nota > Condivisioni negozi: indicare la cartella SysSpy di ogni negozio e premere «Importa nuovi».
+  2. Menu > Documenti Amministrativi > Chiusure Fiscali > Impostazioni: indicare la cartella SysSpy di ogni negozio e premere «Importa nuovi».
   Per tornare indietro: i file originali sono in {backup.cartella}""")
 
 

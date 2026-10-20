@@ -1,14 +1,15 @@
 {% extends "primanota/base.html" %}
-{% block title %}Versamenti contante{% endblock %}
+{% block title %}Gestione Versamenti{% endblock %}
 {% block style %}<style>.scan-flags{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:4px}
 .scan-preview{width:100%;height:420px;border:1px solid #d9e0e8;border-radius:8px;margin-top:8px;background:#fff;object-fit:contain}
 .num{text-align:right;white-space:nowrap}</style>{% endblock %}
 {% block content %}
 <div class="top-actions">
-    <h1>Versamenti contante</h1>
-    <a class="btn btn-orange" href="/primanota/versamenti/monitor/">👁 Monitor versamenti</a>
+    <h1>Consultazione versamenti contante</h1>
     {% include "primanota/_menu.html" with attivo="versamenti" %}
 </div>
+{% if note_da_lavorare %}<div class="message-error">I negozi hanno scritto {{ note_da_lavorare }} not{{ note_da_lavorare|pluralize:"a,e" }} sui versamenti da lavorare:
+    <a href="/primanota/versamenti/note/">apri le note sui versamenti</a>.</div>{% endif %}
 {% if error %}<div class="message-error">{{ error }}</div>{% endif %}
 <div class="card">
     <form method="get" class="filters">

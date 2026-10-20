@@ -1,0 +1,40 @@
+{% extends "primanota/base.html" %}
+{% block title %}Documenti Amministrativi{% endblock %}
+{% block style %}
+<style>
+.sezioni{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+.sezione-card{background:#fff;border-radius:14px;padding:26px;box-shadow:0 4px 16px rgba(0,0,0,.08);text-decoration:none;color:#263238;
+    border:2px solid transparent;transition:border-color .15s,transform .15s}
+.sezione-card:hover{border-color:#ff6a00;transform:translateY(-2px)}
+.sezione-card .icona{font-size:34px}.sezione-card h2{color:#2d4055;margin:10px 0 6px}
+.sezione-card p{margin:0;color:#667085;font-size:14px}
+.sezione-card .badge{margin-top:12px}
+</style>
+{% endblock %}
+{% block content %}
+<div class="top-actions">
+    <h1>Documenti Amministrativi</h1>
+    <a class="btn btn-dark" href="/menu/">Menu</a>
+</div>
+<div class="sezioni">
+    <a class="sezione-card" href="/primanota/admin/">
+        <div class="icona">🧾</div>
+        <h2>Chiusure Fiscali</h2>
+        <p>Scansioni di chiusure fiscali, POS, resi e abortite dei negozi, monitor, note e anomalie, archivio SysSpy.</p>
+        {% if note_chiusure %}<span class="badge badge-no">{{ note_chiusure }} not{{ note_chiusure|pluralize:"a,e" }} da lavorare</span>{% endif %}
+    </a>
+    {% if puo_versamenti %}
+    <a class="sezione-card" href="/primanota/versamenti/monitor/">
+        <div class="icona">💶</div>
+        <h2>Gestione Versamenti</h2>
+        <p>Monitor dei versamenti contante, consultazione con i contanti attesi dal SysSpy e note dei negozi.</p>
+        {% if note_versamenti %}<span class="badge badge-no">{{ note_versamenti }} not{{ note_versamenti|pluralize:"a,e" }} da lavorare</span>{% endif %}
+    </a>
+    {% endif %}
+    <a class="sezione-card" href="/primanota/statistiche/">
+        <div class="icona">📈</div>
+        <h2>Statistiche</h2>
+        <p>Corrispettivi per periodo e negozio, mezzi di pagamento, correzioni, abortite, resi e produttività dei cassieri.</p>
+    </a>
+</div>
+{% endblock %}

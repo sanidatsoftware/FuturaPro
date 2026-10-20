@@ -1,14 +1,21 @@
+{# Menu interno. Sede: tre sezioni di Documenti Amministrativi (Chiusure Fiscali, Gestione Versamenti, Statistiche). #}
 <div class="nav">
     {% if utente_negozio %}
     <a class="btn btn-light" href="/primanota/upload/">Caricamento e chiusure</a>
+    {% elif attivo == "versamenti" or attivo == "versamenti_monitor" or attivo == "versamenti_note" %}
+    <a class="btn btn-light {% if attivo == 'versamenti_monitor' %}active{% endif %}" href="/primanota/versamenti/monitor/">👁 Monitor versamenti</a>
+    <a class="btn btn-light {% if attivo == 'versamenti' %}active{% endif %}" href="/primanota/versamenti/">Consultazione versamenti</a>
+    <a class="btn btn-light {% if attivo == 'versamenti_note' %}active{% endif %}" href="/primanota/versamenti/note/">Note sui versamenti</a>
+    <a class="btn btn-light" href="/primanota/">« Documenti Amministrativi</a>
+    {% elif attivo == "statistiche" %}
+    <a class="btn btn-light" href="/primanota/">« Documenti Amministrativi</a>
     {% else %}
     <a class="btn btn-light {% if attivo == 'admin' %}active{% endif %}" href="/primanota/admin/">Scansioni</a>
     <a class="btn btn-light {% if attivo == 'monitor' %}active{% endif %}" href="/primanota/monitor/">👁 Monitor</a>
-    {% if puo_versamenti %}<a class="btn btn-light {% if attivo == 'versamenti' %}active{% endif %}" href="/primanota/versamenti/">Versamenti</a>{% endif %}
     <a class="btn btn-light {% if attivo == 'note' %}active{% endif %}" href="/primanota/note/">Note e anomalie</a>
-    <a class="btn btn-light {% if attivo == 'statistiche' %}active{% endif %}" href="/primanota/statistiche/">Statistiche</a>
     <a class="btn btn-light {% if attivo == 'sysspy' %}active{% endif %}" href="/primanota/sysspy/">Archivio SysSpy</a>
     {% if puo_gestire %}<a class="btn btn-light {% if attivo == 'condivisioni' %}active{% endif %}" href="/primanota/condivisioni/">Impostazioni</a>{% endif %}
+    <a class="btn btn-light" href="/primanota/">« Documenti Amministrativi</a>
     {% endif %}
     <a class="btn btn-dark" href="/menu/">Menu</a>
 </div>

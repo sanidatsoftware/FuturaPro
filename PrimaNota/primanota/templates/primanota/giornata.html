@@ -65,8 +65,8 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
         {% endwith %}{% endfor %}
         </tbody>
     </table>
-    <p class="small">«Carta + Bancomat» e «Contanti» sono calcolati dagli scontrini (abortiti esclusi). I contanti sono quelli da
-        confrontare con il versamento. Cliccando un controllo si apre la spiegazione.</p>
+    <p class="small">«Carta + Bancomat» e «Contanti» sono calcolati dagli scontrini (abortiti esclusi).
+        Cliccando un controllo si apre la spiegazione.</p>
 
     {% for r in casse %}{% if r.da_spiegare %}
     <details id="controlli-{{ r.file.id }}" {% if r.anomalie %}open{% endif %}>
@@ -119,11 +119,7 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
                 <div class="small"><strong>{{ titolo }}</strong></div>
                 <div class="mono">{{ testo }}</div>
             {% empty %}
-                {% if sez.versamento %}
-                    <p class="vuoto">Per il versamento confrontare la colonna «Riscosso − POS» qui sopra.</p>
-                {% else %}
-                    <p class="vuoto">Niente da mostrare nei SysSpy di questa giornata.</p>
-                {% endif %}
+                <p class="vuoto">Niente da mostrare nei SysSpy di questa giornata.</p>
             {% endfor %}
             {% if sez.tipo.chiave == "abortite" and pos_negate %}
                 <details><summary>Pagamenti POS negati ({{ pos_negate|length }})</summary>
@@ -135,13 +131,6 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
 </div>
 {% endfor %}
 
-{% if puo_versamenti %}
-<div class="card">
-    <h2>Versamenti contante</h2>
-    {% for s in versamenti %}{% include "primanota/_scansione.html" %}{% empty %}<p class="vuoto">Nessun versamento caricato.</p>{% endfor %}
-    <a class="btn btn-light" href="/primanota/versamenti/?negozio={{ negozio_id }}&data_da={{ giorno }}&data_a={{ giorno }}">Apri nella sezione Versamenti</a>
-</div>
-{% endif %}
 
 {% if altre %}
 <div class="card"><h2>Altri documenti</h2>{% for s in altre %}<p><strong>{{ s.tipo_documento }}</strong></p>{% include "primanota/_scansione.html" %}{% endfor %}</div>

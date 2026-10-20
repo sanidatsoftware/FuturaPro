@@ -584,9 +584,12 @@ class TestVersamentiNoteStatistiche(Base):
         nota = Nota.objects.get()
         self.assertTrue(nota.versamento)
         self.assertEqual((nota.scansione_id, nota.inviata_a, nota.esito_invio), (1, "amm@x.it", "Inviata"))
-        # La nota compare in testa al riepilogo della sede.
-        r = self.client_per("ufficio@x").get("/primanota/admin/")
-        self.assertEqual([n.testo for n, _ in r.context["note_negozi"]], ["Mancano 10 euro"])
+        # La nota è in Gestione Versamenti, non nelle Chiusure Fiscali.
+        uff = self.client_per("ufficio@x")
+        self.assertEqual(uff.get("/primanota/admin/").context["note_negozi"], [])
+        self.assertEqual(uff.get("/primanota/note/").context["elenco"], [])
+        self.assertEqual([n.testo for n, _ in uff.get("/primanota/versamenti/note/").context["elenco"]], ["Mancano 10 euro"])
+        self.assertEqual(self.client_per("pv@x").get("/primanota/versamenti/note/").status_code, 302)
 
     def test_note_da_lavorare_e_lavorate(self):
         vecchia = Nota.objects.create(negozio_id=10, data="2026-05-27", testo="vecchia", creata_da="x")
@@ -653,3 +656,31 @@ class TestChiusureVisteDalNegozio(Base):
         with mock.patch("primanota.views.timezone.localdate", return_value=oggi):
             g = views._giornate_recenti(10)[1]
         self.assertEqual(g["mancanti"], ["Chiusura fiscale", "Chiusure POS bancari"])
+
+
+class TestDocumentiAmministrativi(Base):
+    def test_tre_sezioni_per_la_sede(self):
+        uff = self.client_per("ufficio@x")
+        home = uff.get("/primanota/")
+        for voce in ("Chiusure Fiscali", "Gestione Versamenti", "Statistiche"):
+            self.assertContains(home, f"<h2>{voce}</h2>")
+        # Nelle Chiusure Fiscali nessun riferimento ai versamenti; in Gestione Versamenti il suo menu.
+        admin = uff.get("/primanota/admin/")
+        self.assertNotContains(admin, "/primanota/versamenti/")
+        self.assertNotContains(admin, "/primanota/statistiche/")
+        menu_versamenti = uff.get("/primanota/versamenti/monitor/")
+        for link in ("/primanota/versamenti/monitor/", "/primanota/versamenti/", "/primanota/versamenti/note/"):
+            self.assertContains(menu_versamenti, f'href="{link}"')
+        self.assertNotContains(menu_versamenti, 'href="/primanota/sysspy/"')
+        self.assertRedirects(self.client_per("pv@x").get("/primanota/"), "/primanota/upload/", fetch_redirect_response=False)
+
+    def test_installazione_rinomina_la_scheda_del_menu(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("installa", Path(__file__).parents[1] / "installa" / "installa.py")
+        installa = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installa)
+        vecchio = "{% load primanota_menu %}{% primanota_visibile utente as show_primanota %}<h2>Chiusure Fiscali</h2>" \
+                  "<p>Scansioni chiusure fiscali, POS, resi, abortite e versamenti, con i file scontrini delle casse.</p>"
+        nuovo = installa.modifica_menu(vecchio)
+        self.assertIn("<h2>Documenti Amministrativi</h2>", nuovo)
+        self.assertIn("gestione versamenti e statistiche", nuovo)

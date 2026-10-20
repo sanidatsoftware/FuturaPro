@@ -1,6 +1,6 @@
 {% extends "primanota/base.html" %}
 {% load primanota_formati %}
-{% block title %}Chiusure Fiscali PV{% endblock %}
+{% block title %}Documenti Amministrativi PV{% endblock %}
 {% block style %}
 <style>
 .layout{display:grid;grid-template-columns:minmax(380px,560px) 1fr;gap:24px;align-items:start}
@@ -18,7 +18,7 @@
 {% endblock %}
 {% block content %}
 <div class="top-actions">
-    <h1>Chiusure Fiscali · {{ negozio }}</h1>
+    <h1>Documenti Amministrativi · {{ negozio }}</h1>
     <a class="btn btn-dark" href="/menu/">Menu</a>
 </div>
 {% if message %}<div class="message-ok">{{ message }}</div>{% endif %}

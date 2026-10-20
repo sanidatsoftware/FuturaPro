@@ -1,9 +1,9 @@
 {% extends "primanota/base.html" %}
-{% block title %}Note e anomalie{% endblock %}
+{% block title %}{% if note_versamenti %}Note sui versamenti{% else %}Note e anomalie{% endif %}{% endblock %}
 {% block content %}
 <div class="top-actions">
-    <h1>Note, anomalie e richieste di contatto</h1>
-    {% include "primanota/_menu.html" with attivo="note" %}
+    <h1>{% if note_versamenti %}Note dei negozi sui versamenti{% else %}Note, anomalie e richieste di contatto{% endif %}</h1>
+    {% if note_versamenti %}{% include "primanota/_menu.html" with attivo="versamenti_note" %}{% else %}{% include "primanota/_menu.html" with attivo="note" %}{% endif %}
 </div>
 <div class="card filters">
     {% if lavorate %}

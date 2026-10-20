@@ -29,7 +29,7 @@ def invia(destinatari, oggetto, testo, allegato_url=None, allegato_nome=None):
     """Invia il messaggio; l'allegato si scarica da Baserow. Solleva un'eccezione se non riesce."""
     imp = ImpostazioniEmail.corrente()
     if not imp.host or not imp.mittente:
-        raise RuntimeError("Server di posta non configurato (Chiusure Fiscali > Impostazioni).")
+        raise RuntimeError("Server di posta non configurato (Documenti Amministrativi > Chiusure Fiscali > Impostazioni).")
     messaggio = EmailMessage(oggetto, testo, imp.mittente, list(destinatari), connection=_connessione(imp))
     if allegato_url:
         risposta = requests.get(allegato_url, timeout=60)
