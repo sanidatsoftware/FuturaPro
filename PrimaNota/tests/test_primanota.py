@@ -715,3 +715,31 @@ class TestPostaDelPortale(Base):
             self.assertFalse(posta.configurata())
             with self.assertRaisesRegex(RuntimeError, "non trovata"):
                 posta.invia(["a@x.it"], "x", "y")
+
+
+class TestStatistichePdf(Base):
+    def test_pdf_con_grafici_scelti(self):
+        import pymupdf
+        self.importa_fixture()
+        uff = self.client_per("ufficio@x")
+        for andamento, torta in (("linea", "barre"), ("colonne", "torta"), ("area", "torta")):
+            r = uff.get("/primanota/statistiche/pdf/", {"data_da": "2026-05-25", "data_a": "2026-05-30", "andamento": andamento,
+                                                        "grafico_negozi": torta, "grafico_pagamenti": torta,
+                                                        "vista_da": "2026-05-27", "vista_a": "2026-05-29"})
+            self.assertEqual(r["Content-Type"], "application/pdf")
+            self.assertEqual(r["X-Frame-Options"], "SAMEORIGIN")
+            self.assertIn('filename="Statistiche_Tutti_i_negozi_dal_2026-05-25_al_2026-05-30.pdf"', r["Content-Disposition"])
+            doc = pymupdf.open(stream=r.content, filetype="pdf")
+            testo = "".join(p.get_text() for p in doc)
+            self.assertIn("Andamento dei corrispettivi (dal 27/05 al 29/05)", testo)
+            self.assertIn("MARIO ROSSI", testo)
+            self.assertIn("18,00 €", testo)
+            self.assertEqual(sum(len(p.get_images()) for p in doc), 2)   # andamento; negozi e pagamenti
+        self.assertEqual(self.client_per("pv@x").get("/primanota/statistiche/pdf/").status_code, 302)
+
+    def test_pagina_con_comandi_dei_grafici(self):
+        self.importa_fixture()
+        r = self.client_per("ufficio@x").get("/primanota/statistiche/", {"data_da": "2026-05-28", "data_a": "2026-05-28"})
+        for comando in ('id="zoomPiu"', 'id="zoomMeno"', 'data-valore="colonne"', 'data-valore="torta"', 'id="stampaPdf"'):
+            self.assertContains(r, comando)
+        self.assertEqual(r.context["grafici"]["pagamenti"], [{"etichetta": "Carta Credito", "valore": 18.0}])

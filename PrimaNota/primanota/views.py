@@ -735,26 +735,59 @@ def versamenti_note(request):
 MAX_GIORNI_STATISTICHE = 366
 
 
-@_accesso(solo_ufficio=True)
-def statistiche(request):
+def _statistiche_richieste(request):
+    """Periodo e negozio dai filtri; dati None (con l'errore) se il periodo è troppo lungo."""
     from .services.statistiche import calcola
 
     oggi = timezone.localdate()
     data_a = _data(request.GET.get("data_a"), (oggi - timedelta(days=1)).isoformat())
     data_da = _data(request.GET.get("data_da"), (date.fromisoformat(data_a) - timedelta(days=29)).isoformat())
     filtro_negozio = request.GET.get("negozio", "")
-    error = None
     if date.fromisoformat(data_a) < date.fromisoformat(data_da):
         data_da, data_a = data_a, data_da
     if (date.fromisoformat(data_a) - date.fromisoformat(data_da)).days >= MAX_GIORNI_STATISTICHE:
-        error = f"Scegliere al massimo {MAX_GIORNI_STATISTICHE} giorni."
-        dati = None
-    else:
-        dati = calcola(data_da, data_a, int(filtro_negozio) if filtro_negozio.isdigit() else None)
+        return data_da, data_a, filtro_negozio, None, f"Scegliere al massimo {MAX_GIORNI_STATISTICHE} giorni."
+    dati = calcola(data_da, data_a, int(filtro_negozio) if filtro_negozio.isdigit() else None)
+    return data_da, data_a, filtro_negozio, dati, None
+
+
+@_accesso(solo_ufficio=True)
+def statistiche(request):
+    data_da, data_a, filtro_negozio, dati, error = _statistiche_richieste(request)
     return render(request, "primanota/statistiche.html", _contesto(
         request, dati=dati, error=error, data_da=data_da, data_a=data_a, filtro_negozio=filtro_negozio,
         negozi=negozi_attivi_ordinati(),
-        grafici={"giorni": dati["giorni"]} if dati else {}))
+        grafici={"giorni": dati["giorni"],
+                 "negozi": [{"etichetta": r["etichetta"], "valore": float(r["totale"])} for r in dati["negozi"]],
+                 "pagamenti": [{"etichetta": r["voce"], "valore": float(r["importo"])} for r in dati["pagamenti"]]}
+        if dati else {}))
+
+
+@xframe_options_sameorigin  # il PDF si apre nella finestra di stampa della pagina stessa
+@_accesso(solo_ufficio=True)
+def statistiche_pdf(request):
+    """Le statistiche in PDF A4, con i tipi di grafico e la vista dell'andamento scelti nella pagina."""
+    from .services import statistiche_pdf as servizio
+
+    data_da, data_a, filtro_negozio, dati, error = _statistiche_richieste(request)
+    if error:
+        return HttpResponse(error, status=400)
+    n = negozio(int(filtro_negozio)) if filtro_negozio.isdigit() else None
+    etichetta = etichetta_negozio(n) if n else ""
+    giorni = dati["giorni"]
+    dal, al = _data(request.GET.get("vista_da")), _data(request.GET.get("vista_a"))
+    if dal and al:
+        giorni = [g for g in giorni if dal <= g["data"] <= al] or giorni
+    da, a = date.fromisoformat(data_da), date.fromisoformat(data_a)
+    nome = servizio.nome_file(etichetta, data_da, data_a)
+    pdf = servizio.genera_pdf(
+        dati, titolo="Statistiche " + (etichetta or "tutti i negozi"),
+        sottotitolo=f"dal {da:%d/%m/%Y} al {a:%d/%m/%Y}", nome=nome, giorni=giorni,
+        andamento=request.GET.get("andamento", "linea"), negozi=request.GET.get("grafico_negozi", "barre"),
+        pagamenti=request.GET.get("grafico_pagamenti", "barre"))
+    risposta = HttpResponse(pdf, content_type="application/pdf")
+    risposta["Content-Disposition"] = f'inline; filename="{nome}"'
+    return risposta
 
 
 @_accesso(solo_ufficio=True, solo_gestione=True)

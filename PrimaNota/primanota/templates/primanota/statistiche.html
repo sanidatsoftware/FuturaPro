@@ -17,6 +17,21 @@
 .num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 #tip{position:fixed;pointer-events:none;background:#1f2937;color:#fff;font-size:12px;padding:6px 9px;border-radius:6px;display:none;z-index:50;white-space:nowrap}
 #andamento svg{width:100%;height:260px;display:block}
+.testa-grafico{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.testa-grafico h3{margin:0;flex:1;min-width:200px}
+.gruppo{display:inline-flex;border:1px solid #ced7e2;border-radius:8px;overflow:hidden}
+.gruppo button{border:0;background:#fff;color:#2d4055;font-weight:bold;font-size:13px;padding:6px 10px;cursor:pointer;border-right:1px solid #ced7e2}
+.gruppo button:last-child{border-right:0}
+.gruppo button.attivo{background:#2d4055;color:#fff}
+.gruppo button:disabled{color:#b5bdc8;cursor:default}
+.vista-periodo{font-size:12px;color:#667085;min-width:150px;text-align:right}
+.card:fullscreen{overflow:auto;background:#fff;padding:28px;border-radius:0}
+.legenda{display:grid;grid-template-columns:14px 1fr auto;gap:6px 10px;align-items:center;font-size:13px}
+.legenda i{width:12px;height:12px;border-radius:3px;display:block}
+.legenda .valore{color:var(--testo-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.torta{display:grid;grid-template-columns:220px 1fr;gap:20px;align-items:center}
+.torta svg{width:220px;height:220px}
+@media(max-width:700px){.torta{grid-template-columns:1fr}}
 .nota-dati{background:#fff8d6;border:1px solid #e5c100;border-radius:8px;padding:10px;margin-bottom:14px;font-size:13px}
 </style>
 {% endblock %}
@@ -34,7 +49,8 @@
         <label class="field">Dal <input type="date" name="data_da" value="{{ data_da }}"></label>
         <label class="field">Al <input type="date" name="data_a" value="{{ data_a }}"></label>
         <button class="btn btn-orange">Aggiorna</button>
-        <span class="small">Dati dei SysSpy archiviati (chiusure fiscali e scontrini).</span>
+        {% if dati %}<button class="btn btn-dark" type="button" id="stampaPdf">🖨 Stampa PDF</button>{% endif %}
+        <span class="small">Dati dei SysSpy archiviati (chiusure fiscali e scontrini). Il PDF riporta i grafici come li vedi.</span>
     </form>
 </div>
 {% if error %}<div class="message-error">{{ error }}</div>{% endif %}
@@ -52,15 +68,31 @@
     <div class="kpi-stat"><strong>{{ dati.kpi.abortite|intero }} · {{ dati.kpi.resi|intero }}</strong><span>Transazioni abortite · resi</span></div>
 </div>
 
-<div class="card">
-    <h3>Andamento dei corrispettivi</h3>
+<div class="card" id="cardAndamento">
+    <div class="testa-grafico">
+        <h3>Andamento dei corrispettivi</h3>
+        <div class="gruppo" data-scelta="andamento" aria-label="Tipo di grafico">
+            <button type="button" data-valore="linea">Linea</button><button type="button" data-valore="area">Area</button><button type="button" data-valore="colonne">Colonne</button>
+        </div>
+        <div class="gruppo" aria-label="Zoom">
+            <button type="button" id="zoomMeno" title="Riduci lo zoom (più giorni)">−</button>
+            <button type="button" id="zoomPiu" title="Aumenta lo zoom (meno giorni)">+</button>
+            <button type="button" id="vistaPrima" title="Giorni precedenti">◀</button>
+            <button type="button" id="vistaDopo" title="Giorni successivi">▶</button>
+            <button type="button" id="vistaTutto" title="Tutto il periodo">Tutto</button>
+        </div>
+        <span class="vista-periodo" id="vistaPeriodo"></span>
+        <button type="button" class="btn btn-light" id="schermoIntero" title="Ingrandisci a tutto schermo">⛶ Ingrandisci</button>
+    </div>
     <div id="andamento"></div>
 </div>
 
 <div class="grid2">
     <div class="card">
-        <h3>Corrispettivi per negozio</h3>
-        <div class="barre">
+        <div class="testa-grafico"><h3>Corrispettivi per negozio</h3>
+            <div class="gruppo" data-scelta="negozi"><button type="button" data-valore="barre">Barre</button><button type="button" data-valore="torta">Torta</button></div></div>
+        <div class="torta" id="tortaNegozi" hidden></div>
+        <div class="barre" id="barreNegozi">
             {% with massimo=dati.negozi.0.totale %}
             {% for r in dati.negozi %}
                 <div class="nome" title="{{ r.etichetta }}">{{ r.etichetta }}</div>
@@ -73,8 +105,10 @@
         </div>
     </div>
     <div class="card">
-        <h3>Mezzi di pagamento</h3>
-        <div class="barre">
+        <div class="testa-grafico"><h3>Mezzi di pagamento</h3>
+            <div class="gruppo" data-scelta="pagamenti"><button type="button" data-valore="barre">Barre</button><button type="button" data-valore="torta">Torta</button></div></div>
+        <div class="torta" id="tortaPagamenti" hidden></div>
+        <div class="barre" id="barrePagamenti">
             {% with massimo=dati.pagamenti|dictsortreversed:"importo"|first %}
             {% for r in dati.pagamenti %}
                 <div class="nome">{{ r.voce }}</div>
@@ -137,52 +171,189 @@
     const tip = document.getElementById("tip");
     if(!tip) return;
     const euro = v => v.toLocaleString("it-IT", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " €";
+    const esc = t => String(t).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
+    const perc = v => v.toLocaleString("it-IT", {minimumFractionDigits: 1, maximumFractionDigits: 1}) + "%";
     function mostra(testo, e){ tip.textContent = testo; tip.style.display = "block"; tip.style.left = (e.clientX + 14) + "px"; tip.style.top = (e.clientY + 14) + "px"; }
     function nascondi(){ tip.style.display = "none"; }
-    document.querySelectorAll("[data-tip]").forEach(el => {
-        el.addEventListener("mousemove", e => mostra(el.dataset.tip, e));
-        el.addEventListener("mouseleave", nascondi);
-    });
-
-    // Andamento giornaliero: una linea con area, mirino e valore del giorno al passaggio del mouse.
-    const dati = JSON.parse(document.getElementById("dati-grafici").textContent || "{}").giorni || [];
-    const box = document.getElementById("andamento");
-    if(!box || !dati.length) return;
-    const L = 900, H = 260, sx = 70, dx = 16, alto = 14, basso = 30;
-    const max = Math.max(...dati.map(d => d.valore), 1);
-    const passo = Math.pow(10, Math.floor(Math.log10(max)));
-    const tetto = Math.ceil(max / passo) * passo;
-    const x = i => sx + (dati.length === 1 ? (L - sx - dx) / 2 : i * (L - sx - dx) / (dati.length - 1));
-    const y = v => alto + (H - alto - basso) * (1 - v / tetto);
-    const ns = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(ns, "svg");
-    svg.setAttribute("viewBox", `0 0 ${L} ${H}`);
-    let html = "";
-    for(let k = 0; k <= 4; k++){
-        const v = tetto * k / 4, yy = y(v);
-        html += `<line x1="${sx}" x2="${L - dx}" y1="${yy}" y2="${yy}" stroke="#e6e9ee"/>` +
-                `<text x="${sx - 8}" y="${yy + 4}" text-anchor="end" font-size="11" fill="#667085">${Math.round(v).toLocaleString("it-IT")}</text>`;
+    function collegaTip(radice){
+        radice.querySelectorAll("[data-tip]").forEach(el => {
+            el.addEventListener("mousemove", e => mostra(el.dataset.tip, e));
+            el.addEventListener("mouseleave", nascondi);
+        });
     }
-    const ogni = Math.max(1, Math.ceil(dati.length / 12));
-    dati.forEach((d, i) => { if(i % ogni === 0) html += `<text x="${x(i)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="#667085">${d.etichetta}</text>`; });
-    const punti = dati.map((d, i) => `${x(i)},${y(d.valore)}`).join(" ");
-    html += `<polygon points="${x(0)},${y(0)} ${punti} ${x(dati.length - 1)},${y(0)}" fill="#cde2fb" opacity=".55"/>` +
-            `<polyline points="${punti}" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/>` +
-            `<line id="mirino" y1="${alto}" y2="${H - basso}" stroke="#52514e" stroke-dasharray="3 3" visibility="hidden"/>` +
-            `<circle id="punto" r="5" fill="#2a78d6" stroke="#fff" stroke-width="2" visibility="hidden"/>` +
-            `<rect x="${sx}" y="${alto}" width="${L - sx - dx}" height="${H - alto - basso}" fill="transparent" id="area"/>`;
-    svg.innerHTML = html;
-    box.appendChild(svg);
-    const area = svg.querySelector("#area"), mirino = svg.querySelector("#mirino"), punto = svg.querySelector("#punto");
-    area.addEventListener("mousemove", e => {
-        const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * L / r.width;
-        const i = Math.max(0, Math.min(dati.length - 1, Math.round((px - sx) / ((L - sx - dx) / Math.max(1, dati.length - 1)))));
-        const d = dati[i];
-        mirino.setAttribute("x1", x(i)); mirino.setAttribute("x2", x(i)); mirino.setAttribute("visibility", "visible");
-        punto.setAttribute("cx", x(i)); punto.setAttribute("cy", y(d.valore)); punto.setAttribute("visibility", "visible");
-        mostra(`${d.etichetta}: ${euro(d.valore)}`, e);
-    });
-    area.addEventListener("mouseleave", () => { mirino.setAttribute("visibility", "hidden"); punto.setAttribute("visibility", "hidden"); nascondi(); });
+    collegaTip(document);
+
+    const grafici = JSON.parse(document.getElementById("dati-grafici").textContent || "{}");
+    const dati = grafici.giorni || [];
+    // Tipo di grafico scelto: ricordato in questo browser (se si può).
+    const scelte = {andamento: "linea", negozi: "barre", pagamenti: "barre"};
+    try { Object.assign(scelte, JSON.parse(localStorage.getItem("primanota_grafici") || "{}")); } catch(e) {}
+    function salvaScelte(){ try { localStorage.setItem("primanota_grafici", JSON.stringify(scelte)); } catch(e) {} }
+    let inizio = 0, fine = Math.max(0, dati.length - 1);
+
+    // ---- Andamento: linea, area o colonne, con zoom sui giorni.
+    const ns = "http://www.w3.org/2000/svg";
+    const box = document.getElementById("andamento");
+    const card = document.getElementById("cardAndamento");
+    function disegnaAndamento(){
+        if(!box) return;
+        box.innerHTML = "";
+        if(!dati.length) return;
+        const vista = dati.slice(inizio, fine + 1);
+        const intero = document.fullscreenElement === card;
+        // Tutta la larghezza del riquadro, in pixel reali (niente deformazioni né bande vuote ai lati).
+        const L = Math.max(480, box.clientWidth || 900), H = intero ? Math.max(300, window.innerHeight - 170) : 280;
+        const sx = 70, dx = 16, alto = 14, basso = 30, larghezza = L - sx - dx;
+        const max = Math.max(...vista.map(d => d.valore), 1);
+        const passo = Math.pow(10, Math.floor(Math.log10(max)));
+        const tetto = Math.ceil(max / passo) * passo;
+        const n = vista.length, colonne = scelte.andamento === "colonne";
+        const x = colonne ? (i => sx + larghezza / n * (i + .5))
+                          : (i => sx + (n === 1 ? larghezza / 2 : i * larghezza / (n - 1)));
+        const y = v => alto + (H - alto - basso) * (1 - v / tetto);
+        const svg = document.createElementNS(ns, "svg");
+        svg.setAttribute("viewBox", `0 0 ${L} ${H}`);
+        svg.style.height = H + "px";
+        svg.style.width = L + "px";
+        let html = "";
+        for(let k = 0; k <= 4; k++){
+            const v = tetto * k / 4, yy = y(v);
+            html += `<line x1="${sx}" x2="${L - dx}" y1="${yy}" y2="${yy}" stroke="#e6e9ee"/>` +
+                    `<text x="${sx - 8}" y="${yy + 4}" text-anchor="end" font-size="11" fill="#667085">${v.toLocaleString("it-IT", {maximumFractionDigits: tetto < 10 ? 2 : 0})}</text>`;
+        }
+        const ogni = Math.max(1, Math.ceil(n / (intero ? 24 : 12)));
+        vista.forEach((d, i) => { if(i % ogni === 0) html += `<text x="${x(i)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="#667085">${d.etichetta}</text>`; });
+        if(colonne){
+            // Colonne con 2px di spazio e la sommità arrotondata (4px), appoggiate alla base.
+            const w = Math.min(56, Math.max(1, larghezza / n - 2)), r = Math.min(4, w / 2);
+            vista.forEach((d, i) => {
+                if(d.valore <= 0) return;
+                const x0 = x(i) - w / 2, y0 = y(d.valore), y1 = y(0), rr = Math.min(r, y1 - y0);
+                html += `<path class="colonna" data-i="${i}" fill="#2a78d6" d="M${x0},${y1} V${y0 + rr} Q${x0},${y0} ${x0 + rr},${y0} H${x0 + w - rr} Q${x0 + w},${y0} ${x0 + w},${y0 + rr} V${y1} Z"/>`;
+            });
+        } else {
+            const punti = vista.map((d, i) => `${x(i)},${y(d.valore)}`).join(" ");
+            if(scelte.andamento === "area")
+                html += `<polygon points="${x(0)},${y(0)} ${punti} ${x(n - 1)},${y(0)}" fill="#cde2fb" opacity=".75"/>`;
+            html += n === 1 ? `<circle cx="${x(0)}" cy="${y(vista[0].valore)}" r="4" fill="#2a78d6"/>`
+                            : `<polyline points="${punti}" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/>`;
+        }
+        html += `<line id="mirino" y1="${alto}" y2="${H - basso}" stroke="#52514e" stroke-dasharray="3 3" visibility="hidden"/>` +
+                `<circle id="punto" r="5" fill="#2a78d6" stroke="#fff" stroke-width="2" visibility="hidden"/>` +
+                `<rect x="${sx}" y="${alto}" width="${larghezza}" height="${H - alto - basso}" fill="transparent" id="area"/>`;
+        svg.innerHTML = html;
+        box.appendChild(svg);
+        const area = svg.querySelector("#area"), mirino = svg.querySelector("#mirino"), punto = svg.querySelector("#punto");
+        area.addEventListener("mousemove", e => {
+            const rc = svg.getBoundingClientRect(), px = (e.clientX - rc.left) * L / rc.width;
+            const i = colonne ? Math.max(0, Math.min(n - 1, Math.floor((px - sx) / (larghezza / n))))
+                              : Math.max(0, Math.min(n - 1, Math.round((px - sx) / (larghezza / Math.max(1, n - 1)))));
+            const d = vista[i];
+            mirino.setAttribute("x1", x(i)); mirino.setAttribute("x2", x(i)); mirino.setAttribute("visibility", "visible");
+            if(!colonne){ punto.setAttribute("cx", x(i)); punto.setAttribute("cy", y(d.valore)); punto.setAttribute("visibility", "visible"); }
+            svg.querySelectorAll(".colonna").forEach(c => c.setAttribute("fill", c.dataset.i == i ? "#1c5cab" : "#2a78d6"));
+            mostra(`${d.etichetta}: ${euro(d.valore)}`, e);
+        });
+        area.addEventListener("mouseleave", () => {
+            mirino.setAttribute("visibility", "hidden"); punto.setAttribute("visibility", "hidden");
+            svg.querySelectorAll(".colonna").forEach(c => c.setAttribute("fill", "#2a78d6")); nascondi();
+        });
+        // Stato dei pulsanti di zoom e periodo visibile.
+        const giorni = fine - inizio + 1;
+        document.getElementById("zoomPiu").disabled = giorni <= 3;
+        document.getElementById("zoomMeno").disabled = document.getElementById("vistaTutto").disabled = giorni >= dati.length;
+        document.getElementById("vistaPrima").disabled = inizio === 0;
+        document.getElementById("vistaDopo").disabled = fine >= dati.length - 1;
+        document.getElementById("vistaPeriodo").textContent = `${vista[0].etichetta} – ${vista[n - 1].etichetta} · ${n} giorn${n === 1 ? "o" : "i"}`;
+    }
+    function zoom(nuovi){
+        nuovi = Math.max(Math.min(3, dati.length), Math.min(dati.length, nuovi));
+        const centro = (inizio + fine) / 2;
+        inizio = Math.max(0, Math.round(centro - (nuovi - 1) / 2));
+        fine = inizio + nuovi - 1;
+        if(fine > dati.length - 1){ fine = dati.length - 1; inizio = fine - nuovi + 1; }
+        disegnaAndamento();
+    }
+    function sposta(verso){
+        const giorni = fine - inizio + 1, salto = Math.max(1, Math.floor(giorni / 3)) * verso;
+        inizio = Math.max(0, Math.min(dati.length - giorni, inizio + salto));
+        fine = inizio + giorni - 1;
+        disegnaAndamento();
+    }
+    if(box && dati.length){
+        document.getElementById("zoomPiu").onclick = () => zoom(Math.ceil((fine - inizio + 1) / 2));
+        document.getElementById("zoomMeno").onclick = () => zoom((fine - inizio + 1) * 2);
+        document.getElementById("vistaPrima").onclick = () => sposta(-1);
+        document.getElementById("vistaDopo").onclick = () => sposta(1);
+        document.getElementById("vistaTutto").onclick = () => { inizio = 0; fine = dati.length - 1; disegnaAndamento(); };
+        const intero = document.getElementById("schermoIntero");
+        intero.onclick = () => document.fullscreenElement ? document.exitFullscreen() : card.requestFullscreen?.();
+        let attesa;
+        window.addEventListener("resize", () => { clearTimeout(attesa); attesa = setTimeout(disegnaAndamento, 150); });
+        document.addEventListener("fullscreenchange", () => {
+            intero.textContent = document.fullscreenElement === card ? "✕ Riduci" : "⛶ Ingrandisci";
+            disegnaAndamento();
+        });
+    }
+
+    // ---- Negozi e mezzi di pagamento: barre o torta (ciambella) con legenda, valori e quote.
+    const COLORI = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
+    function raggruppa(voci){
+        voci = voci.filter(v => v.valore > 0).sort((a, b) => b.valore - a.valore);
+        if(voci.length <= COLORI.length) return voci;
+        const altri = voci.slice(COLORI.length - 1).reduce((s, v) => s + v.valore, 0);
+        return voci.slice(0, COLORI.length - 1).concat([{etichetta: "Altri", valore: altri}]);
+    }
+    function disegnaTorta(contenitore, voci){
+        const dati = raggruppa(voci), totale = dati.reduce((s, v) => s + v.valore, 0) || 1;
+        const R = 100, r = 56, c = 110;
+        let angolo = -Math.PI / 2, spicchi = "";
+        dati.forEach((v, i) => {
+            const a = 2 * Math.PI * v.valore / totale, fine = angolo + a, grande = a > Math.PI ? 1 : 0;
+            const p = (raggio, t) => `${c + raggio * Math.cos(t)},${c + raggio * Math.sin(t)}`;
+            const tip = esc(`${v.etichetta}: ${euro(v.valore)} · ${perc(v.valore / totale * 100)}`);
+            spicchi += a >= 2 * Math.PI - 1e-6
+                ? `<circle cx="${c}" cy="${c}" r="${(R + r) / 2}" fill="none" stroke="${COLORI[i]}" stroke-width="${R - r}" data-tip="${tip}"/>`
+                : `<path d="M${p(R, angolo)} A${R},${R} 0 ${grande} 1 ${p(R, fine)} L${p(r, fine)} A${r},${r} 0 ${grande} 0 ${p(r, angolo)} Z"
+                         fill="${COLORI[i]}" stroke="#fff" stroke-width="2" data-tip="${tip}"/>`;
+            angolo = fine;
+        });
+        contenitore.innerHTML = `<svg viewBox="0 0 220 220">${spicchi}</svg><div class="legenda">` +
+            dati.map((v, i) => `<i style="background:${COLORI[i]}"></i><span>${esc(v.etichetta)}</span>` +
+                               `<span class="valore">${euro(v.valore)} · ${perc(v.valore / totale * 100)}</span>`).join("") + "</div>";
+        collegaTip(contenitore);
+    }
+    function mostraCategorie(chiave, idTorta, idBarre, voci){
+        const torta = document.getElementById(idTorta), barre = document.getElementById(idBarre);
+        if(!torta || !barre) return;
+        const isTorta = scelte[chiave] === "torta" && voci.some(v => v.valore > 0);
+        torta.hidden = !isTorta; barre.hidden = isTorta;
+        if(isTorta) disegnaTorta(torta, voci);
+    }
+
+    function aggiornaPulsanti(){
+        document.querySelectorAll(".gruppo[data-scelta]").forEach(g => g.querySelectorAll("button").forEach(b =>
+            b.classList.toggle("attivo", scelte[g.dataset.scelta] === b.dataset.valore)));
+    }
+    document.querySelectorAll(".gruppo[data-scelta]").forEach(g => g.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+        scelte[g.dataset.scelta] = b.dataset.valore; salvaScelte(); disegnaTutto();
+    })));
+    function disegnaTutto(){
+        aggiornaPulsanti();
+        disegnaAndamento();
+        mostraCategorie("negozi", "tortaNegozi", "barreNegozi", grafici.negozi || []);
+        mostraCategorie("pagamenti", "tortaPagamenti", "barrePagamenti", grafici.pagamenti || []);
+    }
+    disegnaTutto();
+
+    // ---- Stampa: PDF con gli stessi filtri, tipi di grafico e vista dell'andamento.
+    const stampa = document.getElementById("stampaPdf");
+    if(stampa) stampa.onclick = () => {
+        const q = new URLSearchParams(new FormData(document.querySelector("form.filters")));
+        q.set("andamento", scelte.andamento); q.set("grafico_negozi", scelte.negozi); q.set("grafico_pagamenti", scelte.pagamenti);
+        if(dati.length && (inizio > 0 || fine < dati.length - 1)){ q.set("vista_da", dati[inizio].data); q.set("vista_a", dati[fine].data); }
+        apriStampa("/primanota/statistiche/pdf/?" + q.toString());
+    };
 })();
 </script>
 {% endblock %}

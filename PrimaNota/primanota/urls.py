@@ -24,6 +24,7 @@ urlpatterns = [
     path("versamenti/note/", views.versamenti_note, name="primanota_versamenti_note"),
     path("versamenti/monitor/", views.versamenti_monitor, name="primanota_versamenti_monitor"),
     path("statistiche/", views.statistiche, name="primanota_statistiche"),
+    path("statistiche/pdf/", views.statistiche_pdf, name="primanota_statistiche_pdf"),
     path("impostazioni-email/", views.impostazioni_email, name="primanota_impostazioni_email"),
     path("importazione/<str:lavoro>/", views.stato_importazione, name="primanota_importazione"),
 ]
