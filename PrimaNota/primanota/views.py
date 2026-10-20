@@ -552,8 +552,11 @@ def sospesi(request):
     negozi = negozi_attivi_ordinati()
     etichette = {n["id"]: etichetta_negozio(n) for n in negozi}
     righe = [s for s in tutti if not stato or s.stato == stato]
+    from .services.sospesi import cassieri
+    nomi_cassieri = cassieri(righe[:2000])
     for s in righe:
         s.negozio_label = etichette.get(s.negozio_id, s.codice_negozio)
+        s.cassiere, s.cassiere_emissione = nomi_cassieri.get(s.id, ("", ""))
 
     if request.GET.get("formato") == "pdf":
         # Gli scontrini interi, più per foglio, con un foglio nuovo per ogni punto vendita.
@@ -563,7 +566,8 @@ def sospesi(request):
         voci = []
         for s in sorted(righe, key=lambda s: (ordine.get(s.negozio_id, 9999), s.data, s.ora)):
             stato_testo = {"sospeso": "ancora sospeso", "richiamato": "richiamato, non emesso", "emesso": "emesso"}[s.stato]
-            didascalia = (f"{s.data:%d/%m/%Y} {s.ora:%H:%M:%S} · cassa {s.cassa} · documento {s.numero} · "
+            didascalia = (f"{s.data:%d/%m/%Y} {s.ora:%H:%M:%S} · cassa {s.cassa}"
+                          + (f" · {s.cassiere}" if s.cassiere else "") + f" · documento {s.numero} · "
                           f"{str(s.importo).replace('.', ',')} EUR · {stato_testo}")   # il carattere della stampa non ha l'euro
             voci.append((s.negozio_label, didascalia, "testo",
                          servizio.testo_scontrino(s.negozio_id, s.data, s.cassa, s.numero) or servizio.NON_TROVATO))

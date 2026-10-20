@@ -50,7 +50,7 @@ table.sospesi tr.dettaglio td{background:#f6f8fb}
 
 <div class="card">
     <table class="table sospesi">
-        <thead><tr><th>Negozio</th><th>Sospeso il</th><th>Cassa</th><th>Scontrino</th><th class="num">Importo</th><th>Stato</th>
+        <thead><tr><th>Negozio</th><th>Sospeso il</th><th>Cassa</th><th>Cassiere</th><th>Scontrino</th><th class="num">Importo</th><th>Stato</th>
             <th>Richiamato</th><th>Emesso</th><th class="num">Importo emesso</th><th></th><th></th></tr></thead>
         <tbody>
         {% for s in righe %}
@@ -58,20 +58,21 @@ table.sospesi tr.dettaglio td{background:#f6f8fb}
                 <td>{{ s.negozio_label }}</td>
                 <td>{{ s.data|date:"d/m/Y" }} {{ s.ora|time:"H:i:s" }}</td>
                 <td>{{ s.cassa|default:"—" }}</td>
+                <td>{{ s.cassiere|default:"—" }}</td>
                 <td>{{ s.numero|default:"—" }} <span class="small">{{ s.identificativo }}</span></td>
                 <td class="num">{{ s.importo|euro }}</td>
                 <td>{% if s.stato == "emesso" %}<span class="badge badge-ok">✓ Emesso</span>
                     {% elif s.stato == "richiamato" %}<span class="badge badge-no">Richiamato, non emesso</span>
                     {% else %}<span class="badge badge-red">⚠ Ancora sospeso</span>{% endif %}</td>
                 <td>{% if s.richiamato_data %}{{ s.richiamato_data|date:"d/m/Y" }} {{ s.richiamato_ora|time:"H:i:s" }}{% if s.cassa_richiamo != s.cassa %} · cassa {{ s.cassa_richiamo }}{% endif %}{% else %}—{% endif %}</td>
-                <td>{% if s.emesso_data %}{{ s.emesso_data|date:"d/m/Y" }} {{ s.emesso_ora|time:"H:i:s" }} · scontrino {{ s.numero_emesso|default:"—" }}{% if s.cassa_emissione != s.cassa %} · cassa {{ s.cassa_emissione }}{% endif %}{% else %}—{% endif %}</td>
+                <td>{% if s.emesso_data %}{{ s.emesso_data|date:"d/m/Y" }} {{ s.emesso_ora|time:"H:i:s" }} · scontrino {{ s.numero_emesso|default:"—" }}{% if s.cassa_emissione != s.cassa %} · cassa {{ s.cassa_emissione }}{% endif %}{% if s.cassiere_emissione and s.cassiere_emissione != s.cassiere %}<br><span class="small">da {{ s.cassiere_emissione }}</span>{% endif %}{% else %}—{% endif %}</td>
                 <td class="num">{% if s.importo_emesso is not None %}{{ s.importo_emesso|euro }}{% if s.differenza %}<br><span class="badge badge-no">{% if s.differenza > 0 %}+{% endif %}{{ s.differenza|euro }}</span>{% endif %}{% else %}—{% endif %}</td>
                 <td><button class="btn btn-light" type="button" onclick="mostraScontrini(this, {{ s.id }})">Scontrini</button></td>
                 <td><a href="/primanota/giornata/{{ s.negozio_id }}/{{ s.data|date:'Y-m-d' }}/">Giornata</a></td>
             </tr>
-            <tr class="dettaglio" id="dettaglio-{{ s.id }}" hidden><td colspan="11"><div class="affiancati"></div></td></tr>
+            <tr class="dettaglio" id="dettaglio-{{ s.id }}" hidden><td colspan="12"><div class="affiancati"></div></td></tr>
         {% empty %}
-            <tr><td colspan="11">Nessuno scontrino sospeso per i filtri scelti.</td></tr>
+            <tr><td colspan="12">Nessuno scontrino sospeso per i filtri scelti.</td></tr>
         {% endfor %}
         </tbody>
     </table>

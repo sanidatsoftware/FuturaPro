@@ -1173,6 +1173,10 @@ class TestContenutoScontriniSospesi(Base):
         self.assertFalse(d["sospeso"]["trovato"])
         self.assertNotIn("emesso", d)
         r = uff.get("/primanota/sospesi/", {"data_da": "2026-05-01", "data_a": "2026-05-31"})
+        # Cassiere: il documento sospeso non ha «CASSIERE nnn» né il nome stampato, quindi si prende quello
+        # dello scontrino precedente della stessa cassa (con «?»); il documento 99 non è nel SysSpy.
+        self.assertEqual({x.numero: x.cassiere for x in r.context["righe"]}, {2: "MARIO ROSSI ?", 99: ""})
+        self.assertContains(r, "<th>Cassiere</th>")
         self.assertContains(r, 'class="r-emesso"')
         self.assertContains(r, 'class="r-sospeso"')
 
