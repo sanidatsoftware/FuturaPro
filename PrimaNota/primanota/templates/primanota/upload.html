@@ -38,13 +38,15 @@
                 <span class="small">Attivata da {{ emergenza.attivata_da }} il {{ emergenza.attivata_il|date:"d/m/Y H:i" }} · Motivo: {{ emergenza.motivo }}</span></div>
             {% elif blocco_prima_nota %}
             <div class="message-error">{{ blocco_prima_nota }}</div>
-            <details class="emergenza-box"><summary>La prima nota non si può compilare per un problema tecnico? Attiva la modalità Emergenza</summary>
+            <details class="emergenza-box"><summary title="Se WebNet non ti consente di certificare la prima nota per un'incongruenza nei dati, puoi inviare le scansioni in modalità Emergenza.">La prima nota non si può compilare per un problema tecnico? Attiva la modalità Emergenza</summary>
                 <form method="post" onsubmit="return confirm('Attivare la modalità Emergenza per questa giornata? La sede riceverà la segnalazione.')">
                     {% csrf_token %}<input type="hidden" name="azione" value="emergenza"><input type="hidden" name="data" value="{{ giorno }}">
-                    <p class="small">Usala solo se il gestionale non permette di compilare o certificare la prima nota. Potrai inviare
+                    <p class="small">Usala solo se WebNet non ti consente di compilare o certificare la prima nota, ad esempio per
+                        un'incongruenza nei dati. Potrai inviare
                         le scansioni subito; la sede vedrà la giornata in giallo lampeggiante finché la prima nota non sarà registrata.</p>
                     <textarea name="motivo" required placeholder="Motivo (es. gestionale non raggiungibile, errore nei dati del database…)"></textarea>
-                    <button class="btn btn-red" style="margin-top:8px">⚠ Attiva Emergenza</button>
+                    <button class="btn btn-red" style="margin-top:8px"
+                        title="Da usare solo se WebNet non ti consente di certificare la prima nota per un'incongruenza nei dati: potrai inviare subito le scansioni della giornata e la sede verrà avvisata.">⚠ Attiva Emergenza</button>
                 </form></details>
             {% endif %}
             <form method="post" enctype="multipart/form-data" id="uploadForm" data-attesa="Salvataggio della giornata in corso…">
