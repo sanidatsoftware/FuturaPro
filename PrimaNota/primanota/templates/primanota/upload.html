@@ -79,7 +79,7 @@
                     <label>Note per l'ufficio</label>
                     <select name="tipo_nota" style="margin-bottom:6px">{% for k, v in tipi_nota %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
                     <div class="small" id="avvisoVersamento" hidden style="margin-bottom:6px">{% include "primanota/_destinatari_versamento.html" %}</div>
-                    <textarea name="note" id="noteGiornata" placeholder="Note facoltative, un'anomalia o una richiesta di contatto: arrivano all'ufficio con la giornata"></textarea>
+                    <textarea name="note" id="noteGiornata" disabled placeholder="Scegli prima il tipo di nota: arriva all'ufficio con la giornata"></textarea>
                 </div>
                 <div id="mancanti" class="file-info" style="display:none"></div>
                 <button type="submit" class="btn btn-orange" id="salva">Salva</button>
@@ -205,7 +205,12 @@ function controllaMancanti(){
 }
 document.getElementById("noteGiornata").addEventListener("input", controllaMancanti);
 // Scegliendo «Nota sul versamento» si vede a chi verrà inviata.
+// «Nessuna» (predefinita): il testo non si scrive.
 document.querySelector("select[name=tipo_nota]").addEventListener("change", function(){
+    const testo = document.getElementById("noteGiornata");
+    testo.disabled = !this.value;
+    if(!this.value) testo.value = ""; else testo.focus();
+    controllaMancanti();
     document.getElementById("avvisoVersamento").hidden = this.value !== "VERSAMENTO";
 });
 // Le foto si rimpiccioliscono qui, prima dell'invio: lato lungo 2000 px, JPEG all'80%.

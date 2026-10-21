@@ -316,6 +316,13 @@ class TestPagine(Base):
     def test_note_dal_negozio_e_chiusura_in_ufficio(self):
         pv = self.client_per("pv@x")
         # La nota si scrive sotto gli allegati e si salva con «Salva», anche senza allegati.
+        pagina = pv.get("/primanota/upload/", {"data": "2026-05-28"})
+        self.assertEqual([v for _, v in pagina.context["tipi_nota"]],
+                         ["Nessuna", "Nota sul versamento", "Nota per Anomalia Tecnica", "Richiesta Contatto"])
+        # Con «Nessuna» il testo non si salva.
+        r = pv.post("/primanota/upload/", {"data_documento": "2026-05-28", "tipo_nota": "", "note": "ignorata"})
+        self.assertContains(r, "scegli il tipo di nota")
+        self.assertFalse(Nota.objects.exists())
         r = pv.post("/primanota/upload/", {"data_documento": "2026-05-28", "tipo_nota": "RICHIESTA_CONTATTO", "note": "Chiamatemi"})
         self.assertEqual(r.status_code, 302)
         nota = Nota.objects.get()
@@ -623,7 +630,7 @@ class TestVersamentiNoteStatistiche(Base):
         self.carica(self.client_per("pv@x"), "Versamenti contante")
         pv = self.client_per("pv@x")
         pagina = pv.get("/primanota/giornata/10/2026-05-28/")
-        self.assertContains(pagina, "Nota sul versamento (inviata per email)")
+        self.assertContains(pagina, '<option value="VERSAMENTO">Nota sul versamento</option>')
         self.assertContains(pagina, "Sarà inviata per email")
         with mock.patch("primanota.services.posta.invia") as invia:
             pv.post("/primanota/giornata/10/2026-05-28/", {"tipo": "VERSAMENTO", "testo": "banconota da 50 non registrata"})
@@ -1545,7 +1552,7 @@ class TestPrimaNotaPrimaDelleScansioni(Base):
             r = pv.post("/primanota/upload/", dati)
             self.assertContains(r, "compila e certifica prima la prima nota")
             # La sola nota si salva comunque.
-            self.assertEqual(pv.post("/primanota/upload/", {"data_documento": "2026-05-28", "note": "manca la prima nota"}).status_code, 302)
+            self.assertEqual(pv.post("/primanota/upload/", {"data_documento": "2026-05-28", "tipo_nota": "ANOMALIA", "note": "manca la prima nota"}).status_code, 302)
         from django.core.cache import cache
         cache.clear()
         with self.prima_nota([("5048", 20260528, 12, 0, Decimal("0"), 3)]):   # 3 movimenti non certificati
@@ -1558,9 +1565,12 @@ class TestPrimaNotaPrimaDelleScansioni(Base):
         cache.clear()
         with self.prima_nota([("5048", 20260528, 12, 0, Decimal("0"), 0)]):
             r = pv.post("/primanota/upload/", {"data_documento": "2026-05-28", "documento_fiscale": self.pdf(),
-                                               "documento_pos": self.pdf(), "documento_versamenti": self.pdf(), "note": "ok"})
+                                               "documento_pos": self.pdf(), "documento_versamenti": self.pdf(),
+                                               "tipo_nota": "ANOMALIA", "note": "ok"})
         self.assertEqual(r.status_code, 302)
         self.assertEqual(len(self.baserow.righe), 3)
+        # La nota è una sola, non copiata su ogni allegato.
+        self.assertEqual({x["Note"] for x in self.baserow.righe.values()}, {""})
         self.assertEqual(Nota.objects.filter(testo="ok").count(), 1)
 
 

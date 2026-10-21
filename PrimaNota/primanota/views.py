@@ -173,8 +173,10 @@ def _salva_giornata(request, user, negozio_id):
         return "Indica la data del documento."
     voci = _voci_caricamento(negozio_id, giorno)
     file_per_tipo = {v["tipo"]["id"]: request.FILES.get(f"documento_{v['tipo']['chiave']}") for v in voci}
-    note = request.POST.get("note", "").strip()
-    tipo_nota = request.POST.get("tipo_nota") if request.POST.get("tipo_nota") in dict(TIPI_NOTA_CON_VERSAMENTO) else Nota.NOTA
+    tipo_nota = request.POST.get("tipo_nota", "")
+    if tipo_nota not in dict(SCELTE_NOTA_NEGOZIO):
+        tipo_nota = ""
+    note = request.POST.get("note", "").strip() if tipo_nota else ""   # «Nessuna»: niente nota
 
     def salva_nota():
         if tipo_nota == NOTA_VERSAMENTO:
@@ -184,7 +186,7 @@ def _salva_giornata(request, user, negozio_id):
     da_salvare = [v for v in voci if file_per_tipo[v["tipo"]["id"]]]
     if not da_salvare:
         if not note:
-            return "Allega almeno un documento o scrivi una nota."
+            return "Allega almeno un documento o scegli il tipo di nota e scrivila."
         salva_nota()
         return None
     blocco = _blocco_prima_nota(negozio_id, giorno)
@@ -206,7 +208,8 @@ def _salva_giornata(request, user, negozio_id):
     for v in da_salvare:
         t = v["tipo"]["id"]
         try:
-            risultato = crea_scansione(user, negozio_id, giorno, t, ottimizza(file_per_tipo[t]), cassa=casse[t], note=note)
+            # La nota non si copia su ogni allegato: è una sola, tra le note della giornata.
+            risultato = crea_scansione(user, negozio_id, giorno, t, ottimizza(file_per_tipo[t]), cassa=casse[t])
         except RuntimeError as exc:
             risultato = {"error": str(exc)}
         if "error" in risultato:
@@ -221,6 +224,9 @@ def _salva_giornata(request, user, negozio_id):
 # Nei moduli delle note, oltre ai tipi normali: la nota sul versamento contante, inviata per email.
 NOTA_VERSAMENTO = "VERSAMENTO"
 TIPI_NOTA_CON_VERSAMENTO = Nota.TIPI + [(NOTA_VERSAMENTO, "Nota sul versamento (inviata per email)")]
+# Le note che scrive il negozio, in quest'ordine; nel modulo della giornata si parte da «Nessuna».
+SCELTE_NOTA_NEGOZIO = [("", "Nessuna"), (NOTA_VERSAMENTO, "Nota sul versamento"),
+                       (Nota.ANOMALIA, "Nota per Anomalia Tecnica"), (Nota.RICHIESTA_CONTATTO, "Richiesta Contatto")]
 
 
 def _nota_versamento(user, negozio_id, giorno, testo, scansione=None):
@@ -333,7 +339,7 @@ def upload(request):
         request, scansioni=scansioni, error=error, message=message, ieri=ieri, giorno=giorno, voci=voci,
         blocco_prima_nota=_blocco_prima_nota(negozio_id, giorno),
         emergenza=Emergenza.objects.filter(negozio_id=negozio_id, data=giorno).first(),
-        tipi_nota=TIPI_NOTA_CON_VERSAMENTO, note=Nota.objects.filter(negozio_id=negozio_id)[:30],
+        tipi_nota=SCELTE_NOTA_NEGOZIO, note=Nota.objects.filter(negozio_id=negozio_id)[:30],
         destinatari=DestinatarioEmail.objects.filter(attivo=True), giornate=_giornate_recenti(negozio_id),
         negozio_id=negozio_id,
         negozio=etichetta_negozio(negozio(negozio_id))))
@@ -494,7 +500,8 @@ def giornata(request, negozio_id, giorno):
         emergenza=Emergenza.objects.filter(negozio_id=negozio_id, data=giorno).first(),
         stato_giornata=giornate_stato(negozio_id, corrente, con_scansioni=bool(scansioni)), avviso_stato=request.GET.get("avviso_stato") == "1",
         note=Nota.objects.filter(negozio_id=negozio_id, data=giorno, **({} if vede_versamenti else {"versamento": False})),
-        tipi_nota=TIPI_NOTA_CON_VERSAMENTO if vede_versamenti else Nota.TIPI,
+        tipi_nota=(SCELTE_NOTA_NEGOZIO[1:] if is_store_user(request.utente_primanota)
+                   else TIPI_NOTA_CON_VERSAMENTO if vede_versamenti else Nota.TIPI),
         destinatari=DestinatarioEmail.objects.filter(attivo=True) if vede_versamenti else []))
 
 
