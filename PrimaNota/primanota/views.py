@@ -7,6 +7,7 @@ from decimal import Decimal
 from functools import wraps
 from pathlib import Path
 
+from django.db import transaction
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -1386,22 +1387,28 @@ def banche(request):
         istituto = IstitutoCredito.objects.filter(pk=request.POST.get("istituto")).first() if request.POST.get("istituto") else None
         if IstitutoCredito.objects.filter(nome__iexact=nome).exclude(pk=getattr(istituto, "pk", None)).exists():
             return redirect("/primanota/banche/?errore=doppio")
-        istituto = istituto or IstitutoCredito()
-        istituto.nome = nome
-        istituto.save()
-        istituto.tipologie.all().delete()
-        visti = set()
-        for codice, _ in CAUSALI_POS:
-            for riga in request.POST.get(f"causale_{codice}", "").splitlines():
-                descrizione = " ".join(riga.split())
-                if descrizione and _chiave(descrizione) not in visti:
-                    visti.add(_chiave(descrizione))
-                    TipologiaPos.objects.create(istituto=istituto, causale=codice, descrizione=descrizione)
-        # Un punto vendita ha un solo istituto: sceglierlo qui lo toglie dagli altri.
-        scelti = set(request.POST.getlist("negozi"))
-        IstitutoNegozio.objects.filter(istituto=istituto).exclude(codice_negozio__in=scelti).delete()
-        for codice in scelti:
-            IstitutoNegozio.objects.update_or_create(codice_negozio=codice, defaults={"istituto": istituto})
+
+        def salva():
+            # Tutto insieme: o si salva l'istituto intero o niente.
+            with transaction.atomic():
+                i = istituto or IstitutoCredito()
+                i.nome = nome
+                i.save()
+                i.tipologie.all().delete()
+                visti = set()
+                for codice, _ in CAUSALI_POS:
+                    for riga in request.POST.get(f"causale_{codice}", "").splitlines():
+                        descrizione = " ".join(riga.split())
+                        if descrizione and _chiave(descrizione) not in visti:
+                            visti.add(_chiave(descrizione))
+                            TipologiaPos.objects.create(istituto=i, causale=codice, descrizione=descrizione)
+                # Un punto vendita ha un solo istituto: sceglierlo qui lo toglie dagli altri.
+                scelti = set(request.POST.getlist("negozi"))
+                IstitutoNegozio.objects.filter(istituto=i).exclude(codice_negozio__in=scelti).delete()
+                for codice in scelti:
+                    IstitutoNegozio.objects.update_or_create(codice_negozio=codice, defaults={"istituto": i})
+
+        importazione._con_riprova(salva)
         return redirect("/primanota/banche/?salvato=1")
 
     negozi = negozi_attivi_ordinati()
