@@ -135,8 +135,13 @@ class FileSysSpy(models.Model):
 
     @property
     def controlli(self):
-        from .services.controlli import controlli
-        return controlli(self)
+        from .services.controlli import controlli, giustifica
+        return giustifica(controlli(self), self.giustificazioni())
+
+    def giustificazioni(self):
+        """{nome del controllo: giustificazione} per questa cassa e giornata."""
+        return {g.controllo: g for g in GiustificazioneControllo.objects.filter(
+            negozio_id=self.negozio_id, data=self.data, cassa=self.cassa)}
 
 class DocumentoSysSpy(models.Model):
     """Documenti particolari trovati nel SysSpy, da mostrare accanto alle scansioni."""
@@ -508,3 +513,21 @@ class IstitutoNegozio(models.Model):
 
     codice_negozio = models.CharField(max_length=20, unique=True)
     istituto = models.ForeignKey(IstitutoCredito, on_delete=models.CASCADE, related_name="negozi")
+
+
+class GiustificazioneControllo(models.Model):
+    """
+    Spiegazione di un'anomalia dei controlli di una cassa (es. «Differenza POS» perché il POS si è guastato e la
+    chiusura non è stata stampata). Con la giustificazione l'anomalia non è più da chiarire, ma resta visibile.
+    """
+
+    negozio_id = models.IntegerField(db_index=True)
+    data = models.DateField(db_index=True)
+    cassa = models.IntegerField()
+    controllo = models.CharField(max_length=40, help_text="Nome del controllo: POS, Non riscosso, Scontrini")
+    testo = models.TextField()
+    creata_da = models.CharField(max_length=200)
+    creata_il = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["negozio_id", "data", "cassa", "controllo"], name="giustificazione_unica")]

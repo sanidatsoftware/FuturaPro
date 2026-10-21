@@ -24,11 +24,16 @@ _ESECUTORE = ThreadPoolExecutor(max_workers=4, thread_name_prefix="monitor-baser
 
 def _sysspy_per_giorno(dal, al):
     out = {}
+    from ..models import GiustificazioneControllo
+    from .controlli import quadrato
+    giustificati = {}
+    for g in GiustificazioneControllo.objects.filter(data__range=(dal, al)):
+        giustificati.setdefault((g.negozio_id, g.data, g.cassa), set()).add(g.controllo)
     for f in FileSysSpy.objects.filter(data__range=(dal, al)).defer(
             "elenco_scontrini", "chiusura_pos", "chiusura_fiscale"):
         cella = out.setdefault((f.negozio_id, f.data.isoformat()), {"casse": 0, "squadrate": 0, "tipi": set()})
         cella["casse"] += 1
-        if not f.quadrato:
+        if not quadrato(f, giustificati.get((f.negozio_id, f.data, f.cassa), set())):
             cella["squadrate"] += 1
     # Resi e abortite trovati nel SysSpy: servono alle regole "obbligatoria solo se nel SysSpy".
     # Le abortite stampate per una sospensione dello scontrino non chiedono la scansione.

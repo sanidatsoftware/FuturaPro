@@ -15,6 +15,7 @@ from decimal import Decimal
 OK = "ok"
 ATTENZIONE = "attenzione"
 INFO = "info"
+GIUSTIFICATO = "giustificato"   # anomalia spiegata dal negozio o dalla sede (es. POS guasto): non è più da chiarire
 
 
 def _euro(valore):
@@ -127,6 +128,18 @@ def controlli(f, dettagli=True):
     return out
 
 
-def quadrato(f):
-    return all(c["esito"] != ATTENZIONE for c in controlli(f, dettagli=False))
+def giustifica(elenco, giustificazioni):
+    """Le anomalie con una giustificazione ({nome del controllo: GiustificazioneControllo}) diventano «giustificato»."""
+    for c in elenco:
+        g = giustificazioni.get(c["nome"])
+        if g and c["esito"] == ATTENZIONE:
+            c["esito"], c["giustificazione"] = GIUSTIFICATO, g
+    return elenco
+
+
+def quadrato(f, giustificati=None):
+    """Nessuna anomalia da chiarire. giustificati: nomi dei controlli giustificati per la cassa (se None si leggono)."""
+    if giustificati is None:
+        giustificati = set(f.giustificazioni())
+    return all(c["esito"] != ATTENZIONE or c["nome"] in giustificati for c in controlli(f, dettagli=False))
 

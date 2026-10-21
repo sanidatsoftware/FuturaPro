@@ -1889,3 +1889,44 @@ class TestSoloVersamento(Base):
         RegolaDocumento.objects.filter(tipo_documento="Chiusura fiscale").update(obbligo=RegolaDocumento.SEMPRE)
         chiusure = self.cella("/primanota/monitor/", ieri)
         self.assertEqual((chiusure["state"], chiusure["mancanti"]), ("incomplete", ["Chiusura fiscale"]))
+
+
+class TestGiustificazioni(Base):
+    def importa_con_differenza_pos(self):
+        # Chiusura POS di 10,00 contro 18,00 di carte negli scontrini: «Differenza POS».
+        cartella = Path(self.archivio) / "share"
+        cartella.mkdir()
+        testo = (DATI / "SysSpy.20260528.1").read_text(encoding="latin-1").replace(
+            "9832     TOTALE POS EUR     18,00", "9832     TOTALE POS EUR     10,00")
+        (cartella / "SysSpy.20260528.1").write_text(testo, encoding="latin-1")
+        importazione.importa_condivisione(Condivisione.objects.create(negozio_id=10, codice_negozio="5048", percorso=str(cartella)))
+        return FileSysSpy.objects.get()
+
+    def test_il_negozio_giustifica_la_differenza_pos(self):
+        f = self.importa_con_differenza_pos()
+        pos = next(c for c in f.controlli if c["nome"] == "POS")
+        self.assertEqual(pos["esito"], "attenzione")
+        self.assertFalse(f.quadrato)
+        pv = self.client_per("pv@x")
+        self.assertContains(pv.get("/primanota/giornata/10/2026-05-28/"), "Giustifica questa anomalia")
+        pv.post("/primanota/giornata/10/2026-05-28/", {"azione": "giustifica", "cassa": "1", "controllo": "POS",
+                                                       "testo": "POS guasto, chiusura non stampata"})
+        f = FileSysSpy.objects.get()
+        pos = next(c for c in f.controlli if c["nome"] == "POS")
+        self.assertEqual((pos["esito"], pos["giustificazione"].testo), ("giustificato", "POS guasto, chiusura non stampata"))
+        self.assertTrue(f.quadrato)
+        # La sede la riceve tra le anomalie e la vede nella giornata; il monitor non segna più la cassa.
+        self.assertTrue(Nota.objects.filter(tipo="ANOMALIA", testo__contains="POS guasto").exists())
+        self.assertContains(self.client_per("ufficio@x").get("/primanota/giornata/10/2026-05-28/"), "Togli giustificazione")
+        from primanota.services.monitor import _sysspy_per_giorno
+        self.assertEqual(_sysspy_per_giorno(date(2026, 5, 28), date(2026, 5, 28))[(10, "2026-05-28")]["squadrate"], 0)
+        # Un controllo senza anomalia non si giustifica; la giustificazione si può togliere.
+        pv.post("/primanota/giornata/10/2026-05-28/", {"azione": "giustifica", "cassa": "1", "controllo": "Scontrini", "testo": "x"})
+        self.client_per("ufficio@x").post("/primanota/giornata/10/2026-05-28/", {"azione": "togli_giustificazione", "cassa": "1", "controllo": "POS"})
+        from primanota.models import GiustificazioneControllo
+        self.assertFalse(GiustificazioneControllo.objects.exists())
+        self.assertFalse(FileSysSpy.objects.get().quadrato)
+        # Un altro negozio non può.
+        self.client_per("altro_pv@x").post("/primanota/giornata/10/2026-05-28/", {"azione": "giustifica", "cassa": "1",
+                                                                                 "controllo": "POS", "testo": "x"})
+        self.assertFalse(GiustificazioneControllo.objects.exists())

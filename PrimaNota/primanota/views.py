@@ -412,6 +412,35 @@ def _note_negozi(request, filtro_negozio, negozi):
     return [(n, etichetta_negozio(negozi.get(n.negozio_id)) or n.negozio_id) for n in note[:50]]
 
 
+def _giustificazione(request, negozio_id, giorno):
+    """
+    Giustifica (o toglie la giustificazione di) un'anomalia dei controlli di una cassa. Se è il negozio a
+    giustificare, la sede riceve un'anomalia in «Note e anomalie» con il motivo.
+    """
+    from .models import GiustificazioneControllo
+    user = request.utente_primanota
+    try:
+        cassa = int(request.POST.get("cassa", ""))
+    except ValueError:
+        return
+    controllo = request.POST.get("controllo", "")
+    f = FileSysSpy.objects.filter(negozio_id=negozio_id, data=giorno, cassa=cassa).first()
+    anomalia = next((c for c in (f.controlli if f else []) if c["nome"] == controllo and c["esito"] in ("attenzione", "giustificato")), None)
+    if not anomalia:
+        return
+    if request.POST.get("azione") == "togli_giustificazione":
+        GiustificazioneControllo.objects.filter(negozio_id=negozio_id, data=giorno, cassa=cassa, controllo=controllo).delete()
+        return
+    testo = request.POST.get("testo", "").strip()
+    if not testo:
+        return
+    GiustificazioneControllo.objects.update_or_create(negozio_id=negozio_id, data=giorno, cassa=cassa, controllo=controllo,
+                                                      defaults={"testo": testo, "creata_da": nome_utente(user)})
+    if is_store_user(user):
+        Nota.objects.create(negozio_id=negozio_id, data=giorno, tipo=Nota.ANOMALIA, creata_da=nome_utente(user),
+                            testo=f"Cassa {cassa} · {anomalia['titolo']}: giustificata dal negozio. Motivo: {testo}")
+
+
 @_accesso()
 def giornata(request, negozio_id, giorno):
     """Riepilogo di una giornata. Il negozio vede la propria in sola lettura (e può scrivere note)."""
@@ -427,6 +456,9 @@ def giornata(request, negozio_id, giorno):
 
     # Le note sui versamenti le vedono il negozio e la sede che gestisce i versamenti.
     vede_versamenti = is_store_user(request.utente_primanota) or can_see_versamenti(request.utente_primanota)
+    if request.method == "POST" and request.POST.get("azione") in ("giustifica", "togli_giustificazione"):
+        _giustificazione(request, negozio_id, giorno)
+        return redirect(request.path)
     if request.method == "POST":
         testo = request.POST.get("testo", "").strip()
         tipo = request.POST.get("tipo")

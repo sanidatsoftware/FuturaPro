@@ -8,6 +8,9 @@
 .sezione h2{display:flex;gap:10px;align-items:center}
 .vuoto{color:#667085;font-style:italic}
 .azioni-nota summary{cursor:pointer;color:#2d4055}.azioni-nota textarea{width:100%;margin:6px 0}
+.giustificazione{margin-top:8px;background:#eaf2fc;border:1px solid #9cc3ef;border-radius:8px;padding:8px 10px;font-size:13px}
+.giustifica{margin-top:8px}.giustifica summary{cursor:pointer;font-weight:bold;color:#184f95}
+.giustifica textarea{width:100%;margin:6px 0}
 .stato-giornata{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .num{text-align:right;white-space:nowrap}
 details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
@@ -71,7 +74,7 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
                 <td>
                     {% if not f.chiusura_fiscale and not f.cassa_vuota %}<span class="badge badge-no">Chiusura fiscale non nel file</span>{% endif %}
                     {% for c in r.controlli %}
-                        <a href="#controlli-{{ f.id }}" class="badge {% if c.esito == 'ok' %}badge-ok{% elif c.esito == 'attenzione' %}badge-red{% else %}badge-grey{% endif %}" style="text-decoration:none">{% if c.esito == 'ok' %}✓{% elif c.esito == 'attenzione' %}⚠{% endif %} {{ c.titolo }}</a>
+                        <a href="#controlli-{{ f.id }}" class="badge {% if c.esito == 'ok' %}badge-ok{% elif c.esito == 'attenzione' %}badge-red{% elif c.esito == 'giustificato' %}badge-blu{% else %}badge-grey{% endif %}" style="text-decoration:none" {% if c.giustificazione %}title="Giustificata: {{ c.giustificazione.testo }}"{% endif %}>{% if c.esito == 'ok' %}✓{% elif c.esito == 'attenzione' %}⚠{% elif c.esito == 'giustificato' %}✎{% endif %} {{ c.titolo }}{% if c.esito == 'giustificato' %} · giustificata{% endif %}</a>
                     {% endfor %}
                 </td>
                 <td><a href="/primanota/sysspy/{{ f.id }}/">Testo completo</a></td>
@@ -83,15 +86,31 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
         Cliccando un controllo si apre la spiegazione.</p>
 
     {% for r in casse %}{% if r.da_spiegare %}
-    <details id="controlli-{{ r.file.id }}" {% if r.anomalie %}open{% endif %}>
+    <details id="controlli-{{ r.file.id }}" class="controlli-cassa" {% if r.anomalie %}open{% endif %}>
         <summary>Cassa {{ r.file.cassa }}: spiegazione dei controlli</summary>
         {% for c in r.controlli %}
         <div style="margin:8px 0 14px 16px">
-            <strong>{% if c.esito == 'ok' %}✓{% elif c.esito == 'attenzione' %}⚠{% endif %} {{ c.titolo }}</strong>
+            <strong>{% if c.esito == 'ok' %}✓{% elif c.esito == 'attenzione' %}⚠{% elif c.esito == 'giustificato' %}✎{% endif %} {{ c.titolo }}</strong>
             <div>{{ c.spiegazione }}</div>
             {% if c.valori %}<table class="table" style="width:auto;margin-top:6px">
                 {% for etichetta, valore in c.valori %}<tr><td>{{ etichetta }}</td><td class="num">{{ valore|default:"—" }}</td></tr>{% endfor %}
             </table>{% endif %}
+            {% if c.esito == 'giustificato' %}
+            <div class="giustificazione"><strong>Giustificata</strong> da {{ c.giustificazione.creata_da }} il {{ c.giustificazione.creata_il|date:"d/m/Y H:i" }}:
+                {{ c.giustificazione.testo|linebreaksbr }}
+                <form method="post" style="display:inline" onsubmit="return confirm('Togliere la giustificazione? L\'anomalia torna da chiarire.')">{% csrf_token %}
+                    <input type="hidden" name="azione" value="togli_giustificazione"><input type="hidden" name="cassa" value="{{ r.file.cassa }}">
+                    <input type="hidden" name="controllo" value="{{ c.nome }}"><button class="btn btn-light">Togli giustificazione</button></form></div>
+            {% elif c.esito == 'attenzione' %}
+            <details class="giustifica"><summary>Giustifica questa anomalia</summary>
+                <form method="post">{% csrf_token %}
+                    <input type="hidden" name="azione" value="giustifica"><input type="hidden" name="cassa" value="{{ r.file.cassa }}">
+                    <input type="hidden" name="controllo" value="{{ c.nome }}">
+                    <textarea name="testo" required placeholder="Motivo (es. POS guasto, chiusura non stampata: ticket assistenza n. …; incasso carte 412,22 € verificato sull'estratto conto)"></textarea>
+                    <button class="btn btn-dark">Salva giustificazione</button>
+                    {% if utente_negozio %}<span class="small">La sede la riceve tra le note e anomalie.</span>{% endif %}
+                </form></details>
+            {% endif %}
         </div>
         {% endfor %}
         {% if r.file.pagamenti %}<div class="small" style="margin-left:16px">Pagamenti negli scontrini:
