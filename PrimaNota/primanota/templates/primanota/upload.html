@@ -28,7 +28,7 @@
     <div>
         <div class="card">
             <h2>Carica i documenti della giornata</h2>
-            <form method="post" enctype="multipart/form-data" id="uploadForm">
+            <form method="post" enctype="multipart/form-data" id="uploadForm" data-attesa="Salvataggio della giornata in corso…">
                 {% csrf_token %}
                 <div class="form-group">
                     <label>Data documento</label>

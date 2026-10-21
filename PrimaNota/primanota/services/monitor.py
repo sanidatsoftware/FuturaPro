@@ -4,6 +4,7 @@ come il Monitor Trasmissioni PV dei carichi. In più ogni cella riporta i SysSpy
 archiviati, i versamenti da lavorare e le anomalie aperte.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 
 from django.db.models import Count, Q
@@ -17,6 +18,8 @@ from .prima_nota import presenze
 from .regole import SYSSPY_PER_TIPO, obbligatoria, segni_prima_nota
 from .accesso import negozi_attivi_ordinati
 from .baserow_primanota import TIPI_DOCUMENTO, VERSAMENTO_CONTANTE, elenco_scansioni
+
+_ESECUTORE = ThreadPoolExecutor(max_workers=4, thread_name_prefix="monitor-baserow")
 
 
 def _sysspy_per_giorno(dal, al):
@@ -63,9 +66,12 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
     inizio_mese_corrente = date(today.year, today.month, 1)
     dal = min(days[0], inizio_mese_corrente)
     al = max(days[-1], today)
+    # Baserow si legge in parallelo a SysSpy e prima nota: sono le attese più lunghe della pagina.
+    lettura = _ESECUTORE.submit(elenco_scansioni, data_da=dal.isoformat(), data_a=al.isoformat())
+    sysspy = _sysspy_per_giorno(days[0], days[-1])
+    prima_nota = None if versamenti else presenze(days[0], days[-1])
     # Il monitor generale esclude i versamenti, che hanno un monitor proprio.
-    scansioni = [s for s in elenco_scansioni(data_da=dal.isoformat(), data_a=al.isoformat())
-                 if s["versamento"] == versamenti]
+    scansioni = [s for s in lettura.result() if s["versamento"] == versamenti]
     tipi = [t for t in TIPI_DOCUMENTO if (t["id"] == VERSAMENTO_CONTANTE) == versamenti]
 
     aggregato = {}
@@ -83,8 +89,6 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
         if s["versamento"] and not s["versamento_lavorato"]:
             cella["versamenti_aperti"] += 1
 
-    sysspy = _sysspy_per_giorno(days[0], days[-1])
-    prima_nota = None if versamenti else presenze(days[0], days[-1])
     regole = RegolaDocumento.mappa()
     note = _note_aperte_per_giorno(days[0], days[-1], versamento=versamenti)
     # Stato della giornata scelto dalla sede; il pregresso senza stato è «giornata chiusura».

@@ -78,6 +78,8 @@ def utente(id_, tipo, negozio_id=None, ruolo="Dipendente", menu=True):
 
 class Base(TestCase):
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.archivio = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.archivio)
         override = override_settings(PRIMANOTA_ARCHIVIO_DIR=self.archivio)

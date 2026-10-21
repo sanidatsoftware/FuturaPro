@@ -36,8 +36,8 @@
         <div class="small">Occupati {{ d.usato|filesizeformat }} su {{ d.totale|filesizeformat }} ({{ d.percentuale }}%) · liberi <strong>{{ d.libero|filesizeformat }}</strong></div>
     </div>
     {% endfor %}
-    <p class="small">Archivio SysSpy, file SR e copie: {{ disco.archivio|filesizeformat }}{% if disco.database is not None %} · database del portale: {{ disco.database|filesizeformat }}{% endif %}.
-        Le scansioni dei negozi sono in Baserow. Soglie: attenzione dall'80%, quasi pieno dal 90%. Il dato si aggiorna ogni 15 minuti.</p>
+    <p class="small">Archivio SysSpy, file SR e copie: {% if disco.archivio is None %}in calcolo, ricarica la pagina tra poco{% else %}{{ disco.archivio|filesizeformat }}{% endif %}{% if disco.database is not None %} · database del portale: {{ disco.database|filesizeformat }}{% endif %}.
+        Le scansioni dei negozi sono in Baserow. Soglie: attenzione dall'80%, quasi pieno dal 90%. Lo spazio dei dischi è letto ora; la dimensione dell'archivio si ricalcola ogni 6 ore o con «Aggiorna».</p>
 </div>
 {% endif %}
 {% if salvato %}<div class="message-ok">Impostazioni salvate.</div>{% endif %}

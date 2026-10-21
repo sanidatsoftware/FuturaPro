@@ -243,12 +243,16 @@ def presenze(dal, al, codici=()):
     codici = sorted({str(x).strip() for x in codici if str(x).strip()})
     chiave = f"primanota:presenze2:{dal}:{al}:{','.join(codici)}"
     trovato = cache.get(chiave)
+    if trovato == "non raggiungibile":
+        return None
     if trovato is not None:
         return trovato
     try:
         righe = esegui(c, QUERY_PRESENZE.format(non_annullata=NON_ANNULLATA, filtro_pv=_filtro(codici)),
                        (str(dal).replace("-", ""), str(al).replace("-", ""), *codici))
     except RuntimeError:
+        # Database non raggiungibile: si riprova fra due minuti, senza far aspettare ogni pagina.
+        cache.set(chiave, "non raggiungibile", 120)
         return None
     out = {}
     for pv, giorno, movimenti, fatture, importo, *resto in righe:

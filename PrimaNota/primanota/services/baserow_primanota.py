@@ -111,11 +111,40 @@ def normalizza(row):
     }
 
 
+# Le letture si tengono un minuto (il monitor si riaggiorna ogni 30 secondi e le pagine si aprono spesso
+# una dopo l'altra); ogni scrittura da questo modulo cambia la versione e le rende subito vecchie.
+DURATA_CACHE = 60
+_CHIAVE_VERSIONE = "primanota:scansioni:versione"
+
+
+def _versione():
+    from django.core.cache import cache
+    return cache.get_or_set(_CHIAVE_VERSIONE, 1, None)
+
+
+def _invalida_cache():
+    from django.core.cache import cache
+    try:
+        cache.incr(_CHIAVE_VERSIONE)
+    except ValueError:
+        cache.set(_CHIAVE_VERSIONE, 2, None)
+
+
 def elenco_scansioni(negozio_id=None, data_da="", data_a="", max_risultati=None):
     """
     Scansioni attive, dalla più recente. Le righe arrivano ordinate per data
     decrescente, quindi la lettura si ferma appena si supera l'inizio del periodo.
     """
+    from django.core.cache import cache
+    chiave = f"primanota:scansioni:{_versione()}:{negozio_id}:{data_da}:{data_a}:{max_risultati}"
+    trovato = cache.get(chiave)
+    if trovato is None:
+        trovato = _leggi_scansioni(negozio_id, data_da, data_a, max_risultati)
+        cache.set(chiave, trovato, DURATA_CACHE)
+    return [dict(s) for s in trovato]   # copie: le pagine aggiungono campi alle righe
+
+
+def _leggi_scansioni(negozio_id, data_da, data_a, max_risultati):
     params = {
         "size": 200,
         "user_field_names": "true",
@@ -170,7 +199,10 @@ def crea_scansione(user, negozio_id, data_documento, tipo_documento, documento_f
         CAMPO_LAVORATO: False,
         CAMPO_VERS_LAVORATO: False,
     }
-    return _richiesta("POST", _build_rows_endpoint(tabella), params={"user_field_names": "true"}, json=dati)
+    try:
+        return _richiesta("POST", _build_rows_endpoint(tabella), params={"user_field_names": "true"}, json=dati)
+    finally:
+        _invalida_cache()
 
 
 def aggiorna_lavorato(user, scansione_id, lavorato, versamento=False):
@@ -187,10 +219,16 @@ def aggiorna_lavorato(user, scansione_id, lavorato, versamento=False):
         campi[2]: _ora_locale() if lavorato else None,
     }
     url = f"{_build_rows_endpoint(_tabella())}{int(scansione_id)}/"
-    return _richiesta("PATCH", url, params={"user_field_names": "true"}, json=dati)
+    try:
+        return _richiesta("PATCH", url, params={"user_field_names": "true"}, json=dati)
+    finally:
+        _invalida_cache()
 
 
 def elimina_scansione(scansione_id):
     url = f"{_build_rows_endpoint(_tabella())}{int(scansione_id)}/"
-    _richiesta("DELETE", url)
+    try:
+        _richiesta("DELETE", url)
+    finally:
+        _invalida_cache()
     return {"ok": True}

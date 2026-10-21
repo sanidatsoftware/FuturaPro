@@ -1,11 +1,13 @@
 """
 Spazio su disco del server, per l'indicatore in Impostazioni: dischi dove stanno il portale, il database e
-l'archivio dei SysSpy, e quanto occupano archivio e database. La dimensione dell'archivio si calcola
-scorrendo le cartelle, quindi si tiene in memoria per 15 minuti.
+l'archivio dei SysSpy, e quanto occupano archivio e database. Lo spazio dei dischi si legge subito; la
+dimensione dell'archivio va calcolata scorrendo migliaia di file, quindi si calcola in background e si
+tiene in memoria per 6 ore, senza far aspettare la pagina.
 """
 
 import os
 import shutil
+import threading
 from pathlib import Path
 
 from django.conf import settings
@@ -13,6 +15,8 @@ from django.core.cache import cache
 
 ATTENZIONE = 80   # % di disco occupato
 CRITICO = 90
+CHIAVE_ARCHIVIO = "primanota:disco:archivio"
+_calcolo_in_corso = threading.Lock()
 
 
 def _dimensione_cartella(percorso):
@@ -32,13 +36,27 @@ def _livello(percentuale):
     return "attenzione" if percentuale >= ATTENZIONE else "ok"
 
 
-def stato(ricalcola=False):
-    """{"dischi": [{nomi, totale, usato, libero, percentuale, livello}], "archivio": byte, "database": byte}."""
+def _calcola_archivio(cartella):
+    try:
+        cache.set(CHIAVE_ARCHIVIO, _dimensione_cartella(cartella) if cartella.is_dir() else 0, 6 * 3600)
+    finally:
+        _calcolo_in_corso.release()
+
+
+def dimensione_archivio(ricalcola=False):
+    """Byte occupati dall'archivio, o None se il calcolo è appena partito in background."""
     from .importazione import archivio_dir
 
-    chiave = "primanota:disco"
-    if not ricalcola and (trovato := cache.get(chiave)) is not None:
-        return trovato
+    valore = None if ricalcola else cache.get(CHIAVE_ARCHIVIO)
+    if valore is None and _calcolo_in_corso.acquire(blocking=False):
+        threading.Thread(target=_calcola_archivio, args=(archivio_dir(),), daemon=True).start()
+    return valore
+
+
+def stato(ricalcola=False):
+    """{"dischi": [{nomi, percorso, totale, usato, libero, percentuale, livello}], "archivio": byte o None, "database": byte}."""
+    from .importazione import archivio_dir
+
     database = Path(str(settings.DATABASES["default"].get("NAME") or ""))
     luoghi = [("Portale", Path(settings.BASE_DIR)), ("Archivio SysSpy e allegati", archivio_dir())]
     if database.is_file():
@@ -56,10 +74,8 @@ def stato(ricalcola=False):
     for d in dischi.values():
         d["percentuale"] = round(d["usato"] * 100 / d["totale"], 1) if d["totale"] else 0
         d["livello"] = _livello(d["percentuale"])
-    risultato = {
+    return {
         "dischi": list(dischi.values()),
-        "archivio": _dimensione_cartella(archivio_dir()) if archivio_dir().is_dir() else 0,
+        "archivio": dimensione_archivio(ricalcola),
         "database": database.stat().st_size if database.is_file() else None,
     }
-    cache.set(chiave, risultato, 15 * 60)
-    return risultato

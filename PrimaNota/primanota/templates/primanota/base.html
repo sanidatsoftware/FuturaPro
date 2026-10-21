@@ -58,6 +58,11 @@ textarea{min-height:80px;resize:vertical;width:100%}
 .attesa-box strong{display:block;color:#2d4055;font-size:17px;margin-top:14px}
 .attesa-tempo{font-size:30px;font-weight:bold;color:#2d4055;font-variant-numeric:tabular-nums;margin:6px 0}
 .attesa-nota{font-size:12px;color:#667085;min-height:16px}
+.attesa-barra{height:8px;border-radius:4px;background:#e8edf3;overflow:hidden;margin:10px 0 4px;display:none}
+.attesa-barra span{display:block;height:100%;width:0;background:#2a78d6;border-radius:4px;transition:width .5s linear}
+.attesa-stima{font-size:12px;color:#2d4055;min-height:16px}
+/* Barra sottile in cima alla pagina, subito al clic: avanza secondo la stima e si ferma prima della fine. */
+.barra-pagina{position:fixed;top:0;left:0;height:3px;width:0;background:#2a78d6;z-index:9999;box-shadow:0 0 6px rgba(42,120,214,.6);transition:width .4s ease-out;display:none}
 .attesa-ruota{width:42px;height:42px;border:4px solid #cde2fb;border-top-color:#2a78d6;border-radius:50%;margin:0 auto;animation:attesa-giro .9s linear infinite}
 @keyframes attesa-giro{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){.attesa-ruota{animation-duration:3s}}
@@ -171,7 +176,24 @@ function durata(ms){
     const s = Math.floor(ms / 1000);
     return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s`;
 }
-function mostraAttesa(testo){
+// Stima del tempo: il browser ricorda quanto ha impiegato ogni pagina le volte precedenti
+// (media mobile per percorso), così la barra mostra il tempo che rimane, approssimativo.
+function leggiDurate(){ try{ return JSON.parse(localStorage.getItem("primanotaDurate") || "{}"); }catch(e){ return {}; } }
+function segnaInizio(chiave){ try{ sessionStorage.setItem("primanotaAttesa", JSON.stringify({chiave, t: Date.now()})); }catch(e){} }
+(function registraDurata(){
+    try{
+        const inizio = JSON.parse(sessionStorage.getItem("primanotaAttesa") || "null");
+        sessionStorage.removeItem("primanotaAttesa");
+        if(!inizio) return;
+        const ms = Date.now() - inizio.t;
+        if(ms <= 0 || ms > 30 * 60 * 1000) return;
+        const durate = leggiDurate(), prima = durate[inizio.chiave];
+        durate[inizio.chiave] = prima ? Math.round(prima * 0.6 + ms * 0.4) : ms;
+        localStorage.setItem("primanotaDurate", JSON.stringify(durate));
+    }catch(e){}
+})();
+function chiaveAttesa(url, metodo){ return (metodo || "GET").toUpperCase() + " " + new URL(url, location.href).pathname; }
+function mostraAttesa(testo, chiave, partenza){
     let overlay = document.getElementById("attesaOverlay");
     if(!overlay){
         overlay = document.createElement("div");
@@ -179,21 +201,34 @@ function mostraAttesa(testo){
         overlay.className = "attesa-overlay";
         overlay.setAttribute("role", "status");
         overlay.innerHTML = `<div class="attesa-box"><div class="attesa-ruota"></div><strong id="attesaTesto"></strong>
-            <div class="attesa-tempo" id="attesaTempo">0 s</div><div class="attesa-nota" id="attesaNota"></div>
+            <div class="attesa-tempo" id="attesaTempo">0 s</div>
+            <div class="attesa-barra" id="attesaBarra"><span></span></div><div class="attesa-stima" id="attesaStima"></div>
+            <div class="attesa-nota" id="attesaNota"></div>
             <button type="button" class="btn btn-light" style="margin-top:12px" id="attesaStop">Interrompi</button></div>`;
         document.body.appendChild(overlay);
-        document.getElementById("attesaStop").addEventListener("click", () => { window.stop(); nascondiAttesa(); });
+        document.getElementById("attesaStop").addEventListener("click", () => { window.stop(); fermaBarraPagina(); nascondiAttesa(); });
     }
     document.getElementById("attesaTesto").textContent = testo || "Elaborazione in corso…";
     document.getElementById("attesaNota").textContent = "";
     overlay.style.display = "flex";
-    const inizio = Date.now();
+    const inizio = partenza || Date.now();   // il tempo si conta dal clic, come la barra in alto
+    const stima = chiave ? leggiDurate()[chiave] : null;
+    const barra = document.getElementById("attesaBarra"), stimaTesto = document.getElementById("attesaStima");
+    barra.style.display = stima ? "block" : "none";
+    barra.firstElementChild.style.width = stima ? Math.min(95, (Date.now() - inizio) * 100 / stima) + "%" : "0";
+    document.getElementById("attesaTempo").textContent = durata(Date.now() - inizio);
+    stimaTesto.textContent = stima ? `Circa ${durata(stima)} in tutto` : "";
     clearInterval(window.timerAttesa);
     window.timerAttesa = setInterval(() => {
         const ms = Date.now() - inizio;
         document.getElementById("attesaTempo").textContent = durata(ms);
+        if(stima){
+            barra.firstElementChild.style.width = Math.min(95, ms * 100 / stima) + "%";
+            const resto = stima - ms;
+            stimaTesto.textContent = resto > 1000 ? `Circa ${durata(resto)} rimanenti` : "Quasi pronto…";
+        }
         if(ms > 20000) document.getElementById("attesaNota").textContent =
-            "Con molti giorni o punti vendita la ricerca può richiedere qualche minuto.";
+            "Con molti giorni o punti vendita l'elaborazione può richiedere qualche minuto.";
     }, 1000);
 }
 function nascondiAttesa(){
@@ -201,13 +236,55 @@ function nascondiAttesa(){
     const overlay = document.getElementById("attesaOverlay");
     if(overlay) overlay.style.display = "none";
 }
+// Tutti gli altri moduli e i collegamenti alle pagine del portale: se la pagina nuova tarda più di
+// un attimo compare lo stesso pannello, così si vede che il sistema sta lavorando.
+function barraPagina(chiave){
+    let barra = document.getElementById("barraPagina");
+    if(!barra){ barra = document.createElement("div"); barra.id = "barraPagina"; barra.className = "barra-pagina"; document.body.appendChild(barra); }
+    const stima = leggiDurate()[chiave] || 3000, inizio = Date.now();
+    barra.style.display = "block"; barra.style.width = "8%";
+    clearInterval(window.timerBarra);
+    // Fino alla stima arriva all'80%, poi rallenta verso il 95% senza mai dire «finito» prima del tempo.
+    window.timerBarra = setInterval(() => {
+        const r = (Date.now() - inizio) / stima;
+        barra.style.width = (r < 1 ? 8 + r * 72 : 80 + 15 * (1 - Math.exp(1 - r))) + "%";
+    }, 200);
+}
+function fermaBarraPagina(){
+    clearInterval(window.timerBarra);
+    const barra = document.getElementById("barraPagina");
+    if(barra) barra.style.display = "none";
+}
+// Pagine normali: subito la barra in alto; il riquadro con tempo e stima solo se l'attesa supera 1,5 secondi.
+function attesaRitardata(testo, chiave){
+    segnaInizio(chiave);
+    barraPagina(chiave);
+    const partenza = Date.now();
+    clearTimeout(window.timerRitardo);
+    window.timerRitardo = setTimeout(() => mostraAttesa(testo, chiave, partenza), 1500);
+}
 document.addEventListener("submit", e => {
     const form = e.target;
-    if(!form.dataset || form.dataset.attesa === undefined) return;
-    setTimeout(() => { if(!e.defaultPrevented) mostraAttesa(form.dataset.attesa); }, 0);
+    if(form.target && form.target !== "_self") return;
+    setTimeout(() => {
+        if(e.defaultPrevented) return;
+        const chiave = chiaveAttesa(form.action || location.href, form.method);
+        if(form.dataset && form.dataset.attesa !== undefined){ segnaInizio(chiave); mostraAttesa(form.dataset.attesa, chiave); }
+        else attesaRitardata((form.method || "").toLowerCase() === "post" ? "Salvataggio in corso…" : "Ricerca in corso…", chiave);
+    }, 0);
+});
+document.addEventListener("click", e => {
+    if(e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest("a[href]");
+    if(!a || (a.target && a.target !== "_self") || a.hasAttribute("download") || a.dataset.noAttesa !== undefined) return;
+    const href = a.getAttribute("href");
+    if(href.startsWith("#") || href.startsWith("javascript:") || href.startsWith("mailto:")) return;
+    const url = new URL(a.href, location.href);
+    if(url.origin !== location.origin || (url.pathname === location.pathname && url.search === location.search)) return;
+    attesaRitardata("Caricamento della pagina…", chiaveAttesa(url.href, "GET"));
 });
 // Tornando indietro col browser la pagina può riapparire dalla cache: niente pannello rimasto aperto.
-window.addEventListener("pageshow", nascondiAttesa);
+window.addEventListener("pageshow", () => { clearTimeout(window.timerRitardo); fermaBarraPagina(); nascondiAttesa(); });
 </script>
 {% block script %}{% endblock %}
 </body>
