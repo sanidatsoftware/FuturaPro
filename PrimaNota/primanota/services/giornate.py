@@ -12,16 +12,17 @@ from .baserow_primanota import aggiorna_lavorato, elenco_scansioni
 log = logging.getLogger(__name__)
 
 
-def stato(negozio_id, giorno, righe=None):
+def stato(negozio_id, giorno, righe=None, con_scansioni=False):
     """
     {"stato", "modificato_da", "modificato_il"}: lo stato scelto per la giornata o quello predefinito
-    (giornata chiusura per il pregresso, altrimenti non lavorato). righe: GiornataLavorazione.mappa() già letta.
+    (giornata chiusura per il pregresso senza scansioni, altrimenti non lavorato). righe: GiornataLavorazione.mappa()
+    già letta; con_scansioni: il negozio ha inviato qualcosa per quella giornata.
     """
     g = righe.get((negozio_id, giorno)) if righe is not None else \
         GiornataLavorazione.objects.filter(negozio_id=negozio_id, data=giorno).first()
     if g:
         return {"stato": g.stato, "modificato_da": g.modificato_da, "modificato_il": g.modificato_il}
-    return {"stato": GiornataLavorazione.stato_predefinito(giorno), "modificato_da": "", "modificato_il": None}
+    return {"stato": GiornataLavorazione.stato_predefinito(giorno, con_scansioni), "modificato_da": "", "modificato_il": None}
 
 
 def imposta(user, negozio_id, giorno, nuovo, nome=""):

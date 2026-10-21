@@ -102,7 +102,7 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
             valori = aggregato.get((negozio_id, iso))
             spy = sysspy.get((negozio_id, iso), {"casse": 0, "squadrate": 0, "tipi": set()})
             n = note.get((negozio_id, iso), {"n": 0, "contatto": 0})
-            giornata = stato_giornata(negozio_id, day, stati)["stato"]
+            giornata = stato_giornata(negozio_id, day, stati, con_scansioni=bool(valori))["stato"]
             if day > today:
                 state = "future"
             elif giornata == GiornataLavorazione.CHIUSURA:

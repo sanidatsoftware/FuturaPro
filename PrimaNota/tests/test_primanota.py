@@ -1463,9 +1463,16 @@ class TestStatoGiornata(Base):
         with override_settings(PRIMANOTA_INIZIO_GESTIONE=date.today().isoformat()):
             self.assertEqual(self.cella(ieri)["state"], "closed")
             self.assertEqual(self.cella(ieri, versamenti=True)["state"], "closed")
+            # Il pregresso con scansioni inviate dal negozio resta da lavorare, anche nell'elenco.
+            self.scansione_sede("Chiusura fiscale", giorno=ieri.isoformat())
+            self.carica(self.client_per("pv@x"), "Versamenti contante", giorno=ieri.isoformat())
+            self.assertEqual(self.cella(ieri)["state"], "incomplete")
+            self.assertEqual(self.cella(ieri, versamenti=True)["state"], "pending")
+            self.assertEqual(len(self.client_per("ufficio@x").get("/primanota/admin/").context["giornate"]), 1)
+            self.assertEqual(self.cella(ieri - timedelta(days=1))["state"], "closed")
             # Lo stato si può comunque cambiare a mano.
-            self.client_per("ufficio@x").post(f"/primanota/giornata/10/{ieri.isoformat()}/stato/", {"stato": "non_lavorato"})
-            self.assertEqual(self.cella(ieri)["state"], "missing")
+            self.client_per("ufficio@x").post(f"/primanota/giornata/10/{ieri.isoformat()}/stato/", {"stato": "chiusura"})
+            self.assertEqual(self.cella(ieri)["state"], "closed")
 
     def test_chiusure_fiscali_si_apre_sul_monitor(self):
         uff = self.client_per("ufficio@x")

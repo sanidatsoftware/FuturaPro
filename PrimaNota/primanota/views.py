@@ -325,7 +325,7 @@ def admin(request):
     # «Lavorato» è della giornata intera: «solo da lavorare» lascia le giornate non lavorate (né chiuse).
     righe_stato = GiornataLavorazione.mappa(date.fromisoformat(data_da), date.fromisoformat(data_a))
     for g in giornate.values():
-        g["stato"] = giornate_stato(g["negozio_id"], date.fromisoformat(g["data"]), righe_stato)
+        g["stato"] = giornate_stato(g["negozio_id"], date.fromisoformat(g["data"]), righe_stato, con_scansioni=True)
     if solo_non_lavorati:
         giornate = OrderedDict((k, g) for k, g in giornate.items() if g["stato"]["stato"] == GiornataLavorazione.NON_LAVORATO)
     for g in giornate.values():
@@ -443,7 +443,7 @@ def giornata(request, negozio_id, giorno):
         sezioni=sezioni, altre=altre, files=files, casse=casse, error=error,
         storni=docs(DocumentoSysSpy.STORNO, DocumentoSysSpy.ANNULLAMENTO), pos_negate=docs(DocumentoSysSpy.POS_NEGATO),
         sospesi=ScontrinoSospeso.objects.filter(negozio_id=negozio_id, data=giorno).order_by("ora"),
-        stato_giornata=giornate_stato(negozio_id, corrente), avviso_stato=request.GET.get("avviso_stato") == "1",
+        stato_giornata=giornate_stato(negozio_id, corrente, con_scansioni=bool(scansioni)), avviso_stato=request.GET.get("avviso_stato") == "1",
         note=Nota.objects.filter(negozio_id=negozio_id, data=giorno, versamento=False), tipi_nota=Nota.TIPI))
 
 

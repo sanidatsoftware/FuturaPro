@@ -406,7 +406,7 @@ class GiornataLavorazione(models.Model):
     """
     Stato della giornata di un negozio deciso dalla sede: vale per tutta la pagina del negozio, non per il
     singolo allegato. Senza riga la giornata è «non lavorata», o «giornata chiusura» se è precedente
-    all'inizio della gestione (il pregresso).
+    all'inizio della gestione (il pregresso) e il negozio non ha inviato scansioni.
     """
 
     LAVORATO = "lavorato"
@@ -432,8 +432,9 @@ class GiornataLavorazione(models.Model):
         return valore if isinstance(valore, date) else date.fromisoformat(str(valore))
 
     @classmethod
-    def stato_predefinito(cls, giorno):
-        return cls.CHIUSURA if giorno < cls.inizio_gestione() else cls.NON_LAVORATO
+    def stato_predefinito(cls, giorno, con_scansioni=False):
+        """Il pregresso è «giornata chiusura» solo se il negozio non ha inviato niente: ciò che è arrivato va lavorato."""
+        return cls.CHIUSURA if giorno < cls.inizio_gestione() and not con_scansioni else cls.NON_LAVORATO
 
     @classmethod
     def mappa(cls, dal, al, negozio_id=None):
