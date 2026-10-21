@@ -73,7 +73,11 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
     # La prima nota serve al monitor generale e, per le giornate in Emergenza, anche a quello dei versamenti.
     prima_nota = presenze(days[0], days[-1]) if not versamenti or emergenze else None
     # Il monitor generale esclude i versamenti, che hanno un monitor proprio.
-    scansioni = [s for s in lettura.result() if s["versamento"] == versamenti]
+    tutte = lettura.result()
+    scansioni = [s for s in tutte if s["versamento"] == versamenti]
+    # Giornate in cui il negozio ha inviato qualcosa (anche solo il versamento): se per l'altra sezione non
+    # c'era niente di obbligatorio da allegare, la giornata è completa e non «senza invio».
+    inviate = {(s["negozio_id"], s["data_documento"]) for s in tutte if s["negozio_id"]}
     tipi = [t for t in TIPI_DOCUMENTO if (t["id"] == VERSAMENTO_CONTANTE) == versamenti]
 
     aggregato = {}
@@ -109,12 +113,13 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
             valori = aggregato.get((negozio_id, iso))
             spy = sysspy.get((negozio_id, iso), {"casse": 0, "squadrate": 0, "tipi": set()})
             n = note.get((negozio_id, iso), {"n": 0, "contatto": 0})
-            giornata = stato_giornata(negozio_id, day, stati, con_scansioni=bool(valori))["stato"]
+            inviata = bool(valori) or (negozio_id, iso) in inviate
+            giornata = stato_giornata(negozio_id, day, stati, con_scansioni=inviata)["stato"]
             if day > today:
                 state = "future"
             elif giornata == GiornataLavorazione.CHIUSURA:
                 state = "closed"
-            elif not valori:
+            elif not inviata:
                 state = "missing"
             else:
                 # Lavorato è della giornata intera, non del singolo allegato (anche per i versamenti).
@@ -125,8 +130,8 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
                 state = "emergency"
             if valori:
                 summary["documents"] += valori["total"]
-                if state in ("pending", "worked"):
-                    summary[state] += 1
+            if inviata and state in ("pending", "worked"):
+                summary[state] += 1
             valori = valori or {"total": 0, "worked": 0, "pending": 0, "versamenti_aperti": 0, "tipi": {}}
             presenti = (spy["tipi"] | ({"CASSA"} if spy["casse"] else set())
                         | segni_prima_nota(prima_nota, negozio.get("codice"), day))
@@ -152,7 +157,7 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
                 "note_aperte": n["n"],
                 "richieste_contatto": n["contatto"],
                 "emergenza": emergenza.motivo if emergenza else "",
-                "mancanti": mancanti if valori["total"] else [],
+                "mancanti": mancanti if inviata else [],
                 "detail_url": "" if day > today else (
                     f"/primanota/versamenti/?negozio={negozio_id}&data_da={iso}&data_a={iso}" if versamenti
                     else f"/primanota/giornata/{negozio_id}/{iso}/"),
@@ -162,7 +167,7 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
 
     # "Senza invio" conta solo il mese corrente fino a oggi, come nel monitor carichi.
     giorni_correnti = {date(today.year, today.month, d).isoformat() for d in range(1, today.day + 1)}
-    ricevuti = {k for k in aggregato if k[1] in giorni_correnti}
+    ricevuti = {k for k in inviate if k[1] in giorni_correnti}
     ids = {_safe_int(n.get("id"), 0) for n in negozi}
     summary["missing_current_month"] = sum(
         1 for i in ids for g in giorni_correnti

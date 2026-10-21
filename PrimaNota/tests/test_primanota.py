@@ -1866,3 +1866,26 @@ class TestRaggruppamentiBanche(TestPrimaNota):
             r = self.client_per("ufficio@x").get("/primanota/prima-nota/", {"pv": "5040", "data": "2026-10-19"})
         self.assertContains(r, "non associato a un istituto di credito")
         self.assertNotIn("controllo", {c["codice"]: c for c in r.context["giornata"]["causali"]}[4])
+
+
+class TestSoloVersamento(Base):
+    def cella(self, url, giorno):
+        r = self.client_per("direttore@x").get(url, {"anno": giorno.year, "mese": giorno.month})
+        riga = next(x for x in r.context["monitor"]["rows"] if x["store_id"] == 10)
+        return next(c for c in riga["cells"] if c["date"] == giorno.isoformat())
+
+    def test_niente_da_allegare_nelle_chiusure_e_solo_versamento(self):
+        from primanota.models import RegolaDocumento
+        for t in ("Chiusura fiscale", "Chiusure POS bancari"):
+            RegolaDocumento.objects.create(tipo_documento=t, obbligo=RegolaDocumento.FACOLTATIVO)
+        ieri = date.today() - timedelta(days=1)
+        self.assertEqual(self.cella("/primanota/monitor/", ieri)["state"], "missing")
+        self.carica(self.client_per("pv@x"), "Versamenti contante", giorno=ieri.isoformat())
+        # Verde in entrambe le sezioni: nelle chiusure non c'era niente di obbligatorio.
+        chiusure = self.cella("/primanota/monitor/", ieri)
+        self.assertEqual((chiusure["state"], chiusure["mancanti"]), ("pending", []))
+        self.assertEqual(self.cella("/primanota/versamenti/monitor/", ieri)["state"], "pending")
+        # Con una scansione obbligatoria nelle chiusure, invece, manca qualcosa (arancio, non rosso).
+        RegolaDocumento.objects.filter(tipo_documento="Chiusura fiscale").update(obbligo=RegolaDocumento.SEMPRE)
+        chiusure = self.cella("/primanota/monitor/", ieri)
+        self.assertEqual((chiusure["state"], chiusure["mancanti"]), ("incomplete", ["Chiusura fiscale"]))

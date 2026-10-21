@@ -104,7 +104,7 @@
             <td class="day-column {% if cell.is_today %}today{% endif %}"
                 title="{{ row.code }} · {{ cell.date }}{% if cell.state == 'closed' %} · Giornata Chiusura PV{% endif %}{% if cell.emergenza %}&#10;⚠ EMERGENZA dichiarata dal negozio: {{ cell.emergenza }}{% endif %}&#10;{% for sigla, label, n in cell.tipi %}{{ label }}: {{ n }}&#10;{% endfor %}Da lavorare: {{ cell.pending }}{% if cell.mancanti %}&#10;Mancano: {{ cell.mancanti|join:', ' }}{% endif %}&#10;Casse SysSpy: {{ cell.casse_sysspy }}{% if cell.squadrate %} ({{ cell.squadrate }} non quadrano){% endif %}{% if cell.note_aperte %}&#10;Note aperte: {{ cell.note_aperte }}{% endif %}">
                 <div class="cell">
-                    {% if cell.detail_url %}<a class="status-link state-{{ cell.state }}" href="{{ cell.detail_url }}">{{ cell.total }}</a>
+                    {% if cell.detail_url %}<a class="status-link state-{{ cell.state }}" href="{{ cell.detail_url }}">{% if cell.total or cell.state == "missing" %}{{ cell.total }}{% else %}✓{% endif %}</a>
                     {% else %}<span class="status-static state-{{ cell.state }}">–</span>{% endif %}
                     {% if cell.richieste_contatto %}<span class="mark mark-contatto">!</span>{% elif cell.note_aperte %}<span class="mark mark-nota">!</span>{% endif %}
                     {% if cell.casse_sysspy %}<span class="mark {% if cell.squadrate %}mark-squadra{% else %}mark-spy{% endif %}">{{ cell.casse_sysspy }}</span>{% endif %}
