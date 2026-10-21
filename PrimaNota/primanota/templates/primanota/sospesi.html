@@ -38,8 +38,8 @@ table.sospesi tr.dettaglio td{background:#f6f8fb}
         <label class="field">Stato <select name="stato">{% for k, v in stati.items %}<option value="{{ k }}" {% if stato == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
         <button class="btn btn-orange">Cerca</button>
         <label class="field">Per foglio <select id="perFoglio">{% for n in per_foglio %}<option value="{{ n }}" {% if n == 4 %}selected{% endif %}>{{ n }}</option>{% endfor %}</select></label>
-        <button class="btn btn-dark" type="button" onclick="stampaSospesi('sospeso')">🖨 PDF degli ancora sospesi</button>
-        <button class="btn btn-light" type="button" onclick="stampaSospesi(null)">🖨 PDF dell'elenco</button>
+        <button class="btn btn-dark btn-icona" type="button" onclick="stampaSospesi('sospeso')">{% include "primanota/_icona.html" with nome="stampante" %}PDF degli ancora sospesi</button>
+        <button class="btn btn-light btn-icona" type="button" onclick="stampaSospesi(null)">{% include "primanota/_icona.html" with nome="stampante" %}PDF dell'elenco</button>
         <span class="small">Dai file CPaammgg.SRI.CassaN delle condivisioni ({{ file_letti }} file nel periodo), letti insieme ai SysSpy.</span>
     </form>
 </div>

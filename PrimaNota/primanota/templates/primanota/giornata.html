@@ -106,8 +106,8 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
 
 <div class="card filters">
     <strong>Stampa (A4, più documenti per foglio):</strong>
-    <a class="btn btn-dark" onclick="return apriStampa(this.href)" href="/primanota/stampa/?sezione=fiscale&negozio={{ negozio_id }}&data_da={{ giorno }}&data_a={{ giorno }}">Chiusure fiscali</a>
-    <a class="btn btn-dark" onclick="return apriStampa(this.href)" href="/primanota/stampa/?sezione=pos&negozio={{ negozio_id }}&data_da={{ giorno }}&data_a={{ giorno }}">Chiusure POS</a>
+    <a class="btn btn-dark btn-icona" onclick="return apriStampa(this.href)" href="/primanota/stampa/?sezione=fiscale&negozio={{ negozio_id }}&data_da={{ giorno }}&data_a={{ giorno }}">{% include "primanota/_icona.html" with nome="stampante" %}Chiusure fiscali</a>
+    <a class="btn btn-dark btn-icona" onclick="return apriStampa(this.href)" href="/primanota/stampa/?sezione=pos&negozio={{ negozio_id }}&data_da={{ giorno }}&data_a={{ giorno }}">{% include "primanota/_icona.html" with nome="stampante" %}Chiusure POS</a>
 </div>
 
 {% for sez in sezioni %}

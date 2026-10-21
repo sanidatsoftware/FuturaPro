@@ -49,7 +49,7 @@
         <label class="field">Dal <input type="date" name="data_da" value="{{ data_da }}"></label>
         <label class="field">Al <input type="date" name="data_a" value="{{ data_a }}"></label>
         <button class="btn btn-orange">Aggiorna</button>
-        {% if dati %}<button class="btn btn-dark" type="button" id="stampaPdf">🖨 Stampa PDF</button>{% endif %}
+        {% if dati %}<button class="btn btn-dark btn-icona" type="button" id="stampaPdf">{% include "primanota/_icona.html" with nome="stampante" %}Stampa PDF</button>{% endif %}
         <span class="small">Dati dei SysSpy archiviati (chiusure fiscali e scontrini). Il PDF riporta i grafici come li vedi.</span>
     </form>
 </div>

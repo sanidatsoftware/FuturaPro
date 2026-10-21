@@ -62,7 +62,7 @@ table.riepilogo td,table.riepilogo th{padding:6px 10px}
                 </div>
                 <span class="small" style="font-weight:normal"><a href="#" onclick="return segnaPv(true)">Tutti</a> · <a href="#" onclick="return segnaPv(false)">Nessuno</a></span>
             </div>
-            <button class="btn btn-dark">🖨 Stampa PDF</button>
+            <button class="btn btn-dark btn-icona">{% include "primanota/_icona.html" with nome="stampante" %}Stampa PDF</button>
         </form>
         <p class="small">Un foglio A4 per punto vendita e giorno, con le note intere, in un unico PDF (al massimo 31 giorni).</p>
     </div>

@@ -66,7 +66,7 @@
         <label class="field">Al <input type="date" name="data_a" value="{{ data_a }}"></label>
         <label class="field">Contenuto <select name="contenuto"><option value="tutto">Scansioni e SysSpy</option><option value="scansioni">Solo scansioni</option><option value="sysspy">Solo SysSpy</option></select></label>
         <label class="field">Per foglio <select name="per_pagina">{% for n in per_foglio %}<option value="{{ n }}" {% if n == 4 %}selected{% endif %}>{{ n }}</option>{% endfor %}</select></label>
-        <button class="btn btn-dark">Crea PDF da stampare</button>
+        <button class="btn btn-dark btn-icona">{% include "primanota/_icona.html" with nome="stampante" %}Crea PDF da stampare</button>
     </form>
 </div>
 

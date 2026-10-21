@@ -64,7 +64,7 @@ table.matrice td.tot{background:#eef1f4;font-weight:bold;color:#2d4055}
         {% endif %}
         <button class="btn btn-orange" name="cerca" value="1">Cerca</button>
         {% if tab %}
-        <button class="btn btn-dark" type="button" onclick="apriStampa(urlFormato('pdf'))">🖨 Stampa PDF</button>
+        <button class="btn btn-dark btn-icona" type="button" onclick="apriStampa(urlFormato('pdf'))">{% include "primanota/_icona.html" with nome="stampante" %}Stampa PDF</button>
         <a class="btn btn-light" href="#" onclick="location.href = urlFormato('csv'); return false">Esporta Excel</a>
         {% endif %}
     </form>
