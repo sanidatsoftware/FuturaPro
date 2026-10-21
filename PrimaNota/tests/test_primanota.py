@@ -1855,7 +1855,10 @@ class TestRaggruppamentiBanche(TestPrimaNota):
         self.assertContains(r, "⚠ Differenza")
         testo = " ".join(pymupdf.open(stream=pdf.content, filetype="pdf")[0].get_text().split())
         self.assertIn("CREDITO (chiusure POS)", testo)
-        self.assertIn("Confronto con Importo da Prima Nota", testo)
+        # In stampa il controllo compare solo dove c'è differenza (causale 4), non dove coincide (causale 5).
+        self.assertEqual(testo.count("Confronto con Importo da Prima Nota"), 1)
+        self.assertIn("DIFFERENZA -405,00", testo)
+        self.assertNotIn("Coincide", testo)
         self.assertIn("Tipologie della chiusura POS non assegnate: JCB 10,00", testo)
 
     def test_punto_vendita_senza_istituto(self):
