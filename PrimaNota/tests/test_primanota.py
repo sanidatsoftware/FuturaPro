@@ -1558,3 +1558,56 @@ class TestSpazioDisco(Base):
         self.assertIn("Archivio SysSpy e allegati", [n for d in disco["dischi"] for n in d["nomi"]])
         from primanota.services.disco import _livello
         self.assertEqual([_livello(50), _livello(85), _livello(95)], ["ok", "attenzione", "critico"])
+
+
+class TestEmergenza(Base):
+    def setUp(self):
+        super().setUp()
+        from django.core.cache import cache
+        cache.clear()
+
+    def prima_nota(self, righe):
+        def esegui(c, sql, parametri=(), dizionari=False):
+            return righe if "COUNT(*)" in sql else []
+        return mock.patch.multiple("primanota.services.prima_nota", esegui=esegui, configurazione=lambda: {"host": "x"})
+
+    def test_emergenza_senza_prima_nota(self):
+        from primanota.models import Emergenza
+        self.importa_fixture()
+        ieri = date.today() - timedelta(days=1)
+        pv = self.client_per("pv@x")
+        with self.prima_nota([]):
+            pagina = pv.get("/primanota/upload/", {"data": ieri.isoformat()})
+            self.assertContains(pagina, "Attiva Emergenza")
+            # Senza motivo non si attiva.
+            r = pv.post("/primanota/upload/", {"azione": "emergenza", "data": ieri.isoformat(), "motivo": " "})
+            self.assertContains(r, "scrivi il motivo")
+            pv.post("/primanota/upload/", {"azione": "emergenza", "data": ieri.isoformat(), "motivo": "gestionale fermo"})
+            self.assertEqual(Emergenza.objects.get().motivo, "gestionale fermo")
+            self.assertTrue(Nota.objects.filter(tipo="ANOMALIA", testo__contains="gestionale fermo").exists())
+            pagina = pv.get("/primanota/upload/", {"data": ieri.isoformat()})
+            self.assertContains(pagina, "Modalità Emergenza attiva")
+            self.assertIsNone(pagina.context["blocco_prima_nota"])
+            # Le voci «solo se la giornata ne contiene» diventano tutte caricabili, non obbligatorie.
+            stati = {v["tipo"]["id"]: v["stato"] for v in pagina.context["voci"]}
+            self.assertEqual((stati["Resi"], stati["Transazioni abortite"], stati["Fatture spese del giorno"]),
+                             ("in_attesa", "in_attesa", "in_attesa"))
+            self.assertEqual(stati["Chiusura fiscale"], "obbligatoria")
+            r = pv.post("/primanota/upload/", {"data_documento": ieri.isoformat(), "documento_fiscale": self.pdf(),
+                                               "documento_pos": self.pdf(), "documento_versamenti": self.pdf(),
+                                               "documento_resi": self.pdf()})
+            self.assertEqual(r.status_code, 302)
+            self.assertEqual(len(self.baserow.righe), 4)
+            # Monitor della sede: giallo lampeggiante su chiusure e versamenti.
+            for url in ("/primanota/monitor/", "/primanota/versamenti/monitor/"):
+                r = self.client_per("direttore@x").get(url, {"anno": ieri.year, "mese": ieri.month})
+                riga = next(x for x in r.context["monitor"]["rows"] if x["store_id"] == 10)
+                cella = next(c for c in riga["cells"] if c["date"] == ieri.isoformat())
+                self.assertEqual((cella["state"], cella["emergenza"]), ("emergency", "gestionale fermo"))
+        from django.core.cache import cache
+        cache.clear()
+        # Arrivata la prima nota, il giallo si spegne.
+        with self.prima_nota([("5048", int(ieri.strftime("%Y%m%d")), 12, 0, Decimal("0"), 0)]):
+            r = self.client_per("direttore@x").get("/primanota/monitor/", {"anno": ieri.year, "mese": ieri.month})
+            riga = next(x for x in r.context["monitor"]["rows"] if x["store_id"] == 10)
+            self.assertNotEqual(next(c for c in riga["cells"] if c["date"] == ieri.isoformat())["state"], "emergency")

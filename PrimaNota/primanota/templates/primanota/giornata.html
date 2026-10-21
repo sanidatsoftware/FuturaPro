@@ -20,6 +20,9 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
     {% include "primanota/_menu.html" %}
 </div>
 {% if error %}<div class="message-error">{{ error }}</div>{% endif %}
+{% if emergenza %}<div class="card" style="border:2px solid #eda100;background:#fff8e1"><strong>⚠ Modalità Emergenza</strong> dichiarata da
+    {{ emergenza.attivata_da }} il {{ emergenza.attivata_il|date:"d/m/Y H:i" }}: scansioni inviate senza prima nota.
+    <br><span class="small">Motivo: {{ emergenza.motivo }}. Nel monitor la giornata lampeggia in giallo finché la prima nota non è registrata.</span></div>{% endif %}
 {% if not utente_negozio %}
 <div class="card">
     <h2 style="margin-top:0">Stato della giornata</h2>

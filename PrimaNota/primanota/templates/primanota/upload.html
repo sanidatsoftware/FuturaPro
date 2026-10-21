@@ -12,6 +12,10 @@
 .voce-testa{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;color:#2d4055}
 .voce-campi{display:grid;grid-template-columns:1fr 90px;gap:8px}
 .voce-off{background:#f1f3f5;opacity:.55}.voce-off strong{color:#8a94a3}
+.emergenza-attiva{background:#fff4d6;border:2px solid #eda100;border-radius:10px;padding:10px 12px;margin-bottom:12px;color:#5c4100}
+.emergenza-box{border:1px dashed #eda100;border-radius:10px;padding:8px 12px;margin-bottom:12px}
+.emergenza-box summary{cursor:pointer;font-weight:bold;color:#8a5a00}
+.emergenza-box textarea{width:100%}
 .file-info{margin-top:10px;background:#fff8d6;border:1px solid #d6b500;border-radius:8px;padding:10px;font-size:13px}
 @media(max-width:950px){.layout{grid-template-columns:1fr}}
 </style>
@@ -28,13 +32,27 @@
     <div>
         <div class="card">
             <h2>Carica i documenti della giornata</h2>
+            {% if emergenza %}
+            <div class="emergenza-attiva"><strong>⚠ Modalità Emergenza attiva per questa giornata</strong><br>
+                Le scansioni si inviano senza prima nota; le voci che dipendono dal contenuto della giornata sono tutte caricabili.
+                <span class="small">Attivata da {{ emergenza.attivata_da }} il {{ emergenza.attivata_il|date:"d/m/Y H:i" }} · Motivo: {{ emergenza.motivo }}</span></div>
+            {% elif blocco_prima_nota %}
+            <div class="message-error">{{ blocco_prima_nota }}</div>
+            <details class="emergenza-box"><summary>La prima nota non si può compilare per un problema tecnico? Attiva la modalità Emergenza</summary>
+                <form method="post" onsubmit="return confirm('Attivare la modalità Emergenza per questa giornata? La sede riceverà la segnalazione.')">
+                    {% csrf_token %}<input type="hidden" name="azione" value="emergenza"><input type="hidden" name="data" value="{{ giorno }}">
+                    <p class="small">Usala solo se il gestionale non permette di compilare o certificare la prima nota. Potrai inviare
+                        le scansioni subito; la sede vedrà la giornata in giallo lampeggiante finché la prima nota non sarà registrata.</p>
+                    <textarea name="motivo" required placeholder="Motivo (es. gestionale non raggiungibile, errore nei dati del database…)"></textarea>
+                    <button class="btn btn-red" style="margin-top:8px">⚠ Attiva Emergenza</button>
+                </form></details>
+            {% endif %}
             <form method="post" enctype="multipart/form-data" id="uploadForm" data-attesa="Salvataggio della giornata in corso…">
                 {% csrf_token %}
                 <div class="form-group">
                     <label>Data documento</label>
                     <input type="date" name="data_documento" id="dataDocumento" value="{{ giorno }}" required>
                 </div>
-                {% if blocco_prima_nota %}<div class="message-error" id="bloccoPrimaNota">{{ blocco_prima_nota }}</div>{% endif %}
                 <p class="small">Gli allegati <strong>obbligatori</strong> vanno caricati tutti insieme: senza, la giornata non si salva.
                     Le voci in grigio non sono previste per questa giornata.</p>
                 {% for v in voci %}
@@ -43,6 +61,7 @@
                         <strong>{{ v.tipo.label }}</strong>
                         {% if v.caricate %}<span class="badge badge-ok">✓ Già caricat{{ v.caricate|pluralize:"a,e" }}{% if v.caricate > 1 %} ({{ v.caricate }}){% endif %}</span>{% endif %}
                         {% if v.stato == "obbligatoria" %}{% if v.manca %}<span class="badge badge-red">Obbligatoria</span>{% else %}<span class="badge badge-grey">Obbligatoria</span>{% endif %}
+                        {% elif v.stato == "in_attesa" and emergenza %}<span class="badge badge-no" title="Modalità Emergenza: caricabile, non obbligatoria">Facoltativa in Emergenza</span>
                         {% elif v.stato == "in_attesa" %}<span class="badge badge-no" title="Diventa obbligatoria se il SysSpy della giornata ne contiene">Da verificare col SysSpy</span>
                         {% else %}<span class="badge badge-grey">Non prevista</span>{% endif %}
                     </div>

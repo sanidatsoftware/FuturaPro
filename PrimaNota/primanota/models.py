@@ -443,3 +443,28 @@ class GiornataLavorazione(models.Model):
         if negozio_id is not None:
             righe = righe.filter(negozio_id=negozio_id)
         return {(g.negozio_id, g.data): g for g in righe}
+
+
+class Emergenza(models.Model):
+    """
+    Modalità Emergenza dichiarata dal negozio per una giornata: la prima nota non si può compilare o certificare
+    per problemi tecnici, quindi le scansioni si inviano lo stesso e le voci «obbligatoria solo se la giornata
+    ne contiene» restano caricabili. Nel monitor la giornata lampeggia in giallo finché la prima nota non c'è.
+    """
+
+    negozio_id = models.IntegerField(db_index=True)
+    data = models.DateField(db_index=True)
+    motivo = models.TextField()
+    attivata_da = models.CharField(max_length=200)
+    attivata_il = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["negozio_id", "data"], name="emergenza_unica")]
+
+    @classmethod
+    def giorni(cls, dal, al, negozio_id=None):
+        """{(negozio_id, data): emergenza} nel periodo."""
+        righe = cls.objects.filter(data__range=(dal, al))
+        if negozio_id is not None:
+            righe = righe.filter(negozio_id=negozio_id)
+        return {(e.negozio_id, e.data): e for e in righe}

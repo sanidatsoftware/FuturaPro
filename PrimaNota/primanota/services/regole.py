@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from ..models import DocumentoSysSpy, FileSysSpy, RegolaDocumento
+from ..models import DocumentoSysSpy, Emergenza, FileSysSpy, RegolaDocumento
 from .baserow_primanota import FATTURE_SPESE, TIPI_DOCUMENTO
 
 # Che cosa deve contenere la giornata perché la regola "solo se la giornata ne contiene" chieda la scansione.
@@ -60,6 +60,7 @@ def stato_giornate(negozio_id, dal, al, caricate):
     """
     regole = RegolaDocumento.mappa()
     presenti = presenti_nel_sysspy(negozio_id, dal, al)
+    emergenze = {giorno for _, giorno in Emergenza.giorni(dal, al, negozio_id)}
     conteggio = {}
     for s in caricate:
         chiave = (s["data_documento"], s["tipo_documento"])
@@ -71,7 +72,9 @@ def stato_giornate(negozio_id, dal, al, caricate):
         voci = []
         for t in TIPI_DOCUMENTO:
             regola = regole.get(t["id"])
-            if regola == RegolaDocumento.SE_SYSSPY and FONTE_PER_TIPO.get(t["id"], "CASSA") not in spy:
+            if regola == RegolaDocumento.SE_SYSSPY and (
+                    d in emergenze or FONTE_PER_TIPO.get(t["id"], "CASSA") not in spy):
+                # In Emergenza (prima nota non disponibile) non si sa cosa contiene la giornata: tutto caricabile.
                 stato = IN_ATTESA
             elif obbligatoria(regola, SYSSPY_PER_TIPO.get(t["id"]) in spy):
                 stato = OBBLIGATORIA

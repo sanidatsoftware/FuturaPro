@@ -14,7 +14,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_POST
 
-from .models import (Condivisione, DestinatarioEmail, DocumentoSysSpy, FileSysSpy, GiornataLavorazione, Nota, ScontrinoSospeso,
+from .models import (Condivisione, DestinatarioEmail, DocumentoSysSpy, Emergenza, FileSysSpy, GiornataLavorazione, Nota, ScontrinoSospeso,
                      Pianificazione, RegolaDocumento)
 from .services.allegati import ottimizza
 from .services.giornate import stato as giornate_stato
@@ -144,6 +144,8 @@ def _blocco_prima_nota(negozio_id, giorno):
     """Messaggio se la prima nota della giornata non c'è o non è certificata (le scansioni si inviano dopo)."""
     from .services.prima_nota import prima_nota_pronta
     d = date.fromisoformat(giorno)
+    if Emergenza.objects.filter(negozio_id=negozio_id, data=d).exists():
+        return None   # il negozio ha dichiarato l'Emergenza: le scansioni si inviano senza prima nota
     stato = prima_nota_pronta((negozio(negozio_id) or {}).get("codice"), d)
     if stato == "mancante":
         return (f"La prima nota del {d:%d/%m/%Y} non è ancora presente: compila e certifica prima la prima nota, "
@@ -260,6 +262,19 @@ def upload(request):
                 nota.inviata_a = ", ".join(d.email for d in destinatari)
                 nota.save(update_fields=["inviata_a", "esito_invio"])
             return redirect(f"/primanota/upload/?versamento={esito}")
+    elif request.method == "POST" and request.POST.get("azione") == "emergenza":
+        giorno = _data(request.POST.get("data"))
+        motivo = request.POST.get("motivo", "").strip()
+        if not giorno or not motivo:
+            error = "Per attivare l'Emergenza scrivi il motivo."
+        else:
+            _, nuova = Emergenza.objects.get_or_create(negozio_id=negozio_id, data=giorno, defaults={
+                "motivo": motivo, "attivata_da": nome_utente(user)})
+            if nuova:
+                # La sede lo vede subito tra le note e anomalie, oltre che nel monitor.
+                Nota.objects.create(negozio_id=negozio_id, data=giorno, tipo=Nota.ANOMALIA, creata_da=nome_utente(user),
+                                    testo=f"Modalità Emergenza attivata: prima nota non disponibile. Motivo: {motivo}")
+            return redirect(f"/primanota/upload/?data={giorno}")
     elif request.method == "POST":
         error = _salva_giornata(request, user, negozio_id)
         if not error:
@@ -295,6 +310,7 @@ def upload(request):
     return render(request, "primanota/upload.html", _contesto(
         request, scansioni=scansioni, error=error, message=message, ieri=ieri, giorno=giorno, voci=voci,
         blocco_prima_nota=_blocco_prima_nota(negozio_id, giorno),
+        emergenza=Emergenza.objects.filter(negozio_id=negozio_id, data=giorno).first(),
         tipi_nota=Nota.TIPI, note=Nota.objects.filter(negozio_id=negozio_id, versamento=False)[:30],
         destinatari=DestinatarioEmail.objects.filter(attivo=True), giornate=_giornate_recenti(negozio_id),
         negozio_id=negozio_id,
@@ -449,6 +465,7 @@ def giornata(request, negozio_id, giorno):
         sezioni=sezioni, altre=altre, files=files, casse=casse, error=error,
         storni=docs(DocumentoSysSpy.STORNO, DocumentoSysSpy.ANNULLAMENTO), pos_negate=docs(DocumentoSysSpy.POS_NEGATO),
         sospesi=ScontrinoSospeso.objects.filter(negozio_id=negozio_id, data=giorno).order_by("ora"),
+        emergenza=Emergenza.objects.filter(negozio_id=negozio_id, data=giorno).first(),
         stato_giornata=giornate_stato(negozio_id, corrente, con_scansioni=bool(scansioni)), avviso_stato=request.GET.get("avviso_stato") == "1",
         note=Nota.objects.filter(negozio_id=negozio_id, data=giorno, versamento=False), tipi_nota=Nota.TIPI))
 

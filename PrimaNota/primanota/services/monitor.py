@@ -12,7 +12,7 @@ from django.db.models import Count, Q
 from scansioni.services.monitor_trasmissioni import MONTH_LABELS, WEEKDAY_LABELS, _build_days, _month_shift, _safe_int
 from scansioni.services.baserow_scansioni import LOCAL_TZ
 
-from ..models import DocumentoSysSpy, FileSysSpy, GiornataLavorazione, Nota, RegolaDocumento
+from ..models import DocumentoSysSpy, Emergenza, FileSysSpy, GiornataLavorazione, Nota, RegolaDocumento
 from .giornate import stato as stato_giornata
 from .prima_nota import presenze
 from .regole import SYSSPY_PER_TIPO, obbligatoria, segni_prima_nota
@@ -69,7 +69,9 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
     # Baserow si legge in parallelo a SysSpy e prima nota: sono le attese più lunghe della pagina.
     lettura = _ESECUTORE.submit(elenco_scansioni, data_da=dal.isoformat(), data_a=al.isoformat())
     sysspy = _sysspy_per_giorno(days[0], days[-1])
-    prima_nota = None if versamenti else presenze(days[0], days[-1])
+    emergenze = Emergenza.giorni(days[0], days[-1])
+    # La prima nota serve al monitor generale e, per le giornate in Emergenza, anche a quello dei versamenti.
+    prima_nota = presenze(days[0], days[-1]) if not versamenti or emergenze else None
     # Il monitor generale esclude i versamenti, che hanno un monitor proprio.
     scansioni = [s for s in lettura.result() if s["versamento"] == versamenti]
     tipi = [t for t in TIPI_DOCUMENTO if (t["id"] == VERSAMENTO_CONTANTE) == versamenti]
@@ -118,6 +120,10 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
             else:
                 # Lavorato è della giornata intera, non del singolo allegato.
                 state = "worked" if giornata == GiornataLavorazione.LAVORATO else "pending"
+            # Emergenza dichiarata dal negozio: giallo lampeggiante finché la prima nota non c'è.
+            emergenza = emergenze.get((negozio_id, day))
+            if emergenza and day <= today and not (prima_nota or {}).get((str(negozio.get("codice") or "").strip(), day)):
+                state = "emergency"
             if valori:
                 summary["documents"] += valori["total"]
                 if state in ("pending", "worked"):
@@ -146,6 +152,7 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
                 "squadrate": spy["squadrate"],
                 "note_aperte": n["n"],
                 "richieste_contatto": n["contatto"],
+                "emergenza": emergenza.motivo if emergenza else "",
                 "mancanti": mancanti if valori["total"] else [],
                 "detail_url": "" if day > today else (
                     f"/primanota/versamenti/?negozio={negozio_id}&data_da={iso}&data_a={iso}" if versamenti
