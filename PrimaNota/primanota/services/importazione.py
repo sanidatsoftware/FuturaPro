@@ -18,7 +18,7 @@ import re
 import threading
 import time
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -211,16 +211,18 @@ def archivia(cond, origine, nome, dimensione, mtime, dati=None, analisi=None, sh
     return salvati
 
 
-def rielabora_archivio(negozio_id=None, scrivi=None, stato=None, stop=None, processi=None):
+def rielabora_archivio(negozio_id=None, scrivi=None, stato=None, stop=None, processi=None, periodo=None):
     """
     Rilegge i SysSpy già archiviati (senza andare sulle condivisioni) con le regole attuali.
-    Lavora solo sui file analizzati con una versione precedente: se viene interrotta,
-    alla ripartenza continua da dove era arrivata. L'analisi gira su più processi.
+    Senza periodo lavora solo sui file analizzati con una versione precedente: se viene interrotta,
+    alla ripartenza continua da dove era arrivata. Con periodo (dal, al) rilegge tutti i file di quei
+    giorni, anche se già aggiornati, e poi ricalcola gli scontrini ribattuti. L'analisi gira su più processi.
     """
     from concurrent.futures import ProcessPoolExecutor
 
-    righe = (FileSysSpy.objects.filter(versione_analisi__lt=sysspy.VERSIONE_ANALISI)
-             .order_by("negozio_id", "percorso_origine")
+    righe = (FileSysSpy.objects.filter(data__range=periodo) if periodo
+             else FileSysSpy.objects.filter(versione_analisi__lt=sysspy.VERSIONE_ANALISI))
+    righe = (righe.order_by("negozio_id", "percorso_origine")
              .values("negozio_id", "percorso_origine", "percorso_archivio", "nome_file", "dimensione",
                      "modificato_il", "codice_negozio"))
     if negozio_id:
@@ -263,6 +265,13 @@ def rielabora_archivio(negozio_id=None, scrivi=None, stato=None, stop=None, proc
                 trascorsi = time.monotonic() - inizio
                 mancano = trascorsi / fatti * (len(da_fare) - fatti)
                 scrivi(f"{fatti} di {len(da_fare)} file, mancano circa {int(mancano // 60)} minuti")
+    if periodo and not (stop is not None and stop.is_set()):
+        from .sospesi import abbina_ribattuti
+        for n in sorted({f["negozio_id"] for f in da_fare}):
+            try:
+                _con_riprova(lambda: abbina_ribattuti(n, dal=periodo[0] - timedelta(days=1)))
+            except Exception:
+                log.exception("Ribattuti del negozio %s non ricalcolati", n)
     return {"file": stato["fatti"], "errori": stato["errori"]}
 
 
@@ -290,15 +299,18 @@ def _blocco_negozio(negozio_id):
         lock.release()
 
 
-def importa_condivisione(cond, completa=False, lavoro=None, stop=None):
-    """Importa i file nuovi o modificati di una condivisione. completa=True rilegge tutto."""
+def importa_condivisione(cond, completa=False, lavoro=None, stop=None, periodo=None):
+    """
+    Importa i file nuovi o modificati di una condivisione. completa=True rilegge tutto;
+    con periodo (dal, al) rilegge dalla cassa solo i file di quei giorni (data nel nome del file).
+    """
     stato = lavoro if lavoro is not None else {}
     stato.update(stato="in corso", esaminati=0, importati=0, saltati=0, errori=0, messaggio="")
     with _blocco_negozio(cond.negozio_id) as libero:
         if not libero:
             stato.update(stato="errore", messaggio="Importazione già in corso per questo negozio")
             return stato
-        _importa(cond, completa, stato, stop)
+        _importa(cond, completa or bool(periodo), stato, stop, periodo)
     cond.ultima_importazione = timezone.now()
     cond.ultimo_esito = (f"{stato['stato']}: {stato['importati']} importati, {stato['saltati']} già presenti, "
                          f"{stato['errori']} errori. {stato['messaggio']}").strip()
@@ -391,7 +403,12 @@ def importa_file_sr(cond, completa=False):
     return f"file SR: {len(visti)} in cassa, {len(letti)} aggiornati, {n_spariti} non più presenti"
 
 
-def _importa(cond, completa, stato, stop):
+def _data_nel_nome(nome):
+    """Il giorno scritto nel nome del file: SysSpy.AAAAMMGG.N o CPaammgg.SRI.CassaN."""
+    return sri.data_dal_nome(nome)[0] if sri.NOME_RE.match(nome) else sysspy.data_e_cassa_da_nome(nome)[0]
+
+
+def _importa(cond, completa, stato, stop, periodo=None):
     try:
         noti = {} if completa else {
             o: (d, m) for o, d, m in FileSysSpy.objects.filter(negozio_id=cond.negozio_id)
@@ -403,6 +420,8 @@ def _importa(cond, completa, stato, stop):
         for origine, nome, dimensione, mtime, leggi in _file_condivisione(cond):
             if stop is not None and stop.is_set():
                 break
+            if periodo and not (periodo[0] <= (_data_nel_nome(nome) or date.min) <= periodo[1]):
+                continue
             stato["esaminati"] += 1
             if noti.get(origine) == (dimensione, mtime):
                 stato["saltati"] += 1
@@ -439,8 +458,8 @@ def _importa(cond, completa, stato, stop):
         stato.update(stato="errore", messaggio=str(exc))
 
 
-def importa_tutte(completa=False, lavoro=None, stop=None, scrivi=None):
-    """Tutti i negozi con una condivisione attiva, uno dopo l'altro."""
+def importa_tutte(completa=False, lavoro=None, stop=None, scrivi=None, periodo=None):
+    """Tutti i negozi con una condivisione attiva, uno dopo l'altro (con periodo: solo i file di quei giorni)."""
     stato = lavoro if lavoro is not None else {}
     condivisioni = list(Condivisione.objects.filter(attiva=True).exclude(percorso=""))
     stato.update(stato="in corso", negozi=len(condivisioni), negozi_fatti=0, negozio_corrente="",
@@ -449,7 +468,7 @@ def importa_tutte(completa=False, lavoro=None, stop=None, scrivi=None):
         if stop is not None and stop.is_set():
             break
         stato["negozio_corrente"] = cond.codice_negozio
-        parziale = importa_condivisione(cond, completa, stop=stop)
+        parziale = importa_condivisione(cond, completa, stop=stop, periodo=periodo)
         for k in ("esaminati", "importati", "saltati", "errori"):
             stato[k] += parziale[k]
         stato["esiti"].append(f"{cond.codice_negozio}: {cond.ultimo_esito}")
@@ -509,7 +528,7 @@ def esegui_pianificazione(adesso=None, scrivi=None):
     return piano.ultimo_esito
 
 
-def avvia_in_background(cond, completa=False):
+def avvia_in_background(cond, completa=False, periodo=None):
     """Avvia l'importazione in un thread e restituisce l'id per seguirne l'avanzamento."""
     lavoro_id = f"{cond.negozio_id}-{int(timezone.now().timestamp())}"
     stop = threading.Event()
@@ -517,7 +536,7 @@ def avvia_in_background(cond, completa=False):
 
     def esegui():
         try:
-            importa_condivisione(cond, completa, LAVORI[lavoro_id], stop)
+            importa_condivisione(cond, completa, LAVORI[lavoro_id], stop, periodo)
         finally:
             close_old_connections()
 
@@ -525,7 +544,7 @@ def avvia_in_background(cond, completa=False):
     return lavoro_id
 
 
-def avvia_tutte_in_background(completa=False):
+def avvia_tutte_in_background(completa=False, periodo=None):
     """Importa o ricostruisce tutti i negozi in un thread; restituisce l'id del lavoro."""
     lavoro_id = f"tutti-{int(timezone.now().timestamp())}"
     stop = threading.Event()
@@ -533,7 +552,7 @@ def avvia_tutte_in_background(completa=False):
 
     def esegui():
         try:
-            importa_tutte(completa, LAVORI[lavoro_id], stop)
+            importa_tutte(completa, LAVORI[lavoro_id], stop, periodo=periodo)
         finally:
             close_old_connections()
 
@@ -554,10 +573,10 @@ def blocco_rielaborazione():
         yield True
 
 
-def avvia_rielaborazione_in_background():
+def avvia_rielaborazione_in_background(negozio_id=None, periodo=None, etichetta="archivio (rielaborazione)"):
     lavoro_id = f"rielabora-{int(timezone.now().timestamp())}"
     stop = threading.Event()
-    stato = LAVORI[lavoro_id] = {"stato": "in corso", "negozio": "archivio (rielaborazione)", "_stop": stop}
+    stato = LAVORI[lavoro_id] = {"stato": "in corso", "negozio": etichetta, "_stop": stop}
 
     def esegui():
         try:
@@ -566,7 +585,7 @@ def avvia_rielaborazione_in_background():
                     stato.update(stato="errore", messaggio="Rielaborazione già in corso (comando o installazione)")
                     return
                 # Nel portale un solo processo: il comando da terminale usa più processi ed è più veloce.
-                esito = rielabora_archivio(stato=stato, stop=stop, processi=1,
+                esito = rielabora_archivio(negozio_id, stato=stato, stop=stop, processi=1, periodo=periodo,
                                            scrivi=lambda t: stato.update(messaggio=t))
                 stato.update(stato="interrotta" if stop.is_set() else "completata", importati=esito["file"],
                              errori=esito["errori"])

@@ -15,6 +15,8 @@ class Command(BaseCommand):
         parser.add_argument("--completa", action="store_true", help="Rilegge anche i file già archiviati")
         parser.add_argument("--rielabora", action="store_true",
                             help="Rilegge i file già archiviati (senza condivisioni) con le regole attuali")
+        parser.add_argument("--dal", help="Con --rielabora: primo giorno (AAAA-MM-GG); rielabora anche i file già aggiornati")
+        parser.add_argument("--al", help="Con --rielabora: ultimo giorno (AAAA-MM-GG), predefinito uguale a --dal")
         parser.add_argument("--ribattuti", action="store_true",
                             help="Ricalcola gli scontrini sospesi ribattuti a mano (ultimi 120 giorni), senza importare")
         parser.add_argument("--pianificato", action="store_true",
@@ -41,11 +43,16 @@ class Command(BaseCommand):
             if opzioni["negozio"]:
                 cond = Condivisione.objects.filter(codice_negozio=opzioni["negozio"]).first()
                 negozio_id = cond.negozio_id if cond else -1
+            periodo = None
+            if opzioni["dal"]:
+                from datetime import date
+                periodo = (date.fromisoformat(opzioni["dal"]), date.fromisoformat(opzioni["al"] or opzioni["dal"]))
             with blocco_rielaborazione() as libero:
                 if not libero:
                     self.stdout.write("Rielaborazione già in corso: questa non parte.")
                     return
-                esito = rielabora_archivio(negozio_id, scrivi=lambda t: (self.stdout.write(t), self.stdout.flush()))
+                esito = rielabora_archivio(negozio_id, periodo=periodo,
+                                           scrivi=lambda t: (self.stdout.write(t), self.stdout.flush()))
             self.stdout.write(f"Rielaborati {esito['file']} file, {esito['errori']} errori")
             return
         if opzioni["pianificato"]:

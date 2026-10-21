@@ -59,6 +59,25 @@
             aggiornamento del programma, ad esempio per attribuire alle giornate giuste il contenuto finito nel file del giorno dopo.</p>
     </div>
     <div class="card">
+        <h3>Rielabora un negozio e un periodo</h3>
+        {% if errore_periodo == "1" %}<div class="message-error">Indica un periodo valido (dal … al …).</div>
+        {% elif errore_periodo == "2" %}<div class="message-error">Il negozio scelto non ha una condivisione: si può rielaborare solo dall'archivio.</div>{% endif %}
+        <form method="post" action="/primanota/condivisioni/rielabora-periodo/" class="filters"
+              onsubmit="return confirm('Rielaborare i dati del periodo scelto?')">{% csrf_token %}
+            <label class="field">Negozio <select name="negozio"><option value="">Tutti</option>
+                {% for n, c in righe %}<option value="{{ n.id }}">{{ n.codice }} - {{ n.descrizione }}</option>{% endfor %}</select></label>
+            <label class="field">Dal <input type="date" name="dal" required max="{{ oggi }}"></label>
+            <label class="field">Al <input type="date" name="al" required max="{{ oggi }}"></label>
+            <label class="field">Fonte <select name="fonte">
+                <option value="archivio">Archivio del portale (veloce)</option>
+                <option value="casse">Rileggi i file dalle casse</option></select></label>
+            <button class="btn btn-orange">Rielabora</button>
+        </form>
+        <p class="small">«Archivio del portale» rilegge con le regole attuali i SysSpy già copiati sul server e ricalcola gli scontrini
+            ribattuti: si usa dopo una correzione del programma. «Rileggi i file dalle casse» va sulle condivisioni e ricopia i SysSpy e i file
+            dei sospesi di quei giorni (data nel nome del file): si usa se un file in cassa è stato corretto o era incompleto.</p>
+    </div>
+    <div class="card">
         <h3>Importazione automatica</h3>
         <form method="post" class="filters">{% csrf_token %}
             <input type="hidden" name="azione" value="pianificazione">

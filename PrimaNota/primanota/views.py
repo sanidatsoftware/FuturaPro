@@ -759,7 +759,8 @@ def condivisioni(request):
     return render(request, "primanota/condivisioni.html", _contesto(
         request, righe=righe, piano=piano, giorni=Pianificazione.GIORNI, errore_orari=errore_orari,
         regole=[(t, RegolaDocumento.mappa().get(t["id"])) for t in TIPI_DOCUMENTO], scelte_regole=RegolaDocumento.SCELTE,
-        salvato=request.GET.get("salvato") == "1", disco=_stato_disco(request.GET.get("disco") == "aggiorna")))
+        salvato=request.GET.get("salvato") == "1", errore_periodo=request.GET.get("errore_periodo"),
+        oggi=timezone.localdate().isoformat(), disco=_stato_disco(request.GET.get("disco") == "aggiorna")))
 
 
 def _stato_disco(ricalcola):
@@ -783,6 +784,33 @@ def avvia_importazione(request, negozio_id):
 @_accesso(solo_ufficio=True, solo_gestione=True)
 def rielabora(request):
     return redirect(f"/primanota/importazione/{importazione.avvia_rielaborazione_in_background()}/")
+
+
+@require_POST
+@_accesso(solo_ufficio=True, solo_gestione=True)
+def rielabora_periodo(request):
+    """
+    Rielabora un negozio (o tutti) in un periodo: dall'archivio del portale (veloce, con le regole attuali)
+    oppure rileggendo dalle casse i file originali di quei giorni.
+    """
+    dal, al = _data(request.POST.get("dal")), _data(request.POST.get("al"))
+    if not dal or not al or dal > al:
+        return redirect("/primanota/condivisioni/?errore_periodo=1")
+    periodo = (date.fromisoformat(dal), date.fromisoformat(al))
+    negozio_id = int(request.POST["negozio"]) if request.POST.get("negozio", "").isdigit() else None
+    n = negozio(negozio_id) if negozio_id else None
+    descrizione = f"{n['codice'] if n else 'tutti i negozi'} dal {periodo[0]:%d/%m/%Y} al {periodo[1]:%d/%m/%Y}"
+    if request.POST.get("fonte") == "casse":
+        if negozio_id:
+            cond = Condivisione.objects.filter(negozio_id=negozio_id).exclude(percorso="").first()
+            if not cond:
+                return redirect("/primanota/condivisioni/?errore_periodo=2")
+            lavoro = importazione.avvia_in_background(cond, periodo=periodo)
+        else:
+            lavoro = importazione.avvia_tutte_in_background(periodo=periodo)
+    else:
+        lavoro = importazione.avvia_rielaborazione_in_background(negozio_id, periodo, f"rielaborazione {descrizione}")
+    return redirect(f"/primanota/importazione/{lavoro}/")
 
 
 @require_POST

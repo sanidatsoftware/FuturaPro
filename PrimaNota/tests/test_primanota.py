@@ -1622,3 +1622,42 @@ class TestEmergenza(Base):
             r = self.client_per("direttore@x").get("/primanota/monitor/", {"anno": ieri.year, "mese": ieri.month})
             riga = next(x for x in r.context["monitor"]["rows"] if x["store_id"] == 10)
             self.assertNotEqual(next(c for c in riga["cells"] if c["date"] == ieri.isoformat())["state"], "emergency")
+
+
+class TestRielaboraPeriodo(Base):
+    def test_dall_archivio_solo_negozio_e_giorni_scelti(self):
+        from primanota import sysspy as modulo
+        self.importa_fixture()
+        f = FileSysSpy.objects.get()
+        self.assertEqual(f.versione_analisi, modulo.VERSIONE_ANALISI)
+        f.chiusura_pos = ""
+        f.save(update_fields=["chiusura_pos"])
+        # Fuori periodo non si tocca niente, anche se il file è già alla versione attuale.
+        importazione.rielabora_archivio(10, processi=1, periodo=(date(2026, 5, 29), date(2026, 5, 30)))
+        self.assertEqual(FileSysSpy.objects.get().chiusura_pos, "")
+        importazione.rielabora_archivio(10, processi=1, periodo=(date(2026, 5, 28), date(2026, 5, 28)))
+        self.assertIn("TOTALE POS EUR", FileSysSpy.objects.get().chiusura_pos)
+
+    def test_dalle_casse_solo_i_file_del_periodo(self):
+        cond, cartella, _ = self.importa_fixture()
+        (cartella / "SysSpy.20260529.2").write_text(sysspy_scontrini("29/05/2026", 2, [(1, "10:00", [("PANE", "1,20")])]))
+        stato = importazione.importa_condivisione(cond, periodo=(date(2026, 5, 28), date(2026, 5, 28)))
+        # Il file del 28 si rilegge (anche se già archiviato), quello del 29 resta fuori.
+        self.assertEqual((stato["esaminati"], stato["importati"]), (1, 1))
+        self.assertFalse(FileSysSpy.objects.filter(data=date(2026, 5, 29)).exists())
+
+    def test_pagina_impostazioni(self):
+        self.importa_fixture()
+        r = self.client_per("direttore@x").post("/primanota/condivisioni/rielabora-periodo/",
+                                                {"negozio": "10", "dal": "2026-05-29", "al": "2026-05-28", "fonte": "archivio"})
+        self.assertRedirects(r, "/primanota/condivisioni/?errore_periodo=1", fetch_redirect_response=False)
+        with mock.patch("primanota.services.importazione.avvia_rielaborazione_in_background", return_value="x") as avvia:
+            r = self.client_per("direttore@x").post("/primanota/condivisioni/rielabora-periodo/",
+                                                    {"negozio": "10", "dal": "2026-05-28", "al": "2026-05-28", "fonte": "archivio"})
+        self.assertRedirects(r, "/primanota/importazione/x/", fetch_redirect_response=False)
+        self.assertEqual(avvia.call_args[0][:2], (10, (date(2026, 5, 28), date(2026, 5, 28))))
+        with mock.patch("primanota.services.importazione.avvia_in_background", return_value="y") as avvia:
+            self.client_per("direttore@x").post("/primanota/condivisioni/rielabora-periodo/",
+                                                {"negozio": "10", "dal": "2026-05-28", "al": "2026-05-28", "fonte": "casse"})
+        self.assertEqual(avvia.call_args[1]["periodo"], (date(2026, 5, 28), date(2026, 5, 28)))
+        self.assertEqual(self.client_per("ufficio@x").post("/primanota/condivisioni/rielabora-periodo/", {}).status_code, 403)
