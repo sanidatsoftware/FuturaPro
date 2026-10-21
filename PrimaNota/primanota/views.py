@@ -174,12 +174,18 @@ def _salva_giornata(request, user, negozio_id):
     voci = _voci_caricamento(negozio_id, giorno)
     file_per_tipo = {v["tipo"]["id"]: request.FILES.get(f"documento_{v['tipo']['chiave']}") for v in voci}
     note = request.POST.get("note", "").strip()
-    tipo_nota = request.POST.get("tipo_nota") if request.POST.get("tipo_nota") in dict(Nota.TIPI) else Nota.NOTA
+    tipo_nota = request.POST.get("tipo_nota") if request.POST.get("tipo_nota") in dict(TIPI_NOTA_CON_VERSAMENTO) else Nota.NOTA
+
+    def salva_nota():
+        if tipo_nota == NOTA_VERSAMENTO:
+            _nota_versamento(user, negozio_id, giorno, note)
+        else:
+            Nota.objects.create(negozio_id=negozio_id, data=giorno, tipo=tipo_nota, testo=note, creata_da=nome_utente(user))
     da_salvare = [v for v in voci if file_per_tipo[v["tipo"]["id"]]]
     if not da_salvare:
         if not note:
             return "Allega almeno un documento o scrivi una nota."
-        Nota.objects.create(negozio_id=negozio_id, data=giorno, tipo=tipo_nota, testo=note, creata_da=nome_utente(user))
+        salva_nota()
         return None
     blocco = _blocco_prima_nota(negozio_id, giorno)
     if blocco:
@@ -208,8 +214,45 @@ def _salva_giornata(request, user, negozio_id):
             return f"{v['tipo']['label']}: {str(risultato['error']).rstrip('.')}.{gia}"
         salvati.append(v["tipo"]["label"])
     if note:
-        Nota.objects.create(negozio_id=negozio_id, data=giorno, tipo=tipo_nota, testo=note, creata_da=nome_utente(user))
+        salva_nota()
     return None
+
+
+# Nei moduli delle note, oltre ai tipi normali: la nota sul versamento contante, inviata per email.
+NOTA_VERSAMENTO = "VERSAMENTO"
+TIPI_NOTA_CON_VERSAMENTO = Nota.TIPI + [(NOTA_VERSAMENTO, "Nota sul versamento (inviata per email)")]
+
+
+def _nota_versamento(user, negozio_id, giorno, testo, scansione=None):
+    """
+    Nota sul versamento contante della giornata, inviata per email a tutti i destinatari attivi con la
+    scansione del versamento in allegato (se c'è). Restituisce "inviata", "nota" (nessun destinatario) o "noninviata".
+    """
+    if scansione is None:
+        try:
+            scansione = next((s for s in elenco_scansioni(negozio_id=negozio_id, data_da=giorno, data_a=giorno)
+                              if s["versamento"]), None)
+        except RuntimeError:
+            scansione = None
+    nota = Nota.objects.create(negozio_id=negozio_id, data=giorno, tipo=Nota.NOTA, testo=testo, creata_da=nome_utente(user),
+                               versamento=True, scansione_id=scansione["id"] if scansione else None)
+    destinatari = list(DestinatarioEmail.objects.filter(attivo=True))
+    if not destinatari:
+        return "nota"
+    oggetto = f"Versamento contante {etichetta_negozio(negozio(negozio_id))} del {date.fromisoformat(str(giorno)):%d/%m/%Y}"
+    corpo = (f"{oggetto}\n\nNota di {nome_utente(user)}:\n{testo}\n\n"
+             + ("In allegato la scansione del versamento." if scansione else "Scansione del versamento non ancora caricata."))
+    try:
+        from .services.posta import invia
+        invia([d.email for d in destinatari], oggetto, corpo,
+              allegato_url=((scansione or {}).get("anteprima") or {}).get("url"),
+              allegato_nome=(scansione["documento"][0]["visible_name"] if scansione and scansione["documento"] else None))
+        nota.esito_invio, esito = "Inviata", "inviata"
+    except Exception as exc:
+        nota.esito_invio, esito = f"Invio non riuscito: {exc}", "noninviata"
+    nota.inviata_a = ", ".join(d.email for d in destinatari)
+    nota.save(update_fields=["inviata_a", "esito_invio"])
+    return esito
 
 
 @_accesso()
@@ -239,28 +282,7 @@ def upload(request):
         if not s or s["negozio_id"] != negozio_id or not s["versamento"] or not testo:
             error = "Scrivi il testo della nota sul versamento."
         else:
-            ids = [int(x) for x in request.POST.getlist("destinatari") if x.isdigit()]
-            destinatari = list(DestinatarioEmail.objects.filter(pk__in=ids, attivo=True))
-            nota = Nota.objects.create(negozio_id=negozio_id, data=s["data_documento"], tipo=Nota.NOTA, testo=testo,
-                                       creata_da=nome_utente(user), versamento=True, scansione_id=s["id"])
-            esito = "nota"
-            if destinatari:
-                n = negozio(negozio_id)
-                oggetto = f"Versamento contante {etichetta_negozio(n)} del {s['data_documento_fmt']}"
-                corpo = (f"{oggetto}\n\nNota di {nome_utente(user)}:\n{testo}\n\n"
-                         f"In allegato la scansione del versamento.")
-                try:
-                    from .services.posta import invia
-                    invia([d.email for d in destinatari], oggetto, corpo,
-                          allegato_url=(s["anteprima"] or {}).get("url"),
-                          allegato_nome=(s["documento"][0]["visible_name"] if s["documento"] else None))
-                    nota.esito_invio = "Inviata"
-                    esito = "inviata"
-                except Exception as exc:
-                    nota.esito_invio = f"Invio non riuscito: {exc}"
-                    esito = "noninviata"
-                nota.inviata_a = ", ".join(d.email for d in destinatari)
-                nota.save(update_fields=["inviata_a", "esito_invio"])
+            esito = _nota_versamento(user, negozio_id, s["data_documento"], testo, s)
             return redirect(f"/primanota/upload/?versamento={esito}")
     elif request.method == "POST" and request.POST.get("azione") == "emergenza":
         giorno = _data(request.POST.get("data"))
@@ -311,7 +333,7 @@ def upload(request):
         request, scansioni=scansioni, error=error, message=message, ieri=ieri, giorno=giorno, voci=voci,
         blocco_prima_nota=_blocco_prima_nota(negozio_id, giorno),
         emergenza=Emergenza.objects.filter(negozio_id=negozio_id, data=giorno).first(),
-        tipi_nota=Nota.TIPI, note=Nota.objects.filter(negozio_id=negozio_id, versamento=False)[:30],
+        tipi_nota=TIPI_NOTA_CON_VERSAMENTO, note=Nota.objects.filter(negozio_id=negozio_id, versamento=False)[:30],
         destinatari=DestinatarioEmail.objects.filter(attivo=True), giornate=_giornate_recenti(negozio_id),
         negozio_id=negozio_id,
         negozio=etichetta_negozio(negozio(negozio_id))))
@@ -382,10 +404,14 @@ def giornata(request, negozio_id, giorno):
         raise Http404("Negozio non trovato")
     error = None
 
+    # Le note sui versamenti le vedono il negozio e la sede che gestisce i versamenti.
+    vede_versamenti = is_store_user(request.utente_primanota) or can_see_versamenti(request.utente_primanota)
     if request.method == "POST":
         testo = request.POST.get("testo", "").strip()
         tipo = request.POST.get("tipo")
-        if testo and tipo in dict(Nota.TIPI):
+        if testo and tipo == NOTA_VERSAMENTO and vede_versamenti:
+            _nota_versamento(request.utente_primanota, negozio_id, giorno, testo)
+        elif testo and tipo in dict(Nota.TIPI):
             Nota.objects.create(negozio_id=negozio_id, data=giorno, tipo=tipo, testo=testo,
                                 creata_da=nome_utente(request.utente_primanota))
         return redirect(request.path)
@@ -467,7 +493,9 @@ def giornata(request, negozio_id, giorno):
         sospesi=ScontrinoSospeso.objects.filter(negozio_id=negozio_id, data=giorno).order_by("ora"),
         emergenza=Emergenza.objects.filter(negozio_id=negozio_id, data=giorno).first(),
         stato_giornata=giornate_stato(negozio_id, corrente, con_scansioni=bool(scansioni)), avviso_stato=request.GET.get("avviso_stato") == "1",
-        note=Nota.objects.filter(negozio_id=negozio_id, data=giorno, versamento=False), tipi_nota=Nota.TIPI))
+        note=Nota.objects.filter(negozio_id=negozio_id, data=giorno, **({} if vede_versamenti else {"versamento": False})),
+        tipi_nota=TIPI_NOTA_CON_VERSAMENTO if vede_versamenti else Nota.TIPI,
+        destinatari=DestinatarioEmail.objects.filter(attivo=True) if vede_versamenti else []))
 
 
 @require_POST

@@ -594,25 +594,51 @@ class TestVersamentiNoteStatistiche(Base):
 
     def test_nota_sul_versamento_inviata_per_email(self):
         from primanota.models import DestinatarioEmail
-        d = DestinatarioEmail.objects.create(nome="Amministrazione", email="amm@x.it")
+        DestinatarioEmail.objects.create(nome="Amministrazione", email="amm@x.it")
+        DestinatarioEmail.objects.create(nome="Direzione", email="dir@x.it")
+        DestinatarioEmail.objects.create(nome="Vecchio", email="old@x.it", attivo=False)
         self.carica(self.client_per("pv@x"), "Versamenti contante")
+        # Va sempre a tutti i destinatari attivi, senza sceglierli.
         with mock.patch("primanota.services.posta.invia") as invia:
             r = self.client_per("pv@x").post("/primanota/upload/", {
-                "azione": "nota_versamento", "scansione_id": 1, "testo": "Mancano 10 euro", "destinatari": [d.id]})
+                "azione": "nota_versamento", "scansione_id": 1, "testo": "Mancano 10 euro"})
         self.assertRedirects(r, "/primanota/upload/?versamento=inviata", fetch_redirect_response=False)
         destinatari, oggetto, corpo = invia.call_args.args
-        self.assertEqual(destinatari, ["amm@x.it"])
+        self.assertEqual(sorted(destinatari), ["amm@x.it", "dir@x.it"])
         self.assertIn("Mancano 10 euro", corpo)
         self.assertEqual(invia.call_args.kwargs["allegato_url"], "/media/up_scan.pdf")
         nota = Nota.objects.get()
         self.assertTrue(nota.versamento)
-        self.assertEqual((nota.scansione_id, nota.inviata_a, nota.esito_invio), (1, "amm@x.it", "Inviata"))
+        self.assertEqual((nota.scansione_id, nota.esito_invio), (1, "Inviata"))
         # La nota è in Gestione Versamenti, non nelle Chiusure Fiscali.
         uff = self.client_per("ufficio@x")
         self.assertEqual(uff.get("/primanota/admin/").context["note_negozi"], [])
         self.assertEqual(uff.get("/primanota/note/").context["elenco"], [])
         self.assertEqual([n.testo for n, _ in uff.get("/primanota/versamenti/note/").context["elenco"]], ["Mancano 10 euro"])
         self.assertEqual(self.client_per("pv@x").get("/primanota/versamenti/note/").status_code, 302)
+
+    def test_nota_sul_versamento_dalla_giornata_e_dal_salva(self):
+        from primanota.models import DestinatarioEmail
+        DestinatarioEmail.objects.create(nome="Amministrazione", email="amm@x.it")
+        self.carica(self.client_per("pv@x"), "Versamenti contante")
+        pv = self.client_per("pv@x")
+        pagina = pv.get("/primanota/giornata/10/2026-05-28/")
+        self.assertContains(pagina, "Nota sul versamento (inviata per email)")
+        self.assertContains(pagina, "Sarà inviata per email")
+        with mock.patch("primanota.services.posta.invia") as invia:
+            pv.post("/primanota/giornata/10/2026-05-28/", {"tipo": "VERSAMENTO", "testo": "banconota da 50 non registrata"})
+            pv.post("/primanota/upload/", {"data_documento": "2026-05-28", "tipo_nota": "VERSAMENTO", "note": "seconda nota"})
+        self.assertEqual(invia.call_count, 2)
+        self.assertEqual(invia.call_args_list[0].kwargs["allegato_url"], "/media/up_scan.pdf")   # scansione del giorno
+        self.assertEqual(sorted(Nota.objects.filter(versamento=True).values_list("testo", flat=True)),
+                         ["banconota da 50 non registrata", "seconda nota"])
+        # Nella giornata il negozio e la sede le vedono con l'esito dell'invio.
+        self.assertContains(pv.get("/primanota/giornata/10/2026-05-28/"), "Inviata a amm@x.it")
+        self.assertContains(self.client_per("ufficio@x").get("/primanota/giornata/10/2026-05-28/"), "banconota da 50")
+        # Una nota normale resta senza email.
+        with mock.patch("primanota.services.posta.invia") as invia:
+            pv.post("/primanota/giornata/10/2026-05-28/", {"tipo": "NOTA", "testo": "nota normale"})
+        invia.assert_not_called()
 
     def test_note_da_lavorare_e_lavorate(self):
         vecchia = Nota.objects.create(negozio_id=10, data="2026-05-27", testo="vecchia", creata_da="x")

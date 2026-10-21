@@ -1,0 +1,4 @@
+{# A chi va per email una nota sul versamento: a tutti i destinatari attivi, con la scansione del versamento. #}
+{% if destinatari %}<div class="small" style="margin:6px 0">📧 Sarà inviata per email, con la scansione del versamento, a:
+    <strong>{% for d in destinatari %}{{ d.nome }}{% if not forloop.last %}, {% endif %}{% endfor %}</strong></div>
+{% else %}<div class="small" style="margin:6px 0">Nessun destinatario email configurato: la nota resta nel portale.</div>{% endif %}

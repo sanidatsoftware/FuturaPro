@@ -78,6 +78,7 @@
                 <div class="form-group" style="margin-top:14px">
                     <label>Note per l'ufficio</label>
                     <select name="tipo_nota" style="margin-bottom:6px">{% for k, v in tipi_nota %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+                    <div class="small" id="avvisoVersamento" hidden style="margin-bottom:6px">{% include "primanota/_destinatari_versamento.html" %}</div>
                     <textarea name="note" id="noteGiornata" placeholder="Note facoltative, un'anomalia o una richiesta di contatto: arrivano all'ufficio con la giornata"></textarea>
                 </div>
                 <div id="mancanti" class="file-info" style="display:none"></div>
@@ -143,11 +144,8 @@
                         <input type="hidden" name="azione" value="nota_versamento">
                         <input type="hidden" name="scansione_id" value="{{ s.id }}">
                         <textarea name="testo" required placeholder="Nota sul versamento"></textarea>
-                        {% if destinatari %}
-                        <div class="small" style="margin:6px 0">Invia per email, con la scansione in allegato, a:</div>
-                        <div class="filters">{% for d in destinatari %}<label class="check"><input type="checkbox" name="destinatari" value="{{ d.id }}"> {{ d.nome }}</label>{% endfor %}</div>
-                        {% endif %}
-                        <button class="btn btn-dark" style="margin-top:8px">Salva nota</button>
+                        {% include "primanota/_destinatari_versamento.html" %}
+                        <button class="btn btn-dark" style="margin-top:8px">Salva e invia</button>
                     </form>
                 </details>
             </td></tr>
@@ -204,6 +202,10 @@ function controllaMancanti(){
     return !blocca && (allegati || nota);
 }
 document.getElementById("noteGiornata").addEventListener("input", controllaMancanti);
+// Scegliendo «Nota sul versamento» si vede a chi verrà inviata.
+document.querySelector("select[name=tipo_nota]").addEventListener("change", function(){
+    document.getElementById("avvisoVersamento").hidden = this.value !== "VERSAMENTO";
+});
 // Le foto si rimpiccioliscono qui, prima dell'invio: lato lungo 2000 px, JPEG all'80%.
 // Una foto del telefono passa da qualche MB a poche centinaia di KB: salvataggio più veloce e meno spazio.
 const LATO_MAX = 2000;
