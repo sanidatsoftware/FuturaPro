@@ -1697,3 +1697,42 @@ class TestRielaboraPeriodo(Base):
                                                 {"negozio": "10", "dal": "2026-05-28", "al": "2026-05-28", "fonte": "casse"})
         self.assertEqual(avvia.call_args[1]["periodo"], (date(2026, 5, 28), date(2026, 5, 28)))
         self.assertEqual(self.client_per("ufficio@x").post("/primanota/condivisioni/rielabora-periodo/", {}).status_code, 403)
+
+
+class TestModificaNote(Base):
+    def test_il_negozio_corregge_o_elimina_le_sue_note_aperte(self):
+        nota = Nota.objects.create(negozio_id=10, data="2026-05-28", tipo=Nota.ANOMALIA, testo="prima", creata_da="Utente 1")
+        pv = self.client_per("pv@x")
+        self.assertContains(pv.get("/primanota/upload/"), "Modifica o elimina")
+        pv.post(f"/primanota/note/{nota.id}/modifica/", {"testo": "corretta"})
+        nota.refresh_from_db()
+        self.assertEqual(nota.testo, "corretta")
+        self.assertIsNotNone(nota.modificata_il)
+        # Un altro negozio e l'ufficio no; una nota già lavorata nemmeno.
+        self.assertEqual(self.client_per("altro_pv@x").post(f"/primanota/note/{nota.id}/elimina/").status_code, 403)
+        self.assertEqual(self.client_per("ufficio@x").post(f"/primanota/note/{nota.id}/elimina/").status_code, 403)
+        nota.chiusa = True
+        nota.save()
+        self.assertEqual(pv.post(f"/primanota/note/{nota.id}/modifica/", {"testo": "x"}).status_code, 403)
+        self.assertNotContains(pv.get("/primanota/upload/"), "Modifica o elimina")
+        nota.chiusa = False
+        nota.save()
+        r = pv.post(f"/primanota/note/{nota.id}/elimina/", {"ritorno": "/primanota/giornata/10/2026-05-28/"})
+        self.assertRedirects(r, "/primanota/giornata/10/2026-05-28/", fetch_redirect_response=False)
+        self.assertFalse(Nota.objects.exists())
+
+    def test_nota_sul_versamento_gia_inviata_manda_la_rettifica(self):
+        from primanota.models import DestinatarioEmail
+        DestinatarioEmail.objects.create(nome="Amministrazione", email="amm@x.it")
+        pv = self.client_per("pv@x")
+        with mock.patch("primanota.services.posta.invia") as invia:
+            pv.post("/primanota/upload/", {"data_documento": "2026-05-28", "tipo_nota": "VERSAMENTO", "note": "mancano 50"})
+            nota = Nota.objects.get()
+            pv.post(f"/primanota/note/{nota.id}/modifica/", {"testo": "mancano 20"})
+            pv.post(f"/primanota/note/{nota.id}/elimina/")
+        oggetti = [c.args[1] for c in invia.call_args_list]
+        self.assertEqual(len(oggetti), 3)
+        self.assertTrue(oggetti[1].startswith("NOTA MODIFICATA"))
+        self.assertIn("Testo inviato in precedenza:\nmancano 50", invia.call_args_list[1].args[2])
+        self.assertTrue(oggetti[2].startswith("NOTA ANNULLATA"))
+        self.assertFalse(Nota.objects.exists())

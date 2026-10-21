@@ -1,0 +1,17 @@
+{# Il negozio corregge o elimina una sua nota finché la sede non l'ha lavorata. #}
+{% if n.modificata_il %}<div class="small">Modificata il {{ n.modificata_il|date:"d/m/Y H:i" }}</div>{% endif %}
+{% if utente_negozio and not n.chiusa %}
+<details class="azioni-nota"><summary class="small">Modifica o elimina</summary>
+    <form method="post" action="/primanota/note/{{ n.id }}/modifica/">{% csrf_token %}
+        <input type="hidden" name="ritorno" value="{{ request.get_full_path }}">
+        <textarea name="testo" required>{{ n.testo }}</textarea>
+        <button class="btn btn-dark">Salva modifica</button>
+        {% if n.versamento and n.inviata_a %}<span class="small">La correzione parte per email agli stessi destinatari.</span>{% endif %}
+    </form>
+    <form method="post" action="/primanota/note/{{ n.id }}/elimina/" style="margin-top:6px"
+          onsubmit="return confirm('Eliminare questa nota?{% if n.versamento and n.inviata_a %} I destinatari riceveranno un\'email di annullamento.{% endif %}')">{% csrf_token %}
+        <input type="hidden" name="ritorno" value="{{ request.get_full_path }}">
+        <button class="btn btn-light">Elimina nota</button>
+    </form>
+</details>
+{% endif %}

@@ -7,6 +7,7 @@
 .scan-preview{width:100%;height:520px;border:1px solid #d9e0e8;border-radius:8px;margin-top:8px;background:#fff;object-fit:contain}
 .sezione h2{display:flex;gap:10px;align-items:center}
 .vuoto{color:#667085;font-style:italic}
+.azioni-nota summary{cursor:pointer;color:#2d4055}.azioni-nota textarea{width:100%;margin:6px 0}
 .stato-giornata{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .num{text-align:right;white-space:nowrap}
 details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
@@ -181,7 +182,8 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
         {% for n in note %}
             <tr>
                 <td>{% if n.versamento %}<span class="badge badge-grey">💶 Versamento</span>{% elif n.tipo == "RICHIESTA_CONTATTO" %}<span class="badge badge-red">🔴 {{ n.get_tipo_display }}</span>{% elif n.tipo == "ANOMALIA" %}<span class="badge badge-no">🟠 {{ n.get_tipo_display }}</span>{% else %}{{ n.get_tipo_display }}{% endif %}</td>
-                <td>{{ n.testo|linebreaksbr }}{% if n.inviata_a %}<div class="small">📧 Inviata a {{ n.inviata_a }} ({{ n.esito_invio }})</div>{% endif %}</td>
+                <td>{{ n.testo|linebreaksbr }}{% if n.inviata_a %}<div class="small">📧 Inviata a {{ n.inviata_a }} ({{ n.esito_invio }})</div>{% endif %}
+                    {% include "primanota/_azioni_nota.html" %}</td>
                 <td>{{ n.creata_da }}<br><span class="small">{{ n.creata_il|date:"d/m/Y H:i" }}</span></td>
                 <td>
                     {% if utente_negozio %}

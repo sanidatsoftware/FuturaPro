@@ -197,6 +197,7 @@ class Nota(models.Model):
     scansione_id = models.IntegerField(null=True, blank=True, help_text="Scansione Baserow a cui si riferisce")
     inviata_a = models.TextField(blank=True, help_text="Indirizzi a cui è stata inviata per email")
     esito_invio = models.TextField(blank=True)
+    modificata_il = models.DateTimeField(null=True, blank=True, help_text="Ultima modifica del negozio")
 
     class Meta:
         ordering = ["-creata_il"]

@@ -242,22 +242,36 @@ def _nota_versamento(user, negozio_id, giorno, testo, scansione=None):
             scansione = None
     nota = Nota.objects.create(negozio_id=negozio_id, data=giorno, tipo=Nota.NOTA, testo=testo, creata_da=nome_utente(user),
                                versamento=True, scansione_id=scansione["id"] if scansione else None)
+    return _invia_nota_versamento(nota, user, "Nota", scansione)
+
+
+def _invia_nota_versamento(nota, user, intestazione, scansione=None, testo_precedente=None):
+    """
+    Email della nota sul versamento a tutti i destinatari attivi. intestazione: «Nota», «Nota modificata» o
+    «Nota annullata» (rettifiche dopo un invio). Restituisce "inviata", "nota" (nessun destinatario) o "noninviata".
+    """
     destinatari = list(DestinatarioEmail.objects.filter(attivo=True))
     if not destinatari:
         return "nota"
-    oggetto = f"Versamento contante {etichetta_negozio(negozio(negozio_id))} del {date.fromisoformat(str(giorno)):%d/%m/%Y}"
-    corpo = (f"{oggetto}\n\nNota di {nome_utente(user)}:\n{testo}\n\n"
-             + ("In allegato la scansione del versamento." if scansione else "Scansione del versamento non ancora caricata."))
+    oggetto = f"Versamento contante {etichetta_negozio(negozio(nota.negozio_id))} del {date.fromisoformat(str(nota.data)):%d/%m/%Y}"
+    if intestazione != "Nota":
+        oggetto = f"{intestazione.upper()} · {oggetto}"
+    corpo = f"{oggetto}\n\n{intestazione} di {nome_utente(user)}:\n{nota.testo}\n"
+    if testo_precedente:
+        corpo += f"\nTesto inviato in precedenza:\n{testo_precedente}\n"
+    if intestazione == "Nota":
+        corpo += "\n" + ("In allegato la scansione del versamento." if scansione else "Scansione del versamento non ancora caricata.")
     try:
         from .services.posta import invia
         invia([d.email for d in destinatari], oggetto, corpo,
               allegato_url=((scansione or {}).get("anteprima") or {}).get("url"),
               allegato_nome=(scansione["documento"][0]["visible_name"] if scansione and scansione["documento"] else None))
-        nota.esito_invio, esito = "Inviata", "inviata"
+        nota.esito_invio, esito = ("Inviata" if intestazione == "Nota" else f"{intestazione}: inviata"), "inviata"
     except Exception as exc:
         nota.esito_invio, esito = f"Invio non riuscito: {exc}", "noninviata"
     nota.inviata_a = ", ".join(d.email for d in destinatari)
-    nota.save(update_fields=["inviata_a", "esito_invio"])
+    if nota.pk:
+        nota.save(update_fields=["inviata_a", "esito_invio"])
     return esito
 
 
@@ -581,6 +595,52 @@ def chiudi_nota(request, nota_id):
     nota.chiusa_il = timezone.now() if nota.chiusa else None
     nota.save()
     return redirect(request.POST.get("ritorno") or f"/primanota/giornata/{nota.negozio_id}/{nota.data.isoformat()}/")
+
+
+def _nota_del_negozio(request, nota_id):
+    """La nota, se il negozio può ancora cambiarla: del proprio punto vendita e non ancora lavorata dalla sede."""
+    nota = get_object_or_404(Nota, pk=nota_id)
+    user = request.utente_primanota
+    if not is_store_user(user) or str(nota.negozio_id) != str(get_user_store_id(user)) or nota.chiusa:
+        return None
+    return nota
+
+
+def _ritorno_nota(request, nota):
+    ritorno = request.POST.get("ritorno", "")
+    if url_has_allowed_host_and_scheme(ritorno, allowed_hosts={request.get_host()}) and ritorno.startswith("/"):
+        return ritorno
+    return "/primanota/upload/"
+
+
+@require_POST
+@_accesso()
+def modifica_nota(request, nota_id):
+    """Il negozio corregge una sua nota ancora aperta; se era già partita per email, parte la rettifica."""
+    nota = _nota_del_negozio(request, nota_id)
+    if not nota:
+        return HttpResponseForbidden("Puoi modificare solo le note del tuo negozio non ancora lavorate dalla sede.")
+    testo = request.POST.get("testo", "").strip()
+    if testo and testo != nota.testo:
+        precedente, nota.testo, nota.modificata_il = nota.testo, testo, timezone.now()
+        nota.save(update_fields=["testo", "modificata_il"])
+        if nota.versamento and nota.inviata_a:
+            _invia_nota_versamento(nota, request.utente_primanota, "Nota modificata", testo_precedente=precedente)
+    return redirect(_ritorno_nota(request, nota))
+
+
+@require_POST
+@_accesso()
+def elimina_nota(request, nota_id):
+    """Il negozio elimina una sua nota ancora aperta; se era già partita per email, avvisa che è annullata."""
+    nota = _nota_del_negozio(request, nota_id)
+    if not nota:
+        return HttpResponseForbidden("Puoi eliminare solo le note del tuo negozio non ancora lavorate dalla sede.")
+    ritorno = _ritorno_nota(request, nota)
+    if nota.versamento and nota.inviata_a:
+        _invia_nota_versamento(nota, request.utente_primanota, "Nota annullata")
+    nota.delete()
+    return redirect(ritorno)
 
 
 def _elenco_note(request, versamento):
