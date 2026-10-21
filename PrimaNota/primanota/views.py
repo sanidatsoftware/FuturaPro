@@ -1270,6 +1270,8 @@ def prima_nota(request):
             return HttpResponse(str(exc), status=502)
         for g in giornate:
             g["nome"] = g["nome"] or nome_pv.get(g["pv"], "")
+        from .services.banche import applica
+        applica(giornate)   # spaccato POS delle causali 4 e 5 anche in stampa
         periodo = data_da if data_da == data_a else f"dal {data_da} al {data_a}"
         nome = "_".join(re.sub(r"[^\w-]+", "_", t).strip("_")
                         for t in ("Prima_nota", "_".join(scelti) if scelti else "Tutti_i_PV", periodo)) + ".pdf"
@@ -1289,6 +1291,8 @@ def prima_nota(request):
             error = str(exc)
         if giornata:
             giornata["nome"] = giornata["nome"] or nome_pv.get(pv, "")
+            from .services.banche import applica
+            applica([giornata])
     corrente = date.fromisoformat(giorno)
     return render(request, "primanota/prima_nota.html", _contesto(
         request, negozi=negozi, giorno=giorno, pv=pv, giornata=giornata, error=error, cercato=cercato, ieri=ieri,
@@ -1360,3 +1364,67 @@ def impostazioni_email(request):
     return render(request, "primanota/impostazioni_email.html", _contesto(
         request, posta=posta.stato(), destinatari=DestinatarioEmail.objects.all(), messaggio=messaggio, errore=errore))
 
+
+
+@_accesso(solo_ufficio=True, solo_gestione=True)
+def banche(request):
+    """
+    Raggruppamenti Banche: per ogni istituto di credito le tipologie della chiusura POS che confluiscono nelle
+    causali 4 (Bancomat) e 5 (Carte di credito) della prima nota, e i punti vendita che lo usano.
+    """
+    from .models import IstitutoCredito, IstitutoNegozio, TipologiaPos
+    from .services.banche import CAUSALI_POS, _chiave, circuiti_giornata
+
+    if request.method == "POST":
+        azione = request.POST.get("azione")
+        if azione == "elimina":
+            IstitutoCredito.objects.filter(pk=request.POST.get("istituto")).delete()
+            return redirect("/primanota/banche/?salvato=1")
+        nome = request.POST.get("nome", "").strip()
+        if not nome:
+            return redirect("/primanota/banche/?errore=nome")
+        istituto = IstitutoCredito.objects.filter(pk=request.POST.get("istituto")).first() if request.POST.get("istituto") else None
+        if IstitutoCredito.objects.filter(nome__iexact=nome).exclude(pk=getattr(istituto, "pk", None)).exists():
+            return redirect("/primanota/banche/?errore=doppio")
+        istituto = istituto or IstitutoCredito()
+        istituto.nome = nome
+        istituto.save()
+        istituto.tipologie.all().delete()
+        visti = set()
+        for codice, _ in CAUSALI_POS:
+            for riga in request.POST.get(f"causale_{codice}", "").splitlines():
+                descrizione = " ".join(riga.split())
+                if descrizione and _chiave(descrizione) not in visti:
+                    visti.add(_chiave(descrizione))
+                    TipologiaPos.objects.create(istituto=istituto, causale=codice, descrizione=descrizione)
+        # Un punto vendita ha un solo istituto: sceglierlo qui lo toglie dagli altri.
+        scelti = set(request.POST.getlist("negozi"))
+        IstitutoNegozio.objects.filter(istituto=istituto).exclude(codice_negozio__in=scelti).delete()
+        for codice in scelti:
+            IstitutoNegozio.objects.update_or_create(codice_negozio=codice, defaults={"istituto": istituto})
+        return redirect("/primanota/banche/?salvato=1")
+
+    negozi = negozi_attivi_ordinati()
+    assegnati = dict(IstitutoNegozio.objects.values_list("codice_negozio", "istituto_id"))
+    istituti = []
+    for i in IstitutoCredito.objects.prefetch_related("tipologie"):
+        istituti.append({"istituto": i, "causali": [
+            (codice, descrizione, "\n".join(t.descrizione for t in i.tipologie.all() if t.causale == codice))
+            for codice, descrizione in CAUSALI_POS],
+            "negozi": [str(n.get("codice")) for n in negozi if assegnati.get(str(n.get("codice"))) == i.pk]})
+    # Tipologie viste nelle chiusure POS degli ultimi 30 giorni e non ancora assegnate: aiutano a configurare.
+    configurate = {}
+    for t in TipologiaPos.objects.all():
+        configurate.setdefault(t.istituto_id, set()).add(_chiave(t.descrizione))
+    viste = {}
+    dal = timezone.localdate() - timedelta(days=30)
+    for codice, giorno in (FileSysSpy.objects.filter(data__gte=dal).exclude(chiusura_pos="")
+                           .values_list("codice_negozio", "data").distinct()):
+        for nome, importo in (circuiti_giornata(codice, giorno) or {}).items():
+            if importo and _chiave(nome) not in configurate.get(assegnati.get(codice), set()):
+                viste.setdefault(codice, set()).add(nome)
+    nomi_negozi = {str(n.get("codice")): etichetta_negozio(n) for n in negozi}
+    return render(request, "primanota/banche.html", _contesto(
+        request, istituti=istituti, negozi=negozi, causali=CAUSALI_POS, salvato=request.GET.get("salvato") == "1",
+        errore=request.GET.get("errore"),
+        non_assegnate=sorted((nomi_negozi.get(c, c), sorted(v)) for c, v in viste.items())))

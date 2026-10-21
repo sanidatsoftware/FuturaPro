@@ -162,6 +162,32 @@ def chiusure_pos(elenco):
     return out
 
 
+def circuiti_pos(testo):
+    """
+    Importi per tipologia di transazione (circuito) dal testo delle chiusure POS: {"UC Mastercard": Decimal, …}.
+    Il nome è la riga sopra «Pagamenti …»; l'importo è il «Totale EUR» del circuito (al netto degli storni),
+    o in mancanza quello dei pagamenti. Più chiusure nello stesso testo si sommano.
+    """
+    righe = [r.strip() for r in (testo or "").splitlines()]
+    piene = [r for r in righe if r]
+    out = {}
+    for i, riga in enumerate(piene[:-1]):
+        if not piene[i + 1].upper().startswith("PAGAMENTI") or riga.startswith("(") or riga.upper().startswith(("PAGAMENTI", "TOTALE")):
+            continue
+        valore = importo(piene[i + 1])
+        for j in range(i + 2, len(piene)):
+            alto = piene[j].upper()
+            prossimo_circuito = j + 1 < len(piene) and piene[j + 1].upper().startswith("PAGAMENTI")
+            if prossimo_circuito or alto.startswith(("TOTALE POS", "TOTALE HOST", "TRANSAZIONI", "(TRANSAZIONI")):
+                break
+            if re.match(r"^TOTALE\s+EUR\b", alto):
+                valore = importo(piene[j])
+                break
+        if valore is not None:
+            out[riga] = out.get(riga, Decimal("0")) + valore
+    return out
+
+
 def chiusura_fiscale(elenco):
     """La chiusura fiscale (l'ultima del file): intestazione, righe 9949..9964 e data/ora."""
     pos = None

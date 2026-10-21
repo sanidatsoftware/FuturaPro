@@ -5,6 +5,10 @@
 <style>
 .num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .c{text-align:center}
+/* Spaccato POS per tipologia (Raggruppamenti Banche) e confronto con la prima nota. */
+table.pn tr.spaccato td{background:#fffbea;font-size:13px}table.pn tr.spaccato td:nth-child(2){padding-left:28px}
+table.pn tr.controllo td{font-size:12.5px;font-weight:bold;border-bottom:2px solid #e1e7ee}table.pn tr.controllo td:nth-child(2){padding-left:28px}
+table.pn tr.controllo.ok td{color:#167a3d;background:#f1faf4}table.pn tr.controllo.ko td{color:#b42318;background:#fdf0ef}
 .pv-scelta{border:1px solid #ced7e2;border-radius:8px;background:#fff;max-height:130px;overflow:auto;padding:6px 10px;min-width:300px;
     display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:2px 14px}
 .pv-scelta label{font-size:13px;display:flex;gap:6px;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -88,6 +92,10 @@ table.riepilogo td,table.riepilogo th{padding:6px 10px}
         {% endfor %}
         </tbody>
     </table>
+    {% if giornata.pos_avviso %}<div class="message-error" style="margin-bottom:10px">{{ giornata.pos_avviso }}</div>{% endif %}
+    {% if giornata.pos_non_assegnate %}<div class="message-error" style="margin-bottom:10px">Tipologie della chiusura POS non assegnate a una causale:
+        {% for nome, importo in giornata.pos_non_assegnate %}<strong>{{ nome }}</strong> {{ importo|euro }}{% if not forloop.last %}, {% endif %}{% endfor %}
+        (Impostazioni › Raggruppamenti Banche).</div>{% endif %}
     <table class="table pn">
         <thead><tr><th class="c" style="width:56px">Righe</th><th>Causale</th><th>Descrizione / Rag. sociale</th><th>Doc. rif. numero</th><th>Data</th>
             <th class="num">Entrate</th><th class="num">Uscite</th><th class="num">Evidenze</th><th>Note</th><th style="width:40px"></th></tr></thead>
@@ -117,6 +125,18 @@ table.riepilogo td,table.riepilogo th{padding:6px 10px}
                 <td></td><td colspan="9"><div class="campi">{% for etichetta, valore in m.dettagli %}<div><span>{{ etichetta }}:</span> {{ valore }}</div>{% endfor %}</div></td>
             </tr>
             {% endfor %}
+            {% if c.controllo %}
+            {# Spaccato per tipologia dalle chiusure POS (Raggruppamenti Banche) e confronto con la prima nota. #}
+            {% for nome, importo in c.spaccato %}
+            <tr class="spaccato"><td></td><td colspan="4">{{ nome }} <span class="small">· chiusure POS {{ giornata.pos_istituto }}</span></td>
+                <td class="num">{% if c.colonna_pos == "entrate" %}{{ importo|euro }}{% endif %}</td>
+                <td class="num">{% if c.colonna_pos == "uscite" %}{{ importo|euro }}{% endif %}</td>
+                <td class="num">{% if c.colonna_pos == "evidenze" %}{{ importo|euro }}{% endif %}</td><td></td><td></td></tr>
+            {% endfor %}
+            <tr class="controllo {% if c.controllo.differenza %}ko{% else %}ok{% endif %}"><td></td>
+                <td colspan="4">Confronto con Importo da Prima Nota: prima nota {{ c.controllo.prima_nota|euro }} · chiusure POS {{ c.controllo.pos|euro }}</td>
+                <td colspan="3" class="num">{% if c.controllo.differenza %}⚠ Differenza {{ c.controllo.differenza|euro }}{% else %}✓ Coincide{% endif %}</td><td></td><td></td></tr>
+            {% endif %}
         {% endfor %}
         </tbody>
     </table>

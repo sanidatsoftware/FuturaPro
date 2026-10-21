@@ -27,6 +27,11 @@ td.causale { font-weight: bold; }
 table.riepilogo { margin-top: 10pt; }
 table.riepilogo td { font-weight: normal; }
 td.etichetta { font-weight: bold; }
+td.spaccato { background-color: #fff8d6; font-style: italic; }
+td.controllo { font-weight: bold; }
+td.ok { color: #167a3d; font-weight: bold; }
+td.ko { color: #b42318; font-weight: bold; }
+p.avviso { color: #b42318; margin: 0 0 6pt 0; }
 """
 
 
@@ -54,6 +59,18 @@ def _html(g, grandezza):
             righe.append(_riga([f"{c['codice']} {escape(c['descrizione'])}", escape(m["descrizione"]), escape(m["documento"]),
                                 valori["entrate"], valori["uscite"], valori["evidenze"], escape(m["note"])],
                                ["causale", "", "", "n", "n", "n", ""]))
+        if c.get("controllo"):
+            # Spaccato per tipologia dalle chiusure POS (Raggruppamenti Banche) e confronto con la prima nota.
+            for nome, importo in c["spaccato"]:
+                valori = {col: (_euro(importo) if c["colonna_pos"] == col else "") for col in ("entrate", "uscite", "evidenze")}
+                righe.append(_riga([f"{c['codice']} {escape(c['descrizione'])}", f"{escape(nome)} (chiusure POS)", "",
+                                    valori["entrate"], valori["uscite"], valori["evidenze"], ""],
+                                   ["causale spaccato", "spaccato", "", "n spaccato", "n spaccato", "n spaccato", ""]))
+            k = c["controllo"]
+            esito = f"DIFFERENZA {_euro(k['differenza'])}" if k["differenza"] else "Coincide"
+            righe.append(_riga([f"{c['codice']} {escape(c['descrizione'])}", "Confronto con Importo da Prima Nota", "",
+                                "", "", "", f"Prima nota {_euro(k['prima_nota'])} · chiusure POS {_euro(k['pos'])} · {esito}"],
+                               ["causale", "controllo", "", "", "", "", "ko" if k["differenza"] else "ok"]))
     riepilogo = "".join(
         f"<tr><td class='etichetta'>{etichetta}</td><td>{r['data']:%d/%m/%Y}</td><td class='n'>{_euro(r['entrate'])}</td>"
         f"<td class='n'>{_euro(r['uscite'])}</td><td class='n'>{_euro(r['evidenze'])}</td>"
@@ -65,6 +82,9 @@ def _html(g, grandezza):
         f"<body style='font-size:{grandezza}pt'>"
         "<h1>Elenco movimenti modello: PRIMA NOTA</h1>"
         f"<p class='sotto'>Punto vendita: <b>{escape(nome)}</b> del <b>{g['data']:%d/%m/%Y}</b></p>"
+        + (f"<p class='avviso'>{escape(g['pos_avviso'])}</p>" if g.get("pos_avviso") else "")
+        + ("<p class='avviso'>Tipologie della chiusura POS non assegnate: "
+           + ", ".join(f"{escape(n)} {_euro(i)}" for n, i in g["pos_non_assegnate"]) + "</p>" if g.get("pos_non_assegnate") else "") +
         "<table>" + _riga(["Causale", "Descrizione", "Doc. riferimento", "Entrate", "Uscite", "Evidenze", "Note"], tag="th")
         + "".join(righe) + "</table>"
         "<table class='riepilogo'><tr><th></th><th>Data</th><th>Entrate</th><th>Uscite</th><th>Evidenze</th><th>Movimenti</th></tr>"

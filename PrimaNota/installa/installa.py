@@ -7,6 +7,8 @@ Opzioni:  --portale /opt/tocal   cartella del portale (predefinita /opt/tocal)
           --senza-baserow        non crea la tabella Baserow (si indica l'id a mano)
           --senza-cron           non aggiunge l'importazione serale al crontab
           --solo-file            copia e modifica i file, senza pip/migrate (per prove)
+          --rielabora-dal AAAA-MM-GG [--rielabora-al AAAA-MM-GG]
+                                 rielabora in background solo quei giorni invece di tutto l'archivio SysSpy
 
 Prima di toccare qualunque cosa salva una copia in <portale>/backup_primanota_<data_ora>/.
 Se il controllo finale del portale fallisce, rimette a posto i file da quella copia.
@@ -281,6 +283,8 @@ def main():
     parser.add_argument("--senza-cron", action="store_true")
     parser.add_argument("--solo-file", action="store_true")
     parser.add_argument("--python", help="Python del portale, se non viene trovato da solo")
+    parser.add_argument("--rielabora-dal", help="Rielabora solo i SysSpy da questo giorno (AAAA-MM-GG)")
+    parser.add_argument("--rielabora-al", help="… fino a questo giorno (predefinito uguale a --rielabora-dal)")
     args = parser.parse_args()
 
     portale = Path(args.portale).resolve()
@@ -393,7 +397,8 @@ def main():
     # arrivata se viene interrotta. L'installazione intanto prosegue.
     log_rielabora = (portale / "logs" if (portale / "logs").is_dir() else archivio) / "primanota_rielaborazione.log"
     # Dopo, si cercano gli scontrini sospesi ribattuti a mano anche tra quelli già importati.
-    comando = ["sh", "-c", f'"{python}" manage.py importa_sysspy --rielabora; "{python}" manage.py importa_sysspy --ribattuti']
+    periodo = (f" --dal {args.rielabora_dal} --al {args.rielabora_al or args.rielabora_dal}" if args.rielabora_dal else "")
+    comando = ["sh", "-c", f'"{python}" manage.py importa_sysspy --rielabora{periodo}; "{python}" manage.py importa_sysspy --ribattuti']
     if os.geteuid() == 0 and utente != "root":
         comando = ["sudo", "-u", utente] + comando
     with open(log_rielabora, "a") as uscita:

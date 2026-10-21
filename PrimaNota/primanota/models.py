@@ -474,3 +474,37 @@ class Emergenza(models.Model):
         if negozio_id is not None:
             righe = righe.filter(negozio_id=negozio_id)
         return {(e.negozio_id, e.data): e for e in righe}
+
+
+class IstitutoCredito(models.Model):
+    """
+    Banca dei POS di uno o più punti vendita. Ogni banca descrive a modo suo le tipologie di transazione nella
+    chiusura POS (UC Mastercard, CREDITO, Debito…): qui si dice in quale causale di prima nota confluisce ognuna.
+    """
+
+    nome = models.CharField(max_length=100, unique=True)
+
+    class Meta:
+        ordering = ["nome"]
+
+    def __str__(self):
+        return self.nome
+
+
+class TipologiaPos(models.Model):
+    """Una tipologia della chiusura POS dell'istituto e la causale di prima nota in cui confluisce (4 Bancomat, 5 Carte)."""
+
+    istituto = models.ForeignKey(IstitutoCredito, on_delete=models.CASCADE, related_name="tipologie")
+    causale = models.IntegerField()
+    descrizione = models.CharField(max_length=100, help_text="Come compare nella chiusura POS (es. UC Mastercard)")
+
+    class Meta:
+        ordering = ["causale", "descrizione"]
+        constraints = [models.UniqueConstraint(fields=["istituto", "descrizione"], name="tipologia_pos_unica")]
+
+
+class IstitutoNegozio(models.Model):
+    """L'istituto di credito dei POS di un punto vendita."""
+
+    codice_negozio = models.CharField(max_length=20, unique=True)
+    istituto = models.ForeignKey(IstitutoCredito, on_delete=models.CASCADE, related_name="negozi")

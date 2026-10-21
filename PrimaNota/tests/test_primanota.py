@@ -1757,3 +1757,109 @@ class TestModificaNote(Base):
         self.assertIn("Testo inviato in precedenza:\nmancano 50", invia.call_args_list[1].args[2])
         self.assertTrue(oggetti[2].startswith("NOTA ANNULLATA"))
         self.assertFalse(Nota.objects.exists())
+
+
+CHIUSURA_BPM = """             CHIUSURA
+     AMEX
+     PAGAMENTI           0,00
+     (num. pagamenti 0)
+     STORNI              0,00
+     ------------------------
+     TOTALE EUR          0,00
+     Debito
+     PAGAMENTI         404,49
+     (num. pagamenti 12)
+     STORNI              0,00
+     ------------------------
+     TOTALE EUR        404,49
+     CREDITO
+     PAGAMENTI         236,86
+     (num. pagamenti 9)
+     STORNI              0,00
+     ------------------------
+     TOTALE EUR        236,86
+     JCB
+     PAGAMENTI          10,00
+     (num. pagamenti 1)
+     ------------------------
+     TOTALE EUR         10,00
+     TRANSAZIONI           22
+     TOTALE POS
+     EUR               651,35"""
+CHIUSURA_BPM_CASSA_2 = """             CHIUSURA
+     Debito
+     Pagamenti EUR       5,00
+     (num.pagamenti 1)
+     ------------------------
+     Totale    EUR       5,00
+     (TRANSAZIONI 1)
+     TOTALE POS EUR      5,00"""
+
+
+class TestRaggruppamentiBanche(TestPrimaNota):
+    def test_tipologie_dalle_chiusure_pos(self):
+        self.assertEqual(sysspy.circuiti_pos(CHIUSURA_BPM), {"AMEX": Decimal("0.00"), "Debito": Decimal("404.49"),
+                                                             "CREDITO": Decimal("236.86"), "JCB": Decimal("10.00")})
+        self.assertEqual(sysspy.circuiti_pos(CHIUSURA_BPM_CASSA_2), {"Debito": Decimal("5.00")})
+        g = sysspy.analizza("SysSpy.20260528.1", (DATI / "SysSpy.20260528.1").read_bytes())["giornate"][0]
+        self.assertEqual(sysspy.circuiti_pos(g["chiusure_pos"][0]["testo"]), {"UC Mastercard": Decimal("18.00")})
+
+    def test_banche_predefinite_e_configurazione(self):
+        from primanota.models import IstitutoCredito
+        self.assertEqual({i.nome: sorted((t.causale, t.descrizione) for t in i.tipologie.all()) for i in IstitutoCredito.objects.all()}, {
+            "BANCA BPM": [(4, "Debito"), (5, "AMEX"), (5, "CREDITO")],
+            "UNICREDIT": [(4, "BANCOMAT"), (5, "AMERICAN EXPRESS"), (5, "Maestro"), (5, "UC Mastercard"), (5, "UC Visa")]})
+        bpm = IstitutoCredito.objects.get(nome="BANCA BPM")
+        direttore = self.client_per("direttore@x")
+        self.assertEqual(self.client_per("ufficio@x").get("/primanota/banche/").status_code, 403)
+        self.assertContains(direttore.get("/primanota/banche/"), "UC Mastercard")
+        # Modificabili: tipologie e punti vendita.
+        direttore.post("/primanota/banche/", {"istituto": bpm.id, "nome": "BANCA BPM", "causale_5": "AMEX\nCREDITO\n\nJCB",
+                                             "causale_4": "Debito", "negozi": ["5048"]})
+        self.assertEqual(sorted(bpm.tipologie.values_list("descrizione", flat=True)), ["AMEX", "CREDITO", "Debito", "JCB"])
+        self.assertEqual(list(bpm.negozi.values_list("codice_negozio", flat=True)), ["5048"])
+        # Un punto vendita ha un solo istituto.
+        unicredit = IstitutoCredito.objects.get(nome="UNICREDIT")
+        direttore.post("/primanota/banche/", {"istituto": unicredit.id, "nome": "UNICREDIT", "causale_5": "UC Visa",
+                                             "causale_4": "BANCOMAT", "negozi": ["5048"]})
+        self.assertEqual((bpm.negozi.count(), unicredit.negozi.count()), (0, 1))
+        direttore.post("/primanota/banche/", {"azione": "elimina", "istituto": unicredit.id})
+        self.assertFalse(IstitutoCredito.objects.filter(nome="UNICREDIT").exists())
+
+    def _sysspy_5040(self):
+        from primanota.models import IstitutoCredito, IstitutoNegozio
+        IstitutoNegozio.objects.create(codice_negozio="5040", istituto=IstitutoCredito.objects.get(nome="BANCA BPM"))
+        for cassa, testo in ((1, CHIUSURA_BPM), (2, CHIUSURA_BPM_CASSA_2)):
+            FileSysSpy.objects.create(negozio_id=12, codice_negozio="5040", data=date(2026, 10, 19), cassa=cassa,
+                                      nome_file=f"SysSpy.20261019.{cassa}", percorso_origine=f"x{cassa}", percorso_archivio=f"x{cassa}",
+                                      percorso_testo=f"x{cassa}", dimensione=1, modificato_il=0, chiusura_pos=testo)
+
+    def test_spaccato_e_confronto_a_video_e_in_stampa(self):
+        import pymupdf
+        self._sysspy_5040()
+        with self.esegui_finto(righe_prima_nota("prima_nota_5040.csv")):
+            r = self.client_per("ufficio@x").get("/primanota/prima-nota/", {"pv": "5040", "data": "2026-10-19"})
+            pdf = self.client_per("ufficio@x").get("/primanota/prima-nota/", {"formato": "pdf", "dal": "2026-10-19",
+                                                                              "al": "2026-10-19", "pv": "5040"})
+        causali = {c["codice"]: c for c in r.context["giornata"]["causali"]}
+        # Somma delle casse 1 e 2: Debito 404,49 + 5,00; in prima nota la causale 4 è 4,49.
+        self.assertEqual(causali[4]["spaccato"], [("Debito", Decimal("409.49"))])
+        # La causale resta in Uscite com'è registrata; lo spaccato è la contropartita in Evidenze.
+        self.assertEqual((causali[4]["uscite"], causali[4]["colonna_pos"]), (Decimal("4.49"), "evidenze"))
+        self.assertEqual(causali[4]["controllo"], {"prima_nota": Decimal("4.49"), "pos": Decimal("409.49"), "differenza": Decimal("-405.00")})
+        self.assertEqual(causali[5]["spaccato"], [("CREDITO", Decimal("236.86"))])   # AMEX a zero non compare
+        self.assertEqual(causali[5]["controllo"]["differenza"], Decimal("0"))
+        self.assertEqual(r.context["giornata"]["pos_non_assegnate"], [("JCB", Decimal("10.00"))])
+        self.assertContains(r, "Confronto con Importo da Prima Nota")
+        self.assertContains(r, "✓ Coincide")
+        self.assertContains(r, "⚠ Differenza")
+        testo = " ".join(pymupdf.open(stream=pdf.content, filetype="pdf")[0].get_text().split())
+        self.assertIn("CREDITO (chiusure POS)", testo)
+        self.assertIn("Confronto con Importo da Prima Nota", testo)
+        self.assertIn("Tipologie della chiusura POS non assegnate: JCB 10,00", testo)
+
+    def test_punto_vendita_senza_istituto(self):
+        with self.esegui_finto(righe_prima_nota("prima_nota_5040.csv")):
+            r = self.client_per("ufficio@x").get("/primanota/prima-nota/", {"pv": "5040", "data": "2026-10-19"})
+        self.assertContains(r, "non associato a un istituto di credito")
+        self.assertNotIn("controllo", {c["codice"]: c for c in r.context["giornata"]["causali"]}[4])

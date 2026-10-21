@@ -25,6 +25,7 @@ urlpatterns = [
     path("condivisioni/importa-tutti/", views.importa_tutti, name="primanota_importa_tutti"),
     path("condivisioni/rielabora/", views.rielabora, name="primanota_rielabora"),
     path("condivisioni/rielabora-periodo/", views.rielabora_periodo, name="primanota_rielabora_periodo"),
+    path("banche/", views.banche, name="primanota_banche"),
     path("stampa/", views.stampa, name="primanota_stampa"),
     path("versamenti/", views.versamenti, name="primanota_versamenti"),
     path("versamenti/note/", views.versamenti_note, name="primanota_versamenti_note"),
