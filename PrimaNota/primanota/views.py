@@ -333,7 +333,7 @@ def upload(request):
         request, scansioni=scansioni, error=error, message=message, ieri=ieri, giorno=giorno, voci=voci,
         blocco_prima_nota=_blocco_prima_nota(negozio_id, giorno),
         emergenza=Emergenza.objects.filter(negozio_id=negozio_id, data=giorno).first(),
-        tipi_nota=TIPI_NOTA_CON_VERSAMENTO, note=Nota.objects.filter(negozio_id=negozio_id, versamento=False)[:30],
+        tipi_nota=TIPI_NOTA_CON_VERSAMENTO, note=Nota.objects.filter(negozio_id=negozio_id)[:30],
         destinatari=DestinatarioEmail.objects.filter(attivo=True), giornate=_giornate_recenti(negozio_id),
         negozio_id=negozio_id,
         negozio=etichetta_negozio(negozio(negozio_id))))

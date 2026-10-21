@@ -163,7 +163,9 @@
         <thead><tr><th>Data</th><th>Tipo</th><th>Testo</th><th>Inviata</th><th>Stato</th></tr></thead>
         <tbody>
         {% for n in note %}
-            <tr><td>{{ n.data|date:"d/m/Y" }}</td><td>{{ n.get_tipo_display }}</td><td>{{ n.testo|linebreaksbr }}</td>
+            <tr><td>{{ n.data|date:"d/m/Y" }}</td>
+                <td>{% if n.versamento %}<span class="badge badge-grey">💶 Nota sul versamento</span>{% else %}{{ n.get_tipo_display }}{% endif %}</td>
+                <td>{{ n.testo|linebreaksbr }}{% if n.inviata_a %}<div class="small">📧 Inviata a {{ n.inviata_a }} ({{ n.esito_invio }})</div>{% endif %}</td>
                 <td>{{ n.creata_il|date:"d/m/Y H:i" }}</td>
                 <td>{% if n.chiusa %}<span class="badge badge-ok">Chiusa</span>{% else %}<span class="badge badge-no">Aperta</span>{% endif %}</td></tr>
         {% empty %}
