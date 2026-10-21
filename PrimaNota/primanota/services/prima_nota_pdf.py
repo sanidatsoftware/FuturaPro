@@ -60,19 +60,20 @@ def _html(g, grandezza):
                                 valori["entrate"], valori["uscite"], valori["evidenze"], escape(m["note"])],
                                ["causale", "", "", "n", "n", "n", ""]))
         if c.get("controllo"):
-            # Spaccato per tipologia dalle chiusure POS (Raggruppamenti Banche) e confronto con la prima nota.
+            # Spaccato per tipologia dalle chiusure POS (Raggruppamenti Banche) e confronto con la prima nota:
+            # la causale è già scritta sulla riga della prima nota, qui non si ripete.
             for nome, importo in c["spaccato"]:
                 valori = {col: (_euro(importo) if c["colonna_pos"] == col else "") for col in ("entrate", "uscite", "evidenze")}
-                righe.append(_riga([f"{c['codice']} {escape(c['descrizione'])}", f"{escape(nome)} (chiusure POS)", "",
+                righe.append(_riga(["", f"{escape(nome)} (chiusure POS)", "",
                                     valori["entrate"], valori["uscite"], valori["evidenze"], ""],
-                                   ["causale spaccato", "spaccato", "", "n spaccato", "n spaccato", "n spaccato", ""]))
+                                   ["spaccato", "spaccato", "", "n spaccato", "n spaccato", "n spaccato", ""]))
             # In stampa la riga di controllo c'è solo se gli importi non coincidono.
             k = c["controllo"]
             if k["differenza"]:
-                righe.append(_riga([f"{c['codice']} {escape(c['descrizione'])}", "Confronto con Importo da Prima Nota", "",
+                righe.append(_riga(["", "Confronto con Importo da Prima Nota", "",
                                     "", "", "", f"Prima nota {_euro(k['prima_nota'])} · chiusure POS {_euro(k['pos'])} · "
                                                f"DIFFERENZA {_euro(k['differenza'])}"],
-                                   ["causale", "controllo", "", "", "", "", "ko"]))
+                                   ["", "controllo", "", "", "", "", "ko"]))
     riepilogo = "".join(
         f"<tr><td class='etichetta'>{etichetta}</td><td>{r['data']:%d/%m/%Y}</td><td class='n'>{_euro(r['entrate'])}</td>"
         f"<td class='n'>{_euro(r['uscite'])}</td><td class='n'>{_euro(r['evidenze'])}</td>"
