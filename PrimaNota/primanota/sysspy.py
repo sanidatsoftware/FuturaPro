@@ -22,7 +22,7 @@ from decimal import Decimal, InvalidOperation
 
 # Da aumentare quando cambia il modo di leggere i file: la rielaborazione dell'archivio
 # rifà solo i file analizzati con una versione precedente.
-VERSIONE_ANALISI = 3   # 3: cassiere e importo delle correzioni per scontrino
+VERSIONE_ANALISI = 4   # 3: cassiere e importo delle correzioni per scontrino; 4: chiusure POS con l'importo a capo
 
 NOME_FILE_RE = re.compile(r"^SysSpy\.(\d{8})\.(\d+)$", re.I)
 TIMESTAMP_RE = re.compile(r"^\s*(\d{2}/\d{2}/\d{4}) (\d{2}:\d{2})")
@@ -119,11 +119,23 @@ def _testo(elenco, inizio, fine):
     return "\n".join(t for _, t in elenco[inizio:fine + 1]).strip("\n")
 
 
+# «TOTALE POS EUR 2.047,31» su una riga, oppure (altri terminali) «TOTALE POS» e sotto «EUR 2.377,06».
+TOTALE_POS_RE = re.compile(r"^TOTALE POS(\s+EUR\b.*)?$")
+
+
+def _totale_etichetta(elenco, i, etichetta):
+    """Importo della riga i che inizia con l'etichetta, o della riga «EUR …» subito sotto se è andato a capo."""
+    valore = importo(elenco[i][1].strip()[len(etichetta):])
+    if valore is None and i + 1 < len(elenco) and elenco[i + 1][1].strip().startswith("EUR"):
+        valore = importo(elenco[i + 1][1])
+    return valore
+
+
 def chiusure_pos(elenco):
     """Ogni chiusura POS: dal 'NON  FISCALE' che la apre fino alla stampa del cassiere che la segue."""
     out = []
     for i, (codice, testo) in enumerate(elenco):
-        if codice != "9832" or not testo.strip().startswith("TOTALE POS EUR"):
+        if codice != "9832" or not TOTALE_POS_RE.match(testo.strip()):
             continue
         inizio = i
         for j in range(i, max(i - 80, -1), -1):
@@ -137,13 +149,13 @@ def chiusure_pos(elenco):
         if dopo - fine <= 25 and any("CASSIERE" in t for _, t in elenco[fine + 1:dopo + 1]):
             fine = dopo
         host = None
-        for _, t in elenco[i:fine + 1]:
-            if t.strip().startswith("TOTALE HOST EUR"):
-                host = importo(t)
+        for j in range(i, fine + 1):
+            if elenco[j][1].strip().startswith("TOTALE HOST"):
+                host = _totale_etichetta(elenco, j, "TOTALE HOST")
                 break
         out.append({
             "testo": _testo(elenco, inizio, fine),
-            "totale_pos": importo(testo),
+            "totale_pos": _totale_etichetta(elenco, i, "TOTALE POS"),
             "totale_host": host,
             "esito": "ESEGUITA" if any("OPERAZIONE ESEGUITA" in t for _, t in elenco[i:fine + 1]) else "",
         })

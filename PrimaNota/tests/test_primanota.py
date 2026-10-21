@@ -141,6 +141,17 @@ class TestSysSpy(TestCase):
     def test_data_cassa_negozio_dal_nome_e_dal_contenuto(self):
         self.assertEqual((self.a["data"], self.file["cassa"], self.file["codice_negozio"]), (date(2026, 5, 28), 1, "5048"))
 
+    def test_chiusura_pos_con_importo_a_capo(self):
+        # Alcuni terminali stampano «TOTALE POS» e sotto «EUR 18,00» (5034 cassa 1).
+        testo = (DATI / "SysSpy.20260528.1").read_text(encoding="latin-1")
+        testo = testo.replace("9832     TOTALE POS EUR     18,00", "9832     TOTALE POS\n9832     EUR                18,00")
+        testo = testo.replace("9832     TOTALE HOST EUR    18,00", "9832     TOTALE HOST\n9832     EUR                18,00")
+        self.assertNotIn("TOTALE POS EUR", testo)
+        g = sysspy.analizza("SysSpy.20260528.1", testo.encode("latin-1"))["giornate"][0]
+        self.assertEqual([(p["totale_pos"], p["totale_host"], p["esito"]) for p in g["chiusure_pos"]],
+                         [(Decimal("18.00"), Decimal("18.00"), "ESEGUITA")])
+        self.assertEqual(g["totale_pos"], Decimal("18.00"))
+
     def test_testo_senza_le_prime_quattro_colonne(self):
         self.assertNotIn("9949", self.a["testo"])
         self.assertIn(" TOTALE GIORNALIERO                       18,00", self.a["testo"].splitlines())
