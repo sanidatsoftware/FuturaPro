@@ -428,7 +428,7 @@ class GiornataLavorazione(models.Model):
         """Primo giorno gestito con il monitor: i giorni prima, senza uno stato scelto, sono «giornata chiusura»."""
         from datetime import date
         from django.conf import settings
-        valore = getattr(settings, "PRIMANOTA_INIZIO_GESTIONE", "2026-10-21")
+        valore = getattr(settings, "PRIMANOTA_INIZIO_GESTIONE", "2026-10-20")   # pregresso fino al 19/10/2026
         return valore if isinstance(valore, date) else date.fromisoformat(str(valore))
 
     @classmethod
