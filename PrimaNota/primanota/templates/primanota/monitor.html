@@ -80,7 +80,7 @@
     <span class="legend-item"><span class="legend-dot state-incomplete"></span>Manca una scansione obbligatoria</span>
     <span class="legend-item"><span class="legend-dot state-pending"></span>{% if versamenti_monitor %}Versamento da lavorare{% else %}Scansioni presenti, da lavorare{% endif %}</span>
     <span class="legend-item"><span class="legend-dot state-worked"></span>{% if versamenti_monitor %}Versamento lavorato{% else %}Giornata lavorata{% endif %}</span>
-    <span class="legend-item"><span class="legend-dot state-closed"></span>Giornata chiusura</span>
+    <span class="legend-item"><span class="legend-dot state-closed"></span>Giornata Chiusura PV</span>
     <span class="legend-item"><span class="legend-dot state-emergency"></span>Emergenza: prima nota non ancora presente</span>
     <span class="legend-item"><span class="legend-dot state-future"></span>Giorno futuro</span>
     <span class="legend-item"><span class="mark mark-nota" style="position:static">!</span>Anomalia/nota aperta</span>
@@ -102,7 +102,7 @@
             <td class="name-column" title="{{ row.description }}">{{ row.description }}</td>
             {% for cell in row.cells %}
             <td class="day-column {% if cell.is_today %}today{% endif %}"
-                title="{{ row.code }} · {{ cell.date }}{% if cell.state == 'closed' %} · Giornata chiusura{% endif %}{% if cell.emergenza %}&#10;⚠ EMERGENZA dichiarata dal negozio: {{ cell.emergenza }}{% endif %}&#10;{% for sigla, label, n in cell.tipi %}{{ label }}: {{ n }}&#10;{% endfor %}Da lavorare: {{ cell.pending }}{% if cell.mancanti %}&#10;Mancano: {{ cell.mancanti|join:', ' }}{% endif %}&#10;Casse SysSpy: {{ cell.casse_sysspy }}{% if cell.squadrate %} ({{ cell.squadrate }} non quadrano){% endif %}{% if cell.note_aperte %}&#10;Note aperte: {{ cell.note_aperte }}{% endif %}">
+                title="{{ row.code }} · {{ cell.date }}{% if cell.state == 'closed' %} · Giornata Chiusura PV{% endif %}{% if cell.emergenza %}&#10;⚠ EMERGENZA dichiarata dal negozio: {{ cell.emergenza }}{% endif %}&#10;{% for sigla, label, n in cell.tipi %}{{ label }}: {{ n }}&#10;{% endfor %}Da lavorare: {{ cell.pending }}{% if cell.mancanti %}&#10;Mancano: {{ cell.mancanti|join:', ' }}{% endif %}&#10;Casse SysSpy: {{ cell.casse_sysspy }}{% if cell.squadrate %} ({{ cell.squadrate }} non quadrano){% endif %}{% if cell.note_aperte %}&#10;Note aperte: {{ cell.note_aperte }}{% endif %}">
                 <div class="cell">
                     {% if cell.detail_url %}<a class="status-link state-{{ cell.state }}" href="{{ cell.detail_url }}">{{ cell.total }}</a>
                     {% else %}<span class="status-static state-{{ cell.state }}">–</span>{% endif %}

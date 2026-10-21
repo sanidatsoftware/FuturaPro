@@ -3,10 +3,10 @@
     {% csrf_token %}<input type="hidden" name="ritorno" value="{{ request.get_full_path }}">
     <input type="hidden" name="sezione" value="{{ sezione|default:'chiusure' }}">
     {% if stato.stato == "lavorato" %}<span class="badge badge-ok">✓ Lavorato</span>
-    {% elif stato.stato == "chiusura" %}<span class="badge badge-grey">Giornata chiusura</span>
+    {% elif stato.stato == "chiusura" %}<span class="badge badge-grey">Giornata Chiusura PV</span>
     {% else %}<span class="badge badge-red">● Da lavorare</span>{% endif %}
     {% if stato.modificato_da %}<span class="small">{{ stato.modificato_da }} {{ stato.modificato_il|date:"d/m/Y H:i" }}</span>{% endif %}
     {% if stato.stato != "lavorato" %}<button class="btn btn-verde" name="stato" value="lavorato">✓ Segna lavorato</button>{% endif %}
     {% if stato.stato != "non_lavorato" %}<button class="btn btn-rosso" name="stato" value="non_lavorato">↺ Riporta da lavorare</button>{% endif %}
-    {% if stato.stato != "chiusura" %}<button class="btn btn-grigio" name="stato" value="chiusura">Giornata chiusura</button>{% endif %}
+    {% if stato.stato != "chiusura" %}<button class="btn btn-grigio" name="stato" value="chiusura">Giornata Chiusura PV</button>{% endif %}
 </form>
