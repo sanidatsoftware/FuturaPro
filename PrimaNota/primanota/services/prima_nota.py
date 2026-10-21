@@ -229,11 +229,12 @@ SELECT r.pv, r.data, COUNT(*),
 """
 
 
-def presenze(dal, al, codici=()):
+def presenze(dal, al, codici=(), fresca=False):
     """
     {(pv, giorno): {"movimenti", "fatture", "importo_fatture", "certificata"}} per sapere quali giornate hanno
     la prima nota (e se è certificata: tutti i movimenti con data di certificazione) e spese del giorno con fattura (causale 17). None se il database non è configurato o non risponde:
-    in quel caso la scansione della fattura resta caricabile ma non obbligatoria. Risultato tenuto 10 minuti.
+    in quel caso la scansione della fattura resta caricabile ma non obbligatoria. Risultato tenuto 10 minuti;
+    fresca=True rilegge comunque il database (per sapere subito se il negozio ha appena certificato).
     """
     from django.core.cache import cache
 
@@ -245,7 +246,7 @@ def presenze(dal, al, codici=()):
     trovato = cache.get(chiave)
     if trovato == "non raggiungibile":
         return None
-    if trovato is not None:
+    if trovato is not None and not fresca:
         return trovato
     try:
         righe = esegui(c, QUERY_PRESENZE.format(non_annullata=NON_ANNULLATA, filtro_pv=_filtro(codici)),
@@ -281,7 +282,7 @@ def prima_nota_pronta(codice_pv, giorno):
     Se il negozio può caricare le scansioni della giornata: la prima nota deve esserci ed essere certificata.
     None se non si può sapere (database non configurato o non raggiungibile): allora non si blocca niente.
     """
-    p = presenze(giorno, giorno, [codice_pv])
+    p = presenze(giorno, giorno, [codice_pv], fresca=True)
     if p is None:
         return None
     g = p.get((str(codice_pv).strip(), giorno))
