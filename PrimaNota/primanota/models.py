@@ -414,15 +414,20 @@ class GiornataLavorazione(models.Model):
     NON_LAVORATO = "non_lavorato"
     CHIUSURA = "chiusura"
     STATI = [(LAVORATO, "Lavorato"), (NON_LAVORATO, "Non lavorato"), (CHIUSURA, "Giornata chiusura")]
+    # Chiusure Fiscali e Gestione Versamenti si lavorano separatamente, ognuna con il suo stato.
+    CHIUSURE = "chiusure"
+    VERSAMENTI = "versamenti"
+    SEZIONI = [(CHIUSURE, "Chiusure Fiscali"), (VERSAMENTI, "Versamenti")]
 
     negozio_id = models.IntegerField(db_index=True)
     data = models.DateField(db_index=True)
+    sezione = models.CharField(max_length=20, choices=SEZIONI, default=CHIUSURE)
     stato = models.CharField(max_length=20, choices=STATI)
     modificato_da = models.CharField(max_length=200, blank=True)
     modificato_il = models.DateTimeField(auto_now=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["negozio_id", "data"], name="giornata_lavorazione_unica")]
+        constraints = [models.UniqueConstraint(fields=["negozio_id", "data", "sezione"], name="giornata_sezione_unica")]
 
     @staticmethod
     def inizio_gestione():
@@ -438,9 +443,9 @@ class GiornataLavorazione(models.Model):
         return cls.CHIUSURA if giorno < cls.inizio_gestione() and not con_scansioni else cls.NON_LAVORATO
 
     @classmethod
-    def mappa(cls, dal, al, negozio_id=None):
-        """{(negozio_id, data): riga} delle giornate con uno stato scelto nel periodo."""
-        righe = cls.objects.filter(data__range=(dal, al))
+    def mappa(cls, dal, al, negozio_id=None, sezione=CHIUSURE):
+        """{(negozio_id, data): riga} delle giornate con uno stato scelto nel periodo, per la sezione."""
+        righe = cls.objects.filter(data__range=(dal, al), sezione=sezione)
         if negozio_id is not None:
             righe = righe.filter(negozio_id=negozio_id)
         return {(g.negozio_id, g.data): g for g in righe}

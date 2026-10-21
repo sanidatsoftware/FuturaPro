@@ -1,30 +1,30 @@
-{# Menu interno. Sede: tre sezioni di Documenti Amministrativi (Chiusure Fiscali, Gestione Versamenti, Statistiche). #}
-<div class="nav">
+{# Menu interno. Sede: sezioni di Documenti Amministrativi (Chiusure Fiscali, Gestione Versamenti, Statistiche). #}
+<nav class="nav">
     {% if utente_negozio %}
-    <a class="btn btn-light" href="/primanota/upload/">Caricamento e chiusure</a>
+    <a class="btn-nav" href="/primanota/upload/">{% include "primanota/_icona.html" with nome="caricamento" %}Caricamento e chiusure</a>
     {% elif attivo == "versamenti" or attivo == "versamenti_monitor" or attivo == "versamenti_note" %}
-    <a class="btn btn-light {% if attivo == 'versamenti_monitor' %}active{% endif %}" href="/primanota/versamenti/monitor/">👁 Monitor versamenti</a>
-    <a class="btn btn-light {% if attivo == 'versamenti' %}active{% endif %}" href="/primanota/versamenti/">Consultazione versamenti</a>
-    <a class="btn btn-light {% if attivo == 'versamenti_note' %}active{% endif %}" href="/primanota/versamenti/note/">Note sui versamenti</a>
-    <a class="btn btn-light" href="/primanota/">« Documenti Amministrativi</a>
+    <a class="btn-nav {% if attivo == 'versamenti_monitor' %}attivo{% endif %}" href="/primanota/versamenti/monitor/">{% include "primanota/_icona.html" with nome="monitor" %}Monitor versamenti</a>
+    <a class="btn-nav {% if attivo == 'versamenti' %}attivo{% endif %}" href="/primanota/versamenti/">{% include "primanota/_icona.html" with nome="versamenti" %}Consultazione versamenti</a>
+    <a class="btn-nav {% if attivo == 'versamenti_note' %}attivo{% endif %}" href="/primanota/versamenti/note/">{% include "primanota/_icona.html" with nome="note" %}Note sui versamenti</a>
+    <a class="btn-nav btn-nav-esci" href="/primanota/">{% include "primanota/_icona.html" with nome="indietro" %}Documenti Amministrativi</a>
     {% elif attivo == "statistiche" or attivo == "buoni_pasto" or attivo == "fasce_orarie" or attivo == "statistiche_menu" %}
     {% if attivo != "statistiche_menu" %}
-    <a class="btn btn-light {% if attivo == 'statistiche' %}active{% endif %}" href="/primanota/statistiche/finanziarie/">Statistiche finanziarie</a>
-    <a class="btn btn-light {% if attivo == 'fasce_orarie' %}active{% endif %}" href="/primanota/fasce-orarie/">Vendite per Fasce Orarie</a>
-    <a class="btn btn-light {% if attivo == 'buoni_pasto' %}active{% endif %}" href="/primanota/buoni-pasto/">Buoni Pasto per Emettitori</a>
-    <a class="btn btn-light" href="/primanota/statistiche/">« Statistiche</a>
+    <a class="btn-nav {% if attivo == 'statistiche' %}attivo{% endif %}" href="/primanota/statistiche/finanziarie/">{% include "primanota/_icona.html" with nome="statistiche" %}Statistiche finanziarie</a>
+    <a class="btn-nav {% if attivo == 'fasce_orarie' %}attivo{% endif %}" href="/primanota/fasce-orarie/">{% include "primanota/_icona.html" with nome="orologio" %}Vendite per Fasce Orarie</a>
+    <a class="btn-nav {% if attivo == 'buoni_pasto' %}attivo{% endif %}" href="/primanota/buoni-pasto/">{% include "primanota/_icona.html" with nome="buoni" %}Buoni Pasto per Emettitori</a>
+    <a class="btn-nav btn-nav-esci" href="/primanota/statistiche/">{% include "primanota/_icona.html" with nome="indietro" %}Statistiche</a>
     {% endif %}
-    <a class="btn btn-light" href="/primanota/">« Documenti Amministrativi</a>
+    <a class="btn-nav btn-nav-esci" href="/primanota/">{% include "primanota/_icona.html" with nome="indietro" %}Documenti Amministrativi</a>
     {% elif attivo == "prima_nota" %}
-    <a class="btn btn-light" href="/primanota/">« Documenti Amministrativi</a>
+    <a class="btn-nav btn-nav-esci" href="/primanota/">{% include "primanota/_icona.html" with nome="indietro" %}Documenti Amministrativi</a>
     {% else %}
-    <a class="btn btn-light {% if attivo == 'monitor' %}active{% endif %}" href="/primanota/monitor/">👁 Monitor</a>
-    <a class="btn btn-light {% if attivo == 'admin' %}active{% endif %}" href="/primanota/admin/">Scansioni</a>
-    <a class="btn btn-light {% if attivo == 'note' %}active{% endif %}" href="/primanota/note/">Note e anomalie</a>
-    <a class="btn btn-light {% if attivo == 'sysspy' %}active{% endif %}" href="/primanota/sysspy/">Archivio SysSpy</a>
-    <a class="btn btn-light {% if attivo == 'sospesi' %}active{% endif %}" href="/primanota/sospesi/">Scontrini sospesi</a>
-    {% if puo_gestire %}<a class="btn btn-light {% if attivo == 'condivisioni' %}active{% endif %}" href="/primanota/condivisioni/">Impostazioni</a>{% endif %}
-    <a class="btn btn-light" href="/primanota/">« Documenti Amministrativi</a>
+    <a class="btn-nav {% if attivo == 'monitor' %}attivo{% endif %}" href="/primanota/monitor/">{% include "primanota/_icona.html" with nome="monitor" %}Monitor</a>
+    <a class="btn-nav {% if attivo == 'admin' %}attivo{% endif %}" href="/primanota/admin/">{% include "primanota/_icona.html" with nome="scansioni" %}Scansioni</a>
+    <a class="btn-nav {% if attivo == 'note' %}attivo{% endif %}" href="/primanota/note/">{% include "primanota/_icona.html" with nome="note" %}Note e anomalie</a>
+    <a class="btn-nav {% if attivo == 'sysspy' %}attivo{% endif %}" href="/primanota/sysspy/">{% include "primanota/_icona.html" with nome="archivio" %}Archivio SysSpy</a>
+    <a class="btn-nav {% if attivo == 'sospesi' %}attivo{% endif %}" href="/primanota/sospesi/">{% include "primanota/_icona.html" with nome="sospesi" %}Scontrini sospesi</a>
+    {% if puo_gestire %}<a class="btn-nav {% if attivo == 'condivisioni' %}attivo{% endif %}" href="/primanota/condivisioni/">{% include "primanota/_icona.html" with nome="impostazioni" %}Impostazioni</a>{% endif %}
+    <a class="btn-nav btn-nav-esci" href="/primanota/">{% include "primanota/_icona.html" with nome="indietro" %}Documenti Amministrativi</a>
     {% endif %}
-    <a class="btn btn-dark" href="/menu/">Menu</a>
-</div>
+    <a class="btn-nav btn-nav-menu" href="/menu/">{% include "primanota/_icona.html" with nome="home" %}Menu</a>
+</nav>

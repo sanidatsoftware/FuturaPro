@@ -24,7 +24,7 @@
 {% block content %}
 <div class="top-actions">
     <h1>Documenti Amministrativi · {{ negozio }}</h1>
-    <a class="btn btn-dark" href="/menu/">Menu</a>
+    <a class="btn-nav btn-nav-menu" href="/menu/">{% include "primanota/_icona.html" with nome="home" %}Menu</a>
 </div>
 {% if message %}<div class="message-ok">{{ message }}</div>{% endif %}
 {% if error %}<div class="message-error">{{ error }}</div>{% endif %}

@@ -94,7 +94,8 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
     regole = RegolaDocumento.mappa()
     note = _note_aperte_per_giorno(days[0], days[-1], versamento=versamenti)
     # Stato della giornata scelto dalla sede; il pregresso senza stato è «giornata chiusura».
-    stati = GiornataLavorazione.mappa(min(days[0], inizio_mese_corrente), max(days[-1], today))
+    sezione = GiornataLavorazione.VERSAMENTI if versamenti else GiornataLavorazione.CHIUSURE
+    stati = GiornataLavorazione.mappa(min(days[0], inizio_mese_corrente), max(days[-1], today), sezione=sezione)
     negozi = negozi_attivi_ordinati()
 
     summary = {"pending": 0, "worked": 0, "documents": 0, "missing_current_month": 0,
@@ -115,10 +116,8 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
                 state = "closed"
             elif not valori:
                 state = "missing"
-            elif versamenti:
-                state = "pending" if valori["pending"] else "worked"
             else:
-                # Lavorato è della giornata intera, non del singolo allegato.
+                # Lavorato è della giornata intera, non del singolo allegato (anche per i versamenti).
                 state = "worked" if giornata == GiornataLavorazione.LAVORATO else "pending"
             # Emergenza dichiarata dal negozio: giallo lampeggiante finché la prima nota non c'è.
             emergenza = emergenze.get((negozio_id, day))

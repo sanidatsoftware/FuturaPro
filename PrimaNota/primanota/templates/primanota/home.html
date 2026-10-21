@@ -3,31 +3,31 @@
 {% block content %}
 <div class="top-actions">
     <h1>Documenti Amministrativi</h1>
-    <a class="btn btn-dark" href="/menu/">Menu</a>
+    <a class="btn-nav btn-nav-menu" href="/menu/">{% include "primanota/_icona.html" with nome="home" %}Menu</a>
 </div>
 <div class="sezioni">
     <a class="sezione-card" href="/primanota/monitor/">
-        <div class="icona">🧾</div>
+        <div class="icona">{% include "primanota/_icona.html" with nome="ricevuta" dimensione=34 %}</div>
         <h2>Chiusure Fiscali</h2>
         <p>Scansioni di chiusure fiscali, POS, resi e abortite dei negozi, monitor, note e anomalie, archivio SysSpy.</p>
         {% if note_chiusure %}<span class="badge badge-no">{{ note_chiusure }} not{{ note_chiusure|pluralize:"a,e" }} da lavorare</span>{% endif %}
     </a>
     {% if puo_versamenti %}
     <a class="sezione-card" href="/primanota/versamenti/monitor/">
-        <div class="icona">💶</div>
+        <div class="icona">{% include "primanota/_icona.html" with nome="versamenti" dimensione=34 %}</div>
         <h2>Gestione Versamenti</h2>
         <p>Monitor dei versamenti contante, consultazione con i contanti attesi dal SysSpy e note dei negozi.</p>
         {% if note_versamenti %}<span class="badge badge-no">{{ note_versamenti }} not{{ note_versamenti|pluralize:"a,e" }} da lavorare</span>{% endif %}
     </a>
     {% endif %}
     <a class="sezione-card" href="/primanota/prima-nota/">
-        <div class="icona">📒</div>
+        <div class="icona">{% include "primanota/_icona.html" with nome="libro" dimensione=34 %}</div>
         <h2>Consultazione Prima Nota</h2>
         <p>Movimenti della cassa centrale per punto vendita e giorno, come nel gestionale, e stampa PDF per più negozi e giorni.</p>
     </a>
     {% if puo_gestire %}
     <a class="sezione-card" href="/primanota/statistiche/">
-        <div class="icona">📈</div>
+        <div class="icona">{% include "primanota/_icona.html" with nome="statistiche" dimensione=34 %}</div>
         <h2>Statistiche</h2>
         <p>Statistiche finanziarie, vendite per fasce orarie e buoni pasto per emettitori. Riservate a Direttori e Amministratori.</p>
     </a>

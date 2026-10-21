@@ -1,4 +1,4 @@
-{# Una scansione con file e (per i versamenti) il flag separato. Il «lavorato» è della giornata intera. Usata nell'elenco e nella giornata. #}
+{# Una scansione con i file. Il «lavorato» è della giornata intera (Chiusure e Versamenti). Usata negli elenchi e nella giornata. #}
 <div class="scan">
     <div>
         {% for f in s.documento %}
@@ -15,11 +15,6 @@
     </div>
     {% else %}
     <div class="scan-flags">
-        {% if s.versamento %}
-        <label class="check"><input type="checkbox" onchange="toggleLavorato({{ s.id }}, this, true)" {% if s.versamento_lavorato %}checked{% endif %}>
-            <span id="vers-status-{{ s.id }}" class="badge {% if s.versamento_lavorato %}badge-ok{% else %}badge-no{% endif %}">{% if s.versamento_lavorato %}Versamento lavorato{% else %}Versamento da lavorare{% endif %}</span></label>
-        {% if s.versamento_lavorato %}<span class="small">{{ s.versamento_lavorato_da_label }} {{ s.versamento_data_fmt }}</span>{% endif %}
-        {% endif %}
         <button class="btn btn-light" type="button" onclick="deleteScansione({{ s.id }})">Elimina</button>
     </div>
 {% endif %}

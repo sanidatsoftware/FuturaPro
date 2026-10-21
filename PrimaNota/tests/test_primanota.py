@@ -1484,7 +1484,7 @@ class TestStatoGiornata(Base):
         # Le scansioni della giornata seguono il lavorato (il negozio non può più cancellarle).
         self.assertTrue(all(x["Lavorato"] for x in self.baserow.righe.values()))
         pagina = uff.get(f"/primanota/giornata/10/{ieri.isoformat()}/")
-        self.assertContains(pagina, "Riporta a non lavorato")
+        self.assertContains(pagina, "Riporta da lavorare")
         uff.post(f"/primanota/giornata/10/{ieri.isoformat()}/stato/", {"stato": "non_lavorato"})
         self.assertEqual(self.cella(ieri)["state"], "incomplete")
         self.assertFalse(any(x["Lavorato"] for x in self.baserow.righe.values()))
@@ -1494,7 +1494,28 @@ class TestStatoGiornata(Base):
         self.assertEqual(self.client_per("pv@x").post(f"/primanota/giornata/10/{ieri.isoformat()}/stato/",
                                                       {"stato": "lavorato"}).status_code, 302)
         from primanota.models import GiornataLavorazione
-        self.assertEqual(GiornataLavorazione.objects.get().stato, "chiusura")
+        # «Giornata chiusura» vale per chiusure e versamenti.
+        self.assertEqual(sorted(GiornataLavorazione.objects.values_list("sezione", "stato")),
+                         [("chiusure", "chiusura"), ("versamenti", "chiusura")])
+
+    def test_versamenti_lavorati_per_giornata(self):
+        ieri = date.today() - timedelta(days=1)
+        self.carica(self.client_per("pv@x"), "Versamenti contante", giorno=ieri.isoformat())
+        uff = self.client_per("ufficio@x")
+        pagina = uff.get("/primanota/versamenti/", {"data_da": ieri.isoformat()})
+        self.assertEqual(len(pagina.context["scansioni"]), 1)
+        self.assertContains(pagina, 'name="sezione" value="versamenti"')
+        self.assertEqual(self.cella(ieri, versamenti=True)["state"], "pending")
+        uff.post(f"/primanota/giornata/10/{ieri.isoformat()}/stato/", {"stato": "lavorato", "sezione": "versamenti"})
+        self.assertEqual(self.cella(ieri, versamenti=True)["state"], "worked")
+        self.assertTrue(all(x["Versamento Lavorato"] for x in self.baserow.righe.values()))
+        # Le Chiusure Fiscali della stessa giornata restano da lavorare.
+        from primanota.models import GiornataLavorazione
+        self.assertEqual(list(GiornataLavorazione.objects.values_list("sezione", flat=True)), ["versamenti"])
+        self.assertEqual(uff.get("/primanota/versamenti/", {"data_da": ieri.isoformat(), "solo_da_lavorare": "on"}).context["scansioni"], [])
+        uff.post(f"/primanota/giornata/10/{ieri.isoformat()}/stato/", {"stato": "non_lavorato", "sezione": "versamenti"})
+        self.assertEqual(self.cella(ieri, versamenti=True)["state"], "pending")
+        self.assertFalse(any(x["Versamento Lavorato"] for x in self.baserow.righe.values()))
 
     def test_elenco_solo_giornate_da_lavorare(self):
         ieri = (date.today() - timedelta(days=1)).isoformat()

@@ -526,11 +526,14 @@ def stato_giornata(request, negozio_id, giorno):
     from .services import giornate
     giorno = _data(giorno)
     nuovo = request.POST.get("stato")
-    if not giorno or nuovo not in dict(GiornataLavorazione.STATI):
+    sezione = request.POST.get("sezione") or GiornataLavorazione.CHIUSURE
+    if not giorno or nuovo not in dict(GiornataLavorazione.STATI) or sezione not in dict(GiornataLavorazione.SEZIONI):
         raise Http404
+    if sezione == GiornataLavorazione.VERSAMENTI and not can_see_versamenti(request.utente_primanota):
+        return HttpResponseForbidden("Versamenti riservati alla sede.")
     try:
         errori = giornate.imposta(request.utente_primanota, negozio_id, date.fromisoformat(giorno), nuovo,
-                                  nome_utente(request.utente_primanota))
+                                  nome_utente(request.utente_primanota), sezione)
     except RuntimeError as exc:
         errori = [str(exc)]
     ritorno = request.POST.get("ritorno", "")
@@ -1010,8 +1013,14 @@ def versamenti(request):
                      if s["versamento"]]
     except RuntimeError as exc:
         scansioni, error = [], str(exc)
+    # «Lavorato» è della giornata intera, come nelle Chiusure Fiscali.
+    righe_stato = GiornataLavorazione.mappa(date.fromisoformat(data_da), date.fromisoformat(data_a),
+                                            sezione=GiornataLavorazione.VERSAMENTI)
+    for s in scansioni:
+        s["stato"] = giornate_stato(s["negozio_id"], date.fromisoformat(s["data_documento"]), righe_stato,
+                                    con_scansioni=True, sezione=GiornataLavorazione.VERSAMENTI)
     if solo_da_lavorare:
-        scansioni = [s for s in scansioni if not s["versamento_lavorato"]]
+        scansioni = [s for s in scansioni if s["stato"]["stato"] == GiornataLavorazione.NON_LAVORATO]
     negozi = {n["id"]: n for n in negozi_attivi_ordinati()}
     # Contanti attesi per negozio e giorno: somma dei contanti negli scontrini delle casse.
     contanti = {}
