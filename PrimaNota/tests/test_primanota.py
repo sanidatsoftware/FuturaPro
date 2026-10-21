@@ -223,7 +223,10 @@ class TestPagine(Base):
 
     def test_il_negozio_salva_la_giornata_solo_con_gli_obbligatori(self):
         from primanota.models import RegolaDocumento
-        self.importa_fixture()   # 28/05: SysSpy con un'abortita e nessun reso
+        cond, cartella, _ = self.importa_fixture()   # 28/05: SysSpy con una sospensione e nessun reso
+        # Una transazione abortita vera (non una sospensione) sulla cassa 2.
+        (cartella / "SysSpy.20260528.2").write_text(sysspy_abortita("28/05/2026", 2))
+        importazione.importa_condivisione(cond)
         RegolaDocumento.objects.create(tipo_documento="Chiusure POS bancari", obbligo=RegolaDocumento.FACOLTATIVO)
         pv = self.client_per("pv@x")
         pagina = pv.get("/primanota/upload/", {"data": "2026-05-28"})
@@ -267,7 +270,9 @@ class TestPagine(Base):
         r = self.client_per("ufficio@x").get("/primanota/giornata/10/2026-05-28/")
         self.assertContains(r, "TOTALE HOST EUR")             # chiusura POS dal SysSpy
         self.assertContains(r, "TOTALE GIORNALIERO")          # chiusura fiscale dal SysSpy
-        self.assertContains(r, "SCONTRINO ANNULLATO")         # transazione abortita
+        # L'abortita della fixture è una sospensione dello scontrino: non è tra le abortite da scansionare.
+        abortite = next(x for x in r.context["sezioni"] if x["tipo"]["id"] == "Transazioni abortite")
+        self.assertEqual((abortite["anteprime"], abortite["obbligatoria"]), ([], False))
         self.assertContains(r, "✓ POS")
         self.assertContains(r, "scan.pdf")
         self.assertContains(r, "Mancante")                    # gli altri generi non sono stati caricati
@@ -297,8 +302,11 @@ class TestPagine(Base):
 
     def test_note_dal_negozio_e_chiusura_in_ufficio(self):
         pv = self.client_per("pv@x")
-        pv.post("/primanota/upload/", {"azione": "nota", "data": "2026-05-28", "tipo": "RICHIESTA_CONTATTO", "testo": "Chiamatemi"})
+        # La nota si scrive sotto gli allegati e si salva con «Salva», anche senza allegati.
+        r = pv.post("/primanota/upload/", {"data_documento": "2026-05-28", "tipo_nota": "RICHIESTA_CONTATTO", "note": "Chiamatemi"})
+        self.assertEqual(r.status_code, 302)
         nota = Nota.objects.get()
+        self.assertEqual((nota.tipo, nota.data), ("RICHIESTA_CONTATTO", date(2026, 5, 28)))
         self.assertEqual((nota.negozio_id, nota.creata_da), (10, "Utente 1"))
         uff = self.client_per("ufficio@x")
         self.assertContains(uff.get("/primanota/note/"), "Chiamatemi")
@@ -474,8 +482,9 @@ class TestDivisioneEControlli(Base):
         r = self.client_per("ufficio@x").get("/primanota/giornata/10/2026-05-28/")
         sezioni = {s["tipo"]["id"]: s["obbligatoria"] for s in r.context["sezioni"]}
         # I versamenti non sono più nella giornata: hanno la sezione Versamenti.
+        # L'abortita della fixture è una sospensione dello scontrino: non chiede la scansione.
         self.assertEqual(sezioni, {"Chiusura fiscale": True, "Chiusure POS bancari": True, "Resi": False,
-                                   "Transazioni abortite": True, "Fatture spese del giorno": False})
+                                   "Transazioni abortite": False, "Fatture spese del giorno": False})
         self.client_per("admin@x").post("/primanota/condivisioni/", {"azione": "regole", "regola_versamenti": "FACOLTATIVO"})
         self.assertEqual(RegolaDocumento.mappa()["Versamenti contante"], "FACOLTATIVO")
 
@@ -649,10 +658,8 @@ class TestChiusureVisteDalNegozio(Base):
         self.assertEqual([g["data"] for g in giornate][:2], [date(2026, 5, 29), date(2026, 5, 28)])
         g = giornate[1]
         self.assertEqual((g["casse"], g["anomalie"]), (1, []))
-        # Regole predefinite: chiusure e versamento sempre; abortite perché il SysSpy ne contiene; resi no.
-        self.assertEqual(g["mancanti"], ["Chiusura fiscale", "Chiusure POS bancari", "Transazioni abortite",
-                                         "Versamenti contante"])
-        self.carica(self.client_per("pv@x"), "Transazioni abortite")
+        # Regole predefinite: chiusure e versamento sempre; resi no; l'abortita è una sospensione e non conta.
+        self.assertEqual(g["mancanti"], ["Chiusura fiscale", "Chiusure POS bancari", "Versamenti contante"])
         RegolaDocumento.objects.create(tipo_documento="Versamenti contante", obbligo=RegolaDocumento.FACOLTATIVO)
         with mock.patch("primanota.views.timezone.localdate", return_value=oggi):
             g = views._giornate_recenti(10)[1]
@@ -1194,6 +1201,12 @@ class TestContenutoScontriniSospesi(Base):
         self.assertIn("Scontrino non trovato nel SysSpy", testo)   # il secondo non ha documento
 
 
+def sysspy_abortita(giorno, cassa):
+    """SysSpy minimo con una transazione abortita vera (senza sospensione dello scontrino)."""
+    testo = sysspy_scontrini(giorno, cassa, [(7, "10:15", [("POWERADE M.BLAST ZER", "1,25")])])
+    return testo.replace(f"8232 {giorno} 10:15", f"1600              OPERAZIONE ABORTITA\n8232 {giorno} 10:15")
+
+
 def sysspy_scontrini(giorno, cassa, scontrini):
     """SysSpy minimo: scontrini (numero, «HH:MM», [(articolo, importo)]) di una cassa in un giorno «gg/mm/aaaa»."""
     righe = []
@@ -1404,3 +1417,128 @@ class TestRiprovaDatabaseOccupato(SimpleTestCase):
 
         with self.assertRaises(OperationalError):
             importazione._con_riprova(funzione)
+
+
+class TestStatoGiornata(Base):
+    def cella(self, giorno, versamenti=False):
+        url = "/primanota/versamenti/monitor/" if versamenti else "/primanota/monitor/"
+        r = self.client_per("direttore@x").get(url, {"anno": giorno.year, "mese": giorno.month})
+        riga = next(x for x in r.context["monitor"]["rows"] if x["store_id"] == 10)
+        return next(c for c in riga["cells"] if c["date"] == giorno.isoformat())
+
+    def test_lavorato_della_giornata_intera_e_reversibile(self):
+        ieri = date.today() - timedelta(days=1)
+        self.scansione_sede("Chiusura fiscale", giorno=ieri.isoformat())
+        self.scansione_sede("Resi", giorno=ieri.isoformat())
+        uff = self.client_per("ufficio@x")
+        self.assertEqual(self.cella(ieri)["state"], "incomplete")
+        r = uff.post(f"/primanota/giornata/10/{ieri.isoformat()}/stato/", {"stato": "lavorato"})
+        self.assertRedirects(r, f"/primanota/giornata/10/{ieri.isoformat()}/", fetch_redirect_response=False)
+        self.assertEqual(self.cella(ieri)["state"], "worked")
+        # Le scansioni della giornata seguono il lavorato (il negozio non può più cancellarle).
+        self.assertTrue(all(x["Lavorato"] for x in self.baserow.righe.values()))
+        pagina = uff.get(f"/primanota/giornata/10/{ieri.isoformat()}/")
+        self.assertContains(pagina, "Riporta a non lavorato")
+        uff.post(f"/primanota/giornata/10/{ieri.isoformat()}/stato/", {"stato": "non_lavorato"})
+        self.assertEqual(self.cella(ieri)["state"], "incomplete")
+        self.assertFalse(any(x["Lavorato"] for x in self.baserow.righe.values()))
+        uff.post(f"/primanota/giornata/10/{ieri.isoformat()}/stato/", {"stato": "chiusura"})
+        self.assertEqual(self.cella(ieri)["state"], "closed")
+        # Il negozio non cambia lo stato.
+        self.assertEqual(self.client_per("pv@x").post(f"/primanota/giornata/10/{ieri.isoformat()}/stato/",
+                                                      {"stato": "lavorato"}).status_code, 302)
+        from primanota.models import GiornataLavorazione
+        self.assertEqual(GiornataLavorazione.objects.get().stato, "chiusura")
+
+    def test_elenco_solo_giornate_da_lavorare(self):
+        ieri = (date.today() - timedelta(days=1)).isoformat()
+        self.scansione_sede("Chiusura fiscale", giorno=ieri)
+        uff = self.client_per("ufficio@x")
+        self.assertEqual(len(uff.get("/primanota/admin/").context["giornate"]), 1)
+        uff.post(f"/primanota/giornata/10/{ieri}/stato/", {"stato": "lavorato", "ritorno": "/primanota/admin/"})
+        self.assertEqual(uff.get("/primanota/admin/").context["giornate"], [])
+
+    def test_pregresso_come_giornata_chiusura(self):
+        ieri = date.today() - timedelta(days=1)
+        with override_settings(PRIMANOTA_INIZIO_GESTIONE=date.today().isoformat()):
+            self.assertEqual(self.cella(ieri)["state"], "closed")
+            self.assertEqual(self.cella(ieri, versamenti=True)["state"], "closed")
+            # Lo stato si può comunque cambiare a mano.
+            self.client_per("ufficio@x").post(f"/primanota/giornata/10/{ieri.isoformat()}/stato/", {"stato": "non_lavorato"})
+            self.assertEqual(self.cella(ieri)["state"], "missing")
+
+    def test_chiusure_fiscali_si_apre_sul_monitor(self):
+        uff = self.client_per("ufficio@x")
+        self.assertContains(uff.get("/primanota/"), 'href="/primanota/monitor/"')
+        self.assertContains(uff.get("/primanota/"), 'href="/primanota/versamenti/monitor/"')
+        self.assertRedirects(uff.get("/primanota/upload/"), "/primanota/monitor/", fetch_redirect_response=False)
+
+
+class TestPrimaNotaPrimaDelleScansioni(Base):
+    def setUp(self):
+        super().setUp()
+        from django.core.cache import cache
+        cache.clear()
+
+    def prima_nota(self, righe):
+        def esegui(c, sql, parametri=(), dizionari=False):
+            return righe
+        return mock.patch.multiple("primanota.services.prima_nota", esegui=esegui, configurazione=lambda: {"host": "x"})
+
+    def test_scansioni_solo_con_la_prima_nota_certificata(self):
+        pv = self.client_per("pv@x")
+        dati = {"data_documento": "2026-05-28", "documento_fiscale": self.pdf(), "documento_pos": self.pdf(),
+                "documento_versamenti": self.pdf()}
+        with self.prima_nota([]):
+            self.assertContains(pv.get("/primanota/upload/", {"data": "2026-05-28"}), "non è ancora presente")
+            r = pv.post("/primanota/upload/", dati)
+            self.assertContains(r, "compila e certifica prima la prima nota")
+            # La sola nota si salva comunque.
+            self.assertEqual(pv.post("/primanota/upload/", {"data_documento": "2026-05-28", "note": "manca la prima nota"}).status_code, 302)
+        from django.core.cache import cache
+        cache.clear()
+        with self.prima_nota([("5048", 20260528, 12, 0, Decimal("0"), 3)]):   # 3 movimenti non certificati
+            self.assertContains(pv.post("/primanota/upload/", dict(dati, documento_fiscale=self.pdf(),
+                                                                   documento_pos=self.pdf(), documento_versamenti=self.pdf())),
+                                "non è ancora certificata")
+        self.assertEqual(self.baserow.righe, {})
+        cache.clear()
+        with self.prima_nota([("5048", 20260528, 12, 0, Decimal("0"), 0)]):
+            r = pv.post("/primanota/upload/", {"data_documento": "2026-05-28", "documento_fiscale": self.pdf(),
+                                               "documento_pos": self.pdf(), "documento_versamenti": self.pdf(), "note": "ok"})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(len(self.baserow.righe), 3)
+        self.assertEqual(Nota.objects.filter(testo="ok").count(), 1)
+
+
+class TestAllegatiLeggeri(SimpleTestCase):
+    def test_pdf_pesante_alleggerito(self):
+        import pymupdf
+        from primanota.services.allegati import ottimizza
+        riga = bytes(range(256)) * 29 + bytes(2480 * 3 - 256 * 29)
+        pix = pymupdf.Pixmap(pymupdf.csRGB, 2480, 3508, riga * 3508, False)
+        doc = pymupdf.open()
+        pagina = doc.new_page(width=595, height=842)
+        pagina.insert_image(pagina.rect, stream=pix.tobytes("jpeg", jpg_quality=95))   # scansione a 300 dpi
+        originale = SimpleUploadedFile("scan.pdf", doc.tobytes(), content_type="application/pdf")
+        leggero = ottimizza(originale)
+        self.assertLess(leggero.size, originale.size)
+        self.assertEqual(pymupdf.open(stream=leggero.read(), filetype="pdf").page_count, 1)
+
+    def test_piccoli_e_immagini_restano_uguali(self):
+        from primanota.services.allegati import ottimizza
+        piccolo = SimpleUploadedFile("scan.pdf", b"%PDF-1.4", content_type="application/pdf")
+        self.assertIs(ottimizza(piccolo), piccolo)
+        foto = SimpleUploadedFile("foto.jpg", b"x" * 400000, content_type="image/jpeg")
+        self.assertIs(ottimizza(foto), foto)
+
+
+class TestSpazioDisco(Base):
+    def test_indicatore_in_impostazioni(self):
+        r = self.client_per("direttore@x").get("/primanota/condivisioni/", {"disco": "aggiorna"})
+        self.assertContains(r, "Spazio su disco del server")
+        disco = r.context["disco"]
+        self.assertTrue(disco["dischi"])
+        self.assertIn("Archivio SysSpy e allegati", [n for d in disco["dischi"] for n in d["nomi"]])
+        from primanota.services.disco import _livello
+        self.assertEqual([_livello(50), _livello(85), _livello(95)], ["ok", "attenzione", "critico"])

@@ -11,7 +11,8 @@ from django.db.models import Count, Q
 from scansioni.services.monitor_trasmissioni import MONTH_LABELS, WEEKDAY_LABELS, _build_days, _month_shift, _safe_int
 from scansioni.services.baserow_scansioni import LOCAL_TZ
 
-from ..models import DocumentoSysSpy, FileSysSpy, Nota, RegolaDocumento
+from ..models import DocumentoSysSpy, FileSysSpy, GiornataLavorazione, Nota, RegolaDocumento
+from .giornate import stato as stato_giornata
 from .prima_nota import presenze
 from .regole import SYSSPY_PER_TIPO, obbligatoria, segni_prima_nota
 from .accesso import negozi_attivi_ordinati
@@ -27,7 +28,8 @@ def _sysspy_per_giorno(dal, al):
         if not f.quadrato:
             cella["squadrate"] += 1
     # Resi e abortite trovati nel SysSpy: servono alle regole "obbligatoria solo se nel SysSpy".
-    for r in (DocumentoSysSpy.objects.filter(file__data__range=(dal, al), tipo__in=[DocumentoSysSpy.RESO, DocumentoSysSpy.ABORTITO])
+    # Le abortite stampate per una sospensione dello scontrino non chiedono la scansione.
+    for r in (DocumentoSysSpy.da_scansionare().filter(file__data__range=(dal, al), tipo__in=[DocumentoSysSpy.RESO, DocumentoSysSpy.ABORTITO])
               .values("file__negozio_id", "file__data", "tipo").distinct()):
         cella = out.setdefault((r["file__negozio_id"], r["file__data"].isoformat()), {"casse": 0, "squadrate": 0, "tipi": set()})
         cella["tipi"].add(r["tipo"])
@@ -85,6 +87,8 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
     prima_nota = None if versamenti else presenze(days[0], days[-1])
     regole = RegolaDocumento.mappa()
     note = _note_aperte_per_giorno(days[0], days[-1], versamento=versamenti)
+    # Stato della giornata scelto dalla sede; il pregresso senza stato è «giornata chiusura».
+    stati = GiornataLavorazione.mappa(min(days[0], inizio_mese_corrente), max(days[-1], today))
     negozi = negozi_attivi_ordinati()
 
     summary = {"pending": 0, "worked": 0, "documents": 0, "missing_current_month": 0,
@@ -98,21 +102,29 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
             valori = aggregato.get((negozio_id, iso))
             spy = sysspy.get((negozio_id, iso), {"casse": 0, "squadrate": 0, "tipi": set()})
             n = note.get((negozio_id, iso), {"n": 0, "contatto": 0})
+            giornata = stato_giornata(negozio_id, day, stati)["stato"]
             if day > today:
                 state = "future"
+            elif giornata == GiornataLavorazione.CHIUSURA:
+                state = "closed"
             elif not valori:
                 state = "missing"
-            else:
+            elif versamenti:
                 state = "pending" if valori["pending"] else "worked"
-                summary[state] += 1
+            else:
+                # Lavorato è della giornata intera, non del singolo allegato.
+                state = "worked" if giornata == GiornataLavorazione.LAVORATO else "pending"
+            if valori:
                 summary["documents"] += valori["total"]
+                if state in ("pending", "worked"):
+                    summary[state] += 1
             valori = valori or {"total": 0, "worked": 0, "pending": 0, "versamenti_aperti": 0, "tipi": {}}
             presenti = (spy["tipi"] | ({"CASSA"} if spy["casse"] else set())
                         | segni_prima_nota(prima_nota, negozio.get("codice"), day))
             mancanti = [t["label"] for t in tipi
                         if not valori["tipi"].get(t["id"])
                         and obbligatoria(regole.get(t["id"]), SYSSPY_PER_TIPO.get(t["id"]) in presenti)]
-            if state in ("pending", "worked") and mancanti:
+            if state == "pending" and mancanti:
                 state = "incomplete"
             summary["versamenti_aperti"] += valori["versamenti_aperti"]
             summary["anomalie"] += n["n"]
@@ -142,8 +154,9 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
     giorni_correnti = {date(today.year, today.month, d).isoformat() for d in range(1, today.day + 1)}
     ricevuti = {k for k in aggregato if k[1] in giorni_correnti}
     ids = {_safe_int(n.get("id"), 0) for n in negozi}
-    summary["missing_current_month"] = max(
-        len(ids) * len(giorni_correnti) - sum(1 for k in ricevuti if k[0] in ids), 0)
+    summary["missing_current_month"] = sum(
+        1 for i in ids for g in giorni_correnti
+        if (i, g) not in ricevuti and stato_giornata(i, date.fromisoformat(g), stati)["stato"] != GiornataLavorazione.CHIUSURA)
 
     previous_year, previous_month = _month_shift(year, month, -1)
     next_year, next_month = _month_shift(year, month, 1)

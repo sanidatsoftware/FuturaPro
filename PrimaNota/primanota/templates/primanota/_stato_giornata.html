@@ -1,0 +1,11 @@
+{# Stato dell'intera giornata del negozio, scelto dalla sede: si può sempre cambiare. Vuole negozio_id, data (aaaa-mm-gg), stato. #}
+<form method="post" action="/primanota/giornata/{{ negozio_id }}/{{ data }}/stato/" class="stato-giornata">
+    {% csrf_token %}<input type="hidden" name="ritorno" value="{{ request.get_full_path }}">
+    {% if stato.stato == "lavorato" %}<span class="badge badge-ok">✓ Lavorato</span>
+    {% elif stato.stato == "chiusura" %}<span class="badge badge-grey">Giornata chiusura</span>
+    {% else %}<span class="badge badge-no">Non lavorato</span>{% endif %}
+    {% if stato.modificato_da %}<span class="small">{{ stato.modificato_da }} {{ stato.modificato_il|date:"d/m/Y H:i" }}</span>{% endif %}
+    {% if stato.stato != "lavorato" %}<button class="btn btn-dark" name="stato" value="lavorato">Segna lavorato</button>{% endif %}
+    {% if stato.stato != "non_lavorato" %}<button class="btn btn-light" name="stato" value="non_lavorato">Riporta a non lavorato</button>{% endif %}
+    {% if stato.stato != "chiusura" %}<button class="btn btn-light" name="stato" value="chiusura">Giornata chiusura</button>{% endif %}
+</form>

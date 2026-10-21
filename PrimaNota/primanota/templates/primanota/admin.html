@@ -1,6 +1,7 @@
 {% extends "primanota/base.html" %}
 {% block title %}Chiusure Fiscali · Sede{% endblock %}
-{% block style %}<style>.scan-flags{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:4px}</style>{% endblock %}
+{% block style %}<style>.scan-flags{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:4px}
+.stato-giornata{display:flex;gap:8px;align-items:center;flex-wrap:wrap}</style>{% endblock %}
 {% block content %}
 <div class="top-actions">
     <h1>Chiusure Fiscali · Portale Sede</h1>
@@ -24,7 +25,7 @@
         </label>
         <label class="field">Data dal <input type="date" name="data_da" value="{{ data_da }}"></label>
         <label class="field">al <input type="date" name="data_a" value="{{ data_a }}"></label>
-        <label class="check"><input type="checkbox" name="solo_non_lavorati" {% if solo_non_lavorati %}checked{% endif %}> Solo da lavorare</label>
+        <label class="check"><input type="checkbox" name="solo_non_lavorati" {% if solo_non_lavorati %}checked{% endif %}> Solo giornate da lavorare</label>
         <button class="btn btn-orange" type="submit">Filtra</button>
         <span class="small">{{ conteggio }} documenti</span>
     </form>
@@ -73,6 +74,7 @@
 <div class="card">
     <div class="top-actions" style="margin-bottom:8px">
         <h2 style="margin:0;flex:1">{{ g.negozio }} · {{ g.data_fmt }}</h2>
+        {% include "primanota/_stato_giornata.html" with negozio_id=g.negozio_id data=g.data stato=g.stato %}
         <a class="btn btn-orange" href="/primanota/giornata/{{ g.negozio_id }}/{{ g.data }}/">Apri giornata e SysSpy</a>
     </div>
     <table class="table">

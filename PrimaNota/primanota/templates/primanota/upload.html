@@ -34,6 +34,7 @@
                     <label>Data documento</label>
                     <input type="date" name="data_documento" id="dataDocumento" value="{{ giorno }}" required>
                 </div>
+                {% if blocco_prima_nota %}<div class="message-error" id="bloccoPrimaNota">{{ blocco_prima_nota }}</div>{% endif %}
                 <p class="small">Gli allegati <strong>obbligatori</strong> vanno caricati tutti insieme: senza, la giornata non si salva.
                     Le voci in grigio non sono previste per questa giornata.</p>
                 {% for v in voci %}
@@ -47,39 +48,19 @@
                     </div>
                     <div class="voce-campi">
                         <input type="file" name="documento_{{ v.tipo.chiave }}" class="documento" accept=".pdf,image/*"
-                               {% if v.stato == "non_richiesta" %}disabled{% elif v.manca %}required{% endif %}>
+                               {% if v.stato == "non_richiesta" or blocco_prima_nota %}disabled{% elif v.manca %}data-obbligatoria="1"{% endif %}>
                         <input type="number" name="cassa_{{ v.tipo.chiave }}" min="1" max="99" placeholder="Cassa" title="Cassa, se il documento è di una sola cassa"
-                               {% if v.stato == "non_richiesta" %}disabled{% endif %}>
+                               {% if v.stato == "non_richiesta" or blocco_prima_nota %}disabled{% endif %}>
                     </div>
                 </div>
                 {% endfor %}
                 <div class="form-group" style="margin-top:14px">
-                    <label>Note</label>
-                    <textarea name="note" placeholder="Note facoltative..."></textarea>
+                    <label>Note per l'ufficio</label>
+                    <select name="tipo_nota" style="margin-bottom:6px">{% for k, v in tipi_nota %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+                    <textarea name="note" id="noteGiornata" placeholder="Note facoltative, un'anomalia o una richiesta di contatto: arrivano all'ufficio con la giornata"></textarea>
                 </div>
                 <div id="mancanti" class="file-info" style="display:none"></div>
-                <button type="submit" class="btn btn-orange" id="salva">Salva giornata</button>
-            </form>
-        </div>
-
-        <div class="card">
-            <h2>Segnalazioni all'ufficio</h2>
-            <form method="post">
-                {% csrf_token %}
-                <input type="hidden" name="azione" value="nota">
-                <div class="form-group">
-                    <label>Data documento</label>
-                    <input type="date" name="data" value="{{ ieri }}" required>
-                </div>
-                <div class="form-group">
-                    <label>Tipo</label>
-                    <select name="tipo">{% for k, v in tipi_nota %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
-                </div>
-                <div class="form-group">
-                    <label>Testo</label>
-                    <textarea name="testo" required placeholder="Descrivi l'anomalia o perché vuoi essere contattato"></textarea>
-                </div>
-                <button type="submit" class="btn btn-dark">Invia segnalazione</button>
+                <button type="submit" class="btn btn-orange" id="salva">Salva</button>
             </form>
         </div>
     </div>
@@ -188,20 +169,56 @@ function anteprima(file){
     else if(file.type.startsWith("image/")) box.innerHTML = `<img src="${url}" alt="Anteprima">`;
     else box.textContent = "Anteprima non disponibile per questo formato.";
 }
+// Con almeno un allegato servono tutti gli obbligatori; senza allegati si può salvare la sola nota.
 function controllaMancanti(){
-    const mancanti = [...form.querySelectorAll("input.documento[required]")].filter(i => !i.files.length)
+    const documenti = [...form.querySelectorAll("input.documento")];
+    const allegati = documenti.some(i => i.files.length);
+    const nota = document.getElementById("noteGiornata").value.trim();
+    const mancanti = documenti.filter(i => i.dataset.obbligatoria && !i.files.length)
         .map(i => i.closest(".voce").querySelector("strong").textContent);
     const avviso = document.getElementById("mancanti");
-    avviso.style.display = mancanti.length ? "block" : "none";
-    avviso.textContent = mancanti.length ? "Da allegare per salvare: " + mancanti.join(", ") : "";
-    return !mancanti.length;
+    const blocca = mancanti.length && (allegati || !nota);
+    avviso.style.display = blocca ? "block" : "none";
+    avviso.textContent = blocca ? "Da allegare per salvare: " + mancanti.join(", ") : "";
+    return !blocca && (allegati || nota);
 }
-form.querySelectorAll("input.documento").forEach(i => i.addEventListener("change", function(){
+document.getElementById("noteGiornata").addEventListener("input", controllaMancanti);
+// Le foto si rimpiccioliscono qui, prima dell'invio: lato lungo 2000 px, JPEG all'80%.
+// Una foto del telefono passa da qualche MB a poche centinaia di KB: salvataggio più veloce e meno spazio.
+const LATO_MAX = 2000;
+async function alleggerisci(input){
+    const file = input.files[0];
+    if(!file || !file.type.startsWith("image/") || file.size < 500 * 1024 || !window.DataTransfer) return;
+    try{
+        const img = await createImageBitmap(file);
+        const scala = Math.min(1, LATO_MAX / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scala); canvas.height = Math.round(img.height * scala);
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const blob = await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.8));
+        if(!blob || blob.size >= file.size) return;
+        const dt = new DataTransfer();
+        dt.items.add(new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", {type: "image/jpeg"}));
+        input.files = dt.files;
+    }catch(e){ /* se il browser non ci riesce si invia l'originale */ }
+}
+let inLavorazione = 0;
+form.querySelectorAll("input.documento").forEach(i => i.addEventListener("change", async function(){
+    inLavorazione++;
+    await alleggerisci(this);
+    inLavorazione--;
     anteprima(this.files[0]);
     controllaMancanti();
 }));
 form.addEventListener("submit", function(e){
-    if(!controllaMancanti() || !this.checkValidity()){ e.preventDefault(); this.reportValidity(); return; }
+    if(inLavorazione){ e.preventDefault(); alert("Attendi qualche secondo: sto preparando le foto."); return; }
+    if(!controllaMancanti() || !this.checkValidity()){
+        e.preventDefault(); this.reportValidity();
+        if(!document.getElementById("mancanti").textContent) alert("Allega almeno un documento o scrivi una nota.");
+        return;
+    }
     const b = document.getElementById("salva"); b.disabled = true; b.textContent = "Invio in corso...";
 });
 controllaMancanti();

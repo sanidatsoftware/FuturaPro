@@ -219,7 +219,8 @@ CAUSALE_SPESE_FATTURA = 17
 QUERY_PRESENZE = """
 SELECT r.pv, r.data, COUNT(*),
        SUM(CASE WHEN r.causale = 17 THEN 1 ELSE 0 END),
-       SUM(CASE WHEN r.causale = 17 THEN r.importo ELSE 0 END)
+       SUM(CASE WHEN r.causale = 17 THEN r.importo ELSE 0 END),
+       SUM(CASE WHEN ISNULL(r.data_cert, 0) = 0 THEN 1 ELSE 0 END)
   FROM WEBNETSRV.newdis.dbo.ONLCassaCentrale AS r
  WHERE r.data BETWEEN %s AND %s
    AND {non_annullata}
@@ -230,8 +231,8 @@ SELECT r.pv, r.data, COUNT(*),
 
 def presenze(dal, al, codici=()):
     """
-    {(pv, giorno): {"movimenti", "fatture", "importo_fatture"}} per sapere quali giornate hanno la prima nota
-    e spese del giorno con fattura (causale 17). None se il database non è configurato o non risponde:
+    {(pv, giorno): {"movimenti", "fatture", "importo_fatture", "certificata"}} per sapere quali giornate hanno
+    la prima nota (e se è certificata: tutti i movimenti con data di certificazione) e spese del giorno con fattura (causale 17). None se il database non è configurato o non risponde:
     in quel caso la scansione della fattura resta caricabile ma non obbligatoria. Risultato tenuto 10 minuti.
     """
     from django.core.cache import cache
@@ -240,7 +241,7 @@ def presenze(dal, al, codici=()):
     if not c:
         return None
     codici = sorted({str(x).strip() for x in codici if str(x).strip()})
-    chiave = f"primanota:presenze:{dal}:{al}:{','.join(codici)}"
+    chiave = f"primanota:presenze2:{dal}:{al}:{','.join(codici)}"
     trovato = cache.get(chiave)
     if trovato is not None:
         return trovato
@@ -250,11 +251,12 @@ def presenze(dal, al, codici=()):
     except RuntimeError:
         return None
     out = {}
-    for pv, giorno, movimenti, fatture, importo in righe:
+    for pv, giorno, movimenti, fatture, importo, *resto in righe:
         g = _data(giorno)
         if g:
             out[(_testo(pv), g)] = {"movimenti": int(movimenti or 0), "fatture": int(fatture or 0),
-                                    "importo_fatture": _importo(importo)}
+                                    "importo_fatture": _importo(importo),
+                                    "certificata": bool(movimenti) and not int((resto or [0])[0] or 0)}
     cache.set(chiave, out, 600)
     return out
 
@@ -268,3 +270,17 @@ def spese_con_fattura(codice_pv, giorno):
     righe = esegui(c, QUERY_MOVIMENTI.format(non_annullata=NON_ANNULLATA, filtro_pv="AND r.pv = %s AND r.causale = %s"),
                    (data, data, str(codice_pv), CAUSALE_SPESE_FATTURA), dizionari=True)
     return [_movimento(r) for r in righe]
+
+
+def prima_nota_pronta(codice_pv, giorno):
+    """
+    Se il negozio può caricare le scansioni della giornata: la prima nota deve esserci ed essere certificata.
+    None se non si può sapere (database non configurato o non raggiungibile): allora non si blocca niente.
+    """
+    p = presenze(giorno, giorno, [codice_pv])
+    if p is None:
+        return None
+    g = p.get((str(codice_pv).strip(), giorno))
+    if not g:
+        return "mancante"
+    return "pronta" if g["certificata"] else "non_certificata"

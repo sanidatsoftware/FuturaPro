@@ -41,7 +41,7 @@ def presenti_nel_sysspy(negozio_id, dal, al):
     out = {}
     for d in FileSysSpy.objects.filter(negozio_id=negozio_id, data__range=(dal, al)).values_list("data", flat=True):
         out.setdefault(d, set()).add("CASSA")
-    for d, tipo in DocumentoSysSpy.objects.filter(
+    for d, tipo in DocumentoSysSpy.da_scansionare().filter(
             file__negozio_id=negozio_id, file__data__range=(dal, al),
             tipo__in=[DocumentoSysSpy.RESO, DocumentoSysSpy.ABORTITO]).values_list("file__data", "tipo").distinct():
         out.setdefault(d, set()).add(tipo)

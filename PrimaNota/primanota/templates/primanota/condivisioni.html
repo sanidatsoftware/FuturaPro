@@ -1,5 +1,13 @@
 {% extends "primanota/base.html" %}
 {% block title %}Condivisioni negozi{% endblock %}
+{% block style %}
+<style>
+.disco{margin:10px 0 14px}.disco-testa{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.disco-barra{height:14px;border-radius:7px;background:#e8edf3;overflow:hidden}
+.disco-barra span{display:block;height:100%;border-radius:7px}
+.liv-ok{background:#1baf7a}.liv-attenzione{background:#eda100}.liv-critico{background:#e34948}
+</style>
+{% endblock %}
 {% block content %}
 <div class="top-actions">
     <h1>Impostazioni · Condivisioni dei negozi (SysSpy)</h1>
@@ -13,6 +21,25 @@
     <code>\\server\condivisione\cartella</code> (SMB) oppure un percorso già montato sul server, ad esempio <code>/mnt/negozi/5048</code>.
     La password resta cifrata; lasciandola vuota si mantiene quella salvata.
 </div>
+{% if disco %}
+<div class="card">
+    <div class="top-actions" style="margin-bottom:6px"><h3 style="margin:0;flex:1">Spazio su disco del server</h3>
+        <a class="btn btn-light" href="?disco=aggiorna">↻ Aggiorna</a></div>
+    {% for d in disco.dischi %}
+    <div class="disco">
+        <div class="disco-testa"><strong>{{ d.nomi|join:" · " }}</strong>
+            {% if d.livello == "critico" %}<span class="badge badge-red">⛔ Quasi pieno</span>
+            {% elif d.livello == "attenzione" %}<span class="badge badge-no">⚠ Da tenere d'occhio</span>
+            {% else %}<span class="badge badge-ok">✓ Spazio sufficiente</span>{% endif %}
+            <span class="small">{{ d.percorso }}</span></div>
+        <div class="disco-barra" role="img" aria-label="{{ d.percentuale }}% occupato"><span class="liv-{{ d.livello }}" style="width:{{ d.percentuale|stringformat:'s' }}%"></span></div>
+        <div class="small">Occupati {{ d.usato|filesizeformat }} su {{ d.totale|filesizeformat }} ({{ d.percentuale }}%) · liberi <strong>{{ d.libero|filesizeformat }}</strong></div>
+    </div>
+    {% endfor %}
+    <p class="small">Archivio SysSpy, file SR e copie: {{ disco.archivio|filesizeformat }}{% if disco.database is not None %} · database del portale: {{ disco.database|filesizeformat }}{% endif %}.
+        Le scansioni dei negozi sono in Baserow. Soglie: attenzione dall'80%, quasi pieno dal 90%. Il dato si aggiorna ogni 15 minuti.</p>
+</div>
+{% endif %}
 {% if salvato %}<div class="message-ok">Impostazioni salvate.</div>{% endif %}
 {% if errore_orari %}<div class="message-error">{{ errore_orari }}</div>{% endif %}
 <div class="grid2">

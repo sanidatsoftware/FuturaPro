@@ -8,6 +8,7 @@ urlpatterns = [
     path("admin/", views.admin, name="primanota_admin"),
     path("monitor/", views.monitor, name="primanota_monitor"),
     path("giornata/<int:negozio_id>/<str:giorno>/", views.giornata, name="primanota_giornata"),
+    path("giornata/<int:negozio_id>/<str:giorno>/stato/", views.stato_giornata, name="primanota_stato_giornata"),
     path("update-lavorato/<int:scansione_id>/", views.update_lavorato, name="primanota_update_lavorato"),
     path("delete/<int:scansione_id>/", views.delete, name="primanota_delete"),
     path("note/", views.note, name="primanota_note"),

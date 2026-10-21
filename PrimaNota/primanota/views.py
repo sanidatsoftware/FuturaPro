@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from collections import OrderedDict
 from datetime import date, timedelta
@@ -9,11 +10,14 @@ from pathlib import Path
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_POST
 
-from .models import (Condivisione, DestinatarioEmail, DocumentoSysSpy, FileSysSpy, Nota, ScontrinoSospeso,
+from .models import (Condivisione, DestinatarioEmail, DocumentoSysSpy, FileSysSpy, GiornataLavorazione, Nota, ScontrinoSospeso,
                      Pianificazione, RegolaDocumento)
+from .services.allegati import ottimizza
+from .services.giornate import stato as giornate_stato
 from .services.regole import NON_RICHIESTA, obbligatoria, stato_giornate
 from .services import importazione
 from .services.accesso import (
@@ -50,6 +54,8 @@ from scansioni.services.baserow_scansioni import LOCAL_TZ
 # La ricerca nel testo legge i file dal disco: si limita il numero di giornate.
 MAX_GIORNI_RICERCA = 62
 
+
+log = logging.getLogger(__name__)
 
 def _data(valore, predefinita=None):
     try:
@@ -134,43 +140,67 @@ def _voci_caricamento(negozio_id, giorno):
     return stato_giornate(negozio_id, d, d, caricate)[d]
 
 
+def _blocco_prima_nota(negozio_id, giorno):
+    """Messaggio se la prima nota della giornata non c'è o non è certificata (le scansioni si inviano dopo)."""
+    from .services.prima_nota import prima_nota_pronta
+    d = date.fromisoformat(giorno)
+    stato = prima_nota_pronta((negozio(negozio_id) or {}).get("codice"), d)
+    if stato == "mancante":
+        return (f"La prima nota del {d:%d/%m/%Y} non è ancora presente: compila e certifica prima la prima nota, "
+                "poi invia le scansioni.")
+    if stato == "non_certificata":
+        return (f"La prima nota del {d:%d/%m/%Y} non è ancora certificata: certificala prima, "
+                "poi invia le scansioni.")
+    return None
+
+
 def _salva_giornata(request, user, negozio_id):
     """
-    Salva le scansioni della giornata, una per genere. Non salva niente se manca un allegato
-    obbligatorio (secondo le regole) o se si allega un genere non richiesto. Restituisce l'errore o None.
+    Salva le scansioni della giornata, una per genere, e la nota per l'ufficio scritta sotto. Non salva
+    scansioni se manca un allegato obbligatorio (secondo le regole), se si allega un genere non richiesto o se
+    la prima nota della giornata non è ancora certificata. La sola nota si salva sempre. Restituisce l'errore o None.
     """
     giorno = _data(request.POST.get("data_documento"))
     if not giorno:
         return "Indica la data del documento."
     voci = _voci_caricamento(negozio_id, giorno)
     file_per_tipo = {v["tipo"]["id"]: request.FILES.get(f"documento_{v['tipo']['chiave']}") for v in voci}
+    note = request.POST.get("note", "").strip()
+    tipo_nota = request.POST.get("tipo_nota") if request.POST.get("tipo_nota") in dict(Nota.TIPI) else Nota.NOTA
+    da_salvare = [v for v in voci if file_per_tipo[v["tipo"]["id"]]]
+    if not da_salvare:
+        if not note:
+            return "Allega almeno un documento o scrivi una nota."
+        Nota.objects.create(negozio_id=negozio_id, data=giorno, tipo=tipo_nota, testo=note, creata_da=nome_utente(user))
+        return None
+    blocco = _blocco_prima_nota(negozio_id, giorno)
+    if blocco:
+        return blocco
     mancanti = [v["tipo"]["label"] for v in voci if v["manca"] and not file_per_tipo[v["tipo"]["id"]]]
     if mancanti:
         return "Mancano gli allegati obbligatori: " + ", ".join(mancanti) + ". Nessun documento è stato salvato."
     non_richiesti = [v["tipo"]["label"] for v in voci if v["stato"] == NON_RICHIESTA and file_per_tipo[v["tipo"]["id"]]]
     if non_richiesti:
         return "Documenti non previsti per questa giornata: " + ", ".join(non_richiesti) + "."
-    da_salvare = [v for v in voci if file_per_tipo[v["tipo"]["id"]]]
-    if not da_salvare:
-        return "Allega almeno un documento."
     casse = {}
     for v in da_salvare:
         cassa = request.POST.get(f"cassa_{v['tipo']['chiave']}", "").strip()
         if cassa and not cassa.isdigit():
             return f"{v['tipo']['label']}: la cassa deve essere un numero."
         casse[v["tipo"]["id"]] = int(cassa) if cassa else None
-    note = request.POST.get("note", "").strip()
     salvati = []
     for v in da_salvare:
         t = v["tipo"]["id"]
         try:
-            risultato = crea_scansione(user, negozio_id, giorno, t, file_per_tipo[t], cassa=casse[t], note=note)
+            risultato = crea_scansione(user, negozio_id, giorno, t, ottimizza(file_per_tipo[t]), cassa=casse[t], note=note)
         except RuntimeError as exc:
             risultato = {"error": str(exc)}
         if "error" in risultato:
             gia = f" Salvati: {', '.join(salvati)}." if salvati else ""
             return f"{v['tipo']['label']}: {str(risultato['error']).rstrip('.')}.{gia}"
         salvati.append(v["tipo"]["label"])
+    if note:
+        Nota.objects.create(negozio_id=negozio_id, data=giorno, tipo=tipo_nota, testo=note, creata_da=nome_utente(user))
     return None
 
 
@@ -188,7 +218,7 @@ def home(request):
 def upload(request):
     user = request.utente_primanota
     if not is_store_user(user):
-        return redirect("/primanota/admin/")
+        return redirect("/primanota/monitor/")
     negozio_id = get_user_store_id(user)
     error = None
 
@@ -224,15 +254,6 @@ def upload(request):
                 nota.inviata_a = ", ".join(d.email for d in destinatari)
                 nota.save(update_fields=["inviata_a", "esito_invio"])
             return redirect(f"/primanota/upload/?versamento={esito}")
-    elif request.method == "POST" and request.POST.get("azione") == "nota":
-        giorno = _data(request.POST.get("data"))
-        tipo = request.POST.get("tipo")
-        testo = request.POST.get("testo", "").strip()
-        if not giorno or tipo not in dict(Nota.TIPI) or not testo:
-            error = "Compila data, tipo e testo della segnalazione."
-        else:
-            Nota.objects.create(negozio_id=negozio_id, data=giorno, tipo=tipo, testo=testo, creata_da=nome_utente(user))
-            return redirect("/primanota/upload/?nota=1")
     elif request.method == "POST":
         error = _salva_giornata(request, user, negozio_id)
         if not error:
@@ -250,7 +271,7 @@ def upload(request):
         s["note_versamento"] = note_versamenti.get(s["id"], [])
     message = None
     if request.GET.get("uploaded") == "1":
-        message = "Documenti della giornata salvati correttamente."
+        message = "Giornata salvata correttamente."
     elif request.GET.get("nota") == "1":
         message = "Segnalazione inviata."
     elif request.GET.get("versamento") == "inviata":
@@ -267,6 +288,7 @@ def upload(request):
         voci, error = [], error or str(exc)
     return render(request, "primanota/upload.html", _contesto(
         request, scansioni=scansioni, error=error, message=message, ieri=ieri, giorno=giorno, voci=voci,
+        blocco_prima_nota=_blocco_prima_nota(negozio_id, giorno),
         tipi_nota=Nota.TIPI, note=Nota.objects.filter(negozio_id=negozio_id, versamento=False)[:30],
         destinatari=DestinatarioEmail.objects.filter(attivo=True), giornate=_giornate_recenti(negozio_id),
         negozio_id=negozio_id,
@@ -291,9 +313,6 @@ def admin(request):
     scansioni = [s for s in scansioni if not s["versamento"]]
     if filtro_tipo:
         scansioni = [s for s in scansioni if s["tipo_documento"] == filtro_tipo]
-    if solo_non_lavorati:
-        scansioni = [s for s in scansioni if not s["lavorato"]]
-
     # Raggruppate per giornata di prima nota (negozio + data), come la vista per negozio di Scansioni.
     negozi = {n["id"]: n for n in negozi_attivi_ordinati()}
     giornate = OrderedDict()
@@ -303,6 +322,12 @@ def admin(request):
             "negozio_id": s["negozio_id"], "data": s["data_documento"], "data_fmt": s["data_documento_fmt"],
             "negozio": etichetta_negozio(negozi.get(s["negozio_id"])) or s["negozio_id"], "scansioni": []})
         g["scansioni"].append(s)
+    # «Lavorato» è della giornata intera: «solo da lavorare» lascia le giornate non lavorate (né chiuse).
+    righe_stato = GiornataLavorazione.mappa(date.fromisoformat(data_da), date.fromisoformat(data_a))
+    for g in giornate.values():
+        g["stato"] = giornate_stato(g["negozio_id"], date.fromisoformat(g["data"]), righe_stato)
+    if solo_non_lavorati:
+        giornate = OrderedDict((k, g) for k, g in giornate.items() if g["stato"]["stato"] == GiornataLavorazione.NON_LAVORATO)
     for g in giornate.values():
         g["scansioni"].sort(key=lambda s: ([t["id"] for t in TIPI_DOCUMENTO].index(s["tipo_documento"])
                                            if s["tipo_documento"] in TIPI_VALIDI else 99, s["cassa"] or 0))
@@ -310,7 +335,7 @@ def admin(request):
     return render(request, "primanota/admin.html", _contesto(
         request, giornate=list(giornate.values()), negozi=list(negozi.values()), error=error,
         filtro_negozio=filtro_negozio, filtro_tipo=filtro_tipo, data_da=data_da, data_a=data_a,
-        solo_non_lavorati=solo_non_lavorati, conteggio=len(scansioni), per_foglio=[1, 2, 4, 6, 8, 9],
+        solo_non_lavorati=solo_non_lavorati, conteggio=sum(len(g["scansioni"]) for g in giornate.values()), per_foglio=[1, 2, 4, 6, 8, 9],
         note_negozi=_note_negozi(request, filtro_negozio, negozi)))
 
 
@@ -358,7 +383,9 @@ def giornata(request, negozio_id, giorno):
         CHIUSURA_FISCALE: [(f"Cassa {f.cassa}", f.chiusura_fiscale) for f in files if f.chiusura_fiscale],
         CHIUSURA_POS: [(f"Cassa {f.cassa}", f.chiusura_pos) for f in files if f.chiusura_pos],
         RESI: [(f"Cassa {d.file.cassa} · {d.numero} · {d.ora}", d.testo) for d in docs(DocumentoSysSpy.RESO)],
-        TRANSAZIONI_ABORTITE: [(f"Cassa {d.file.cassa} · {d.numero} · {d.ora}", d.testo) for d in docs(DocumentoSysSpy.ABORTITO)],
+        # Le sospensioni dello scontrino (stampate come operazione abortita) sono negli scontrini sospesi.
+        TRANSAZIONI_ABORTITE: [(f"Cassa {d.file.cassa} · {d.numero} · {d.ora}", d.testo) for d in docs(DocumentoSysSpy.ABORTITO)
+                               if "SOSPENSIONE SCONTRINO" not in d.testo],
         VERSAMENTO_CONTANTE: [],
         FATTURE_SPESE: [],
     }
@@ -416,7 +443,30 @@ def giornata(request, negozio_id, giorno):
         sezioni=sezioni, altre=altre, files=files, casse=casse, error=error,
         storni=docs(DocumentoSysSpy.STORNO, DocumentoSysSpy.ANNULLAMENTO), pos_negate=docs(DocumentoSysSpy.POS_NEGATO),
         sospesi=ScontrinoSospeso.objects.filter(negozio_id=negozio_id, data=giorno).order_by("ora"),
+        stato_giornata=giornate_stato(negozio_id, corrente), avviso_stato=request.GET.get("avviso_stato") == "1",
         note=Nota.objects.filter(negozio_id=negozio_id, data=giorno, versamento=False), tipi_nota=Nota.TIPI))
+
+
+@require_POST
+@_accesso(solo_ufficio=True)
+def stato_giornata(request, negozio_id, giorno):
+    """Lavorato, Non lavorato o Giornata chiusura per tutta la giornata del negozio (si può sempre cambiare)."""
+    from .services import giornate
+    giorno = _data(giorno)
+    nuovo = request.POST.get("stato")
+    if not giorno or nuovo not in dict(GiornataLavorazione.STATI):
+        raise Http404
+    try:
+        errori = giornate.imposta(request.utente_primanota, negozio_id, date.fromisoformat(giorno), nuovo,
+                                  nome_utente(request.utente_primanota))
+    except RuntimeError as exc:
+        errori = [str(exc)]
+    ritorno = request.POST.get("ritorno", "")
+    if not url_has_allowed_host_and_scheme(ritorno, allowed_hosts={request.get_host()}) or not ritorno.startswith("/"):
+        ritorno = f"/primanota/giornata/{negozio_id}/{giorno}/"
+    if errori:
+        ritorno += ("&" if "?" in ritorno else "?") + "avviso_stato=1"
+    return redirect(ritorno)
 
 
 @_accesso(solo_ufficio=True)
@@ -686,7 +736,16 @@ def condivisioni(request):
     return render(request, "primanota/condivisioni.html", _contesto(
         request, righe=righe, piano=piano, giorni=Pianificazione.GIORNI, errore_orari=errore_orari,
         regole=[(t, RegolaDocumento.mappa().get(t["id"])) for t in TIPI_DOCUMENTO], scelte_regole=RegolaDocumento.SCELTE,
-        salvato=request.GET.get("salvato") == "1"))
+        salvato=request.GET.get("salvato") == "1", disco=_stato_disco(request.GET.get("disco") == "aggiorna")))
+
+
+def _stato_disco(ricalcola):
+    from .services import disco
+    try:
+        return disco.stato(ricalcola)
+    except Exception:   # l'indicatore non deve bloccare le impostazioni
+        log.exception("Spazio su disco non letto")
+        return None
 
 
 @require_POST

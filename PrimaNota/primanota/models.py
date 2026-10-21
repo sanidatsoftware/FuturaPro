@@ -164,6 +164,14 @@ class DocumentoSysSpy(models.Model):
     class Meta:
         ordering = ["file__cassa", "ora"]
 
+    @classmethod
+    def da_scansionare(cls):
+        """
+        I documenti che chiedono una scansione: le «transazioni abortite» stampate per una sospensione
+        dello scontrino (SOSPENSIONE SCONTRINO … OPERAZIONE ABORTITA) non sono abortite vere e non contano.
+        """
+        return cls.objects.exclude(tipo=cls.ABORTITO, testo__contains="SOSPENSIONE SCONTRINO")
+
 
 class Nota(models.Model):
     NOTA = "NOTA"
@@ -392,3 +400,45 @@ class FileSR(models.Model):
         if self.richiamato:
             return "richiamato"
         return "attesa" if self.presente else "rimosso"
+
+
+class GiornataLavorazione(models.Model):
+    """
+    Stato della giornata di un negozio deciso dalla sede: vale per tutta la pagina del negozio, non per il
+    singolo allegato. Senza riga la giornata è «non lavorata», o «giornata chiusura» se è precedente
+    all'inizio della gestione (il pregresso).
+    """
+
+    LAVORATO = "lavorato"
+    NON_LAVORATO = "non_lavorato"
+    CHIUSURA = "chiusura"
+    STATI = [(LAVORATO, "Lavorato"), (NON_LAVORATO, "Non lavorato"), (CHIUSURA, "Giornata chiusura")]
+
+    negozio_id = models.IntegerField(db_index=True)
+    data = models.DateField(db_index=True)
+    stato = models.CharField(max_length=20, choices=STATI)
+    modificato_da = models.CharField(max_length=200, blank=True)
+    modificato_il = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["negozio_id", "data"], name="giornata_lavorazione_unica")]
+
+    @staticmethod
+    def inizio_gestione():
+        """Primo giorno gestito con il monitor: i giorni prima, senza uno stato scelto, sono «giornata chiusura»."""
+        from datetime import date
+        from django.conf import settings
+        valore = getattr(settings, "PRIMANOTA_INIZIO_GESTIONE", "2026-10-21")
+        return valore if isinstance(valore, date) else date.fromisoformat(str(valore))
+
+    @classmethod
+    def stato_predefinito(cls, giorno):
+        return cls.CHIUSURA if giorno < cls.inizio_gestione() else cls.NON_LAVORATO
+
+    @classmethod
+    def mappa(cls, dal, al, negozio_id=None):
+        """{(negozio_id, data): riga} delle giornate con uno stato scelto nel periodo."""
+        righe = cls.objects.filter(data__range=(dal, al))
+        if negozio_id is not None:
+            righe = righe.filter(negozio_id=negozio_id)
+        return {(g.negozio_id, g.data): g for g in righe}

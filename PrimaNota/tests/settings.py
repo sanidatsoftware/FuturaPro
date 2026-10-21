@@ -33,3 +33,4 @@ STATIC_URL = "/static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 BASEROW_PRIMANOTA_TABLE_ID = 999
 BASEROW_UTENTE_MENU_PRIMANOTA_FIELD = "field_9000"
+PRIMANOTA_INIZIO_GESTIONE = "2020-01-01"   # nei test il pregresso non c'è: le date delle fixture sono gestite
