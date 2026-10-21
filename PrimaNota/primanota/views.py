@@ -149,8 +149,14 @@ def _blocco_prima_nota(negozio_id, giorno):
         return (f"La prima nota del {d:%d/%m/%Y} non è ancora presente: compila e certifica prima la prima nota, "
                 "poi invia le scansioni.")
     if stato == "non_certificata":
-        return (f"La prima nota del {d:%d/%m/%Y} non è ancora certificata: certificala prima, "
-                "poi invia le scansioni.")
+        from .services.prima_nota import non_certificati
+        movimenti = non_certificati((negozio(negozio_id) or {}).get("codice"), d)
+        dettaglio = "; ".join(f"n. {m['progressivo']} delle {m['ora']} {m['causale_descr'] or m['causale']} "
+                              + f"{m['importo']:.2f} €".replace(".", ",") for m in movimenti[:5])
+        if len(movimenti) > 5:
+            dettaglio += f" e altri {len(movimenti) - 5}"
+        return (f"La prima nota del {d:%d/%m/%Y} non è ancora certificata: certificala prima, poi invia le scansioni."
+                + (f" Movimenti senza certificazione: {dettaglio}." if dettaglio else ""))
     return None
 
 

@@ -289,3 +289,18 @@ def prima_nota_pronta(codice_pv, giorno):
     if not g:
         return "mancante"
     return "pronta" if g["certificata"] else "non_certificata"
+
+
+def non_certificati(codice_pv, giorno):
+    """I movimenti della giornata ancora senza certificazione (data_cert vuota), per dire al negozio quali sono."""
+    c = configurazione()
+    if not c:
+        return []
+    data = str(giorno).replace("-", "")
+    try:
+        righe = esegui(c, QUERY_MOVIMENTI.format(non_annullata=NON_ANNULLATA,
+                                                 filtro_pv="AND r.pv = %s AND ISNULL(r.data_cert, 0) = 0"),
+                       (data, data, str(codice_pv)), dizionari=True)
+    except RuntimeError:
+        return []
+    return [{**_movimento(r), "causale_descr": _testo(r.get("causale_descr"))} for r in righe]

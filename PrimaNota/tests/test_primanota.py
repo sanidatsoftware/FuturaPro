@@ -1490,8 +1490,13 @@ class TestPrimaNotaPrimaDelleScansioni(Base):
         cache.clear()
 
     def prima_nota(self, righe):
+        movimento = {"progressivo": 335830, "ora": "185501", "causale": 9, "importo": Decimal("47.50"), "segno": "-",
+                     "causale_descr": "PAGAMENTO FORNITORI", "data_cert": None}
+
         def esegui(c, sql, parametri=(), dizionari=False):
-            return righe
+            if "COUNT(*)" in sql:
+                return righe
+            return [movimento] if righe and righe[0][5] else []
         return mock.patch.multiple("primanota.services.prima_nota", esegui=esegui, configurazione=lambda: {"host": "x"})
 
     def test_scansioni_solo_con_la_prima_nota_certificata(self):
@@ -1510,6 +1515,8 @@ class TestPrimaNotaPrimaDelleScansioni(Base):
             self.assertContains(pv.post("/primanota/upload/", dict(dati, documento_fiscale=self.pdf(),
                                                                    documento_pos=self.pdf(), documento_versamenti=self.pdf())),
                                 "non è ancora certificata")
+            self.assertContains(pv.get("/primanota/upload/", {"data": "2026-05-28"}),
+                                "Movimenti senza certificazione: n. 335830 delle 18:55:01 PAGAMENTO FORNITORI 47,50 €")
         self.assertEqual(self.baserow.righe, {})
         cache.clear()
         with self.prima_nota([("5048", 20260528, 12, 0, Decimal("0"), 0)]):
