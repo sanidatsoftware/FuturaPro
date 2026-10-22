@@ -57,7 +57,15 @@ def controlli(f, dettagli=True):
     # 1. POS: quanto ha incassato il terminale bancario = Carta Credito + Bancomat negli scontrini.
     pos, scontrini = f.totale_pos, f.pagato_pos
     valori = [("Chiusura POS (terminale bancario)", pos), ("Carta Credito + Bancomat negli scontrini", scontrini)]
-    if pos is None:
+    if pos is None and scontrini:
+        # Carte incassate ma nessuna chiusura del terminale: da chiarire (es. POS sostituito senza chiusura).
+        out.append({"nome": "POS", "esito": ATTENZIONE, "titolo": f"Chiusura POS mancante ({_euro(scontrini)} di carte)",
+                    "spiegazione": "Negli scontrini ci sono pagamenti con carta o bancomat, ma la cassa non ha stampato "
+                                   "la chiusura del terminale («CHIUSURA ... TOTALE POS EUR»). Cause tipiche: chiusura fatta "
+                                   "solo sul terminale o il giorno dopo, terminale guasto o sostituito senza chiusura. "
+                                   "Se il motivo è noto, giustificare l'anomalia.",
+                    "valori": valori})
+    elif pos is None:
         out.append({"nome": "POS", "esito": INFO, "titolo": "Chiusura POS non nel SysSpy",
                     "spiegazione": "In questa giornata la cassa non ha stampato la chiusura del terminale "
                                    "(«CHIUSURA ... TOTALE POS EUR»): può essere stata fatta direttamente sul terminale, "

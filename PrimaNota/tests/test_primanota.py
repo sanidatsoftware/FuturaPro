@@ -1956,3 +1956,18 @@ class TestChiusureFiscaliSpostate(TestCase):
         self.assertEqual(giornate[date(2026, 10, 18)]["valori_fiscali"]["totale_giornaliero"], Decimal("3.00"))
         self.assertEqual((giornate[date(2026, 10, 17)]["totale_scontrini"], giornate[date(2026, 10, 18)]["totale_scontrini"]),
                          (Decimal("5.00"), Decimal("3.00")))
+
+
+class TestChiusuraPosMancante(TestCase):
+    def controllo_pos(self, pagamenti):
+        from primanota.services.controlli import controlli
+        f = FileSysSpy(negozio_id=10, codice_negozio="5048", data=date(2026, 10, 17), cassa=1, totale_giornaliero=Decimal("18"),
+                       totale_scontrini=Decimal("18"), scontrini_trovati=1, pagamenti=pagamenti, totale_pos=None)
+        return next(c for c in controlli(f) if c["nome"] == "POS")
+
+    def test_carte_senza_chiusura_pos_sono_un_anomalia(self):
+        # Es. POS sostituito dal tecnico senza fare la chiusura: le carte negli scontrini restano senza chiusura.
+        c = self.controllo_pos({"Carta Credito": "15.00", "Contanti": "3.00"})
+        self.assertEqual((c["esito"], c["titolo"]), ("attenzione", "Chiusura POS mancante (15,00 € di carte)"))
+        # Senza carte non c'è niente da chiudere.
+        self.assertEqual(self.controllo_pos({"Contanti": "18.00"})["esito"], "info")
