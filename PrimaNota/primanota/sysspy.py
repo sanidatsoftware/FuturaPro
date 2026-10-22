@@ -22,7 +22,7 @@ from decimal import Decimal, InvalidOperation
 
 # Da aumentare quando cambia il modo di leggere i file: la rielaborazione dell'archivio
 # rifà solo i file analizzati con una versione precedente.
-VERSIONE_ANALISI = 4   # 3: cassiere e importo delle correzioni per scontrino; 4: chiusure POS con l'importo a capo
+VERSIONE_ANALISI = 5   # 3: cassiere e correzioni; 4: chiusure POS con l'importo a capo; 5: chiusura fiscale del mattino dopo
 
 NOME_FILE_RE = re.compile(r"^SysSpy\.(\d{8})\.(\d+)$", re.I)
 TIMESTAMP_RE = re.compile(r"^\s*(\d{2}/\d{2}/\d{4}) (\d{2}:\d{2})")
@@ -188,23 +188,34 @@ def circuiti_pos(testo):
     return out
 
 
-def chiusura_fiscale(elenco):
-    """La chiusura fiscale (l'ultima del file): intestazione, righe 9949..9964 e data/ora."""
-    pos = None
-    for i, (codice, testo) in enumerate(elenco):
-        if testo.strip().startswith("TOTALE GIORNALIERO"):
-            pos = i
-    if pos is None:
-        return None
-    inizio = pos
-    while inizio > 0 and elenco[inizio - 1][0] == "8232" and elenco[inizio - 1][1].strip() \
-            and not DOC_RE.match(elenco[inizio - 1][1]):
-        inizio -= 1
+def _chiusure_fiscali(elenco):
+    """Indici delle righe «TOTALE GIORNALIERO» (una per chiusura fiscale stampata)."""
+    return [i for i, (_, testo) in enumerate(elenco) if testo.strip().startswith("TOTALE GIORNALIERO")]
+
+
+def _fine_chiusura_fiscale(elenco, pos):
     fine = pos
     while fine + 1 < len(elenco) and elenco[fine + 1][0].isdigit() and 9940 <= int(elenco[fine + 1][0]) <= 9979:
         fine += 1
     if fine + 1 < len(elenco) and _e_timestamp(elenco[fine + 1]):
         fine += 1
+    return fine
+
+
+def chiusura_fiscale(elenco):
+    """
+    La chiusura fiscale della giornata: intestazione, righe 9949..9964 e data/ora. Se la cassa ne ha stampate
+    più d'una vale l'ultima con un totale: una seconda chiusura subito dopo esce a zero e non conta.
+    """
+    indici = _chiusure_fiscali(elenco)
+    if not indici:
+        return None
+    pos = next((i for i in reversed(indici) if importo(elenco[i][1])), indici[-1])
+    inizio = pos
+    while inizio > 0 and elenco[inizio - 1][0] == "8232" and elenco[inizio - 1][1].strip() \
+            and not DOC_RE.match(elenco[inizio - 1][1]):
+        inizio -= 1
+    fine = _fine_chiusura_fiscale(elenco, pos)
     valori = {}
     for _, t in elenco[pos:fine + 1]:
         for etichetta, campo in VOCI_FISCALI.items():
@@ -394,7 +405,27 @@ def dividi_per_data(elenco, data_file=None):
             giornate[ultima] = []
             ordine.append(ultima)
         giornate[ultima].extend(buffer)
-    return sorted(((g, giornate[g]) for g in ordine), key=lambda x: (x[0] is None, x[0]))
+    out = sorted(((g, giornate[g]) for g in ordine), key=lambda x: (x[0] is None, x[0]))
+    _chiusure_del_giorno_prima(out)
+    return out
+
+
+def _chiusure_del_giorno_prima(giornate):
+    """
+    Chiusura fiscale dimenticata la sera e stampata la mattina dopo, prima di qualsiasi scontrino: appartiene
+    al giorno prima (che nel file non ha una chiusura con un totale), anche se porta la data del mattino.
+    """
+    for k in range(1, len(giornate)):
+        (prima, righe_prima), (giorno, righe) = giornate[k - 1], giornate[k]
+        if prima is None or any(importo(righe_prima[i][1]) for i in _chiusure_fiscali(righe_prima)):
+            continue
+        primo_scontrino = next((i for i, (_, t) in enumerate(righe) if DOC_RE.match(t)), len(righe))
+        chiusura = next((i for i in _chiusure_fiscali(righe) if i < primo_scontrino and importo(righe[i][1])), None)
+        if chiusura is None:
+            continue
+        fine = _fine_chiusura_fiscale(righe, chiusura)
+        righe_prima.extend(righe[:fine + 1])
+        del righe[:fine + 1]
 
 
 def analizza_giornata(elenco):

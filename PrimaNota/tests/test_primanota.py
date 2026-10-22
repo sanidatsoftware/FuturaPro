@@ -1934,3 +1934,25 @@ class TestGiustificazioni(Base):
         self.client_per("altro_pv@x").post("/primanota/giornata/10/2026-05-28/", {"azione": "giustifica", "cassa": "1",
                                                                                  "controllo": "POS", "testo": "x"})
         self.assertFalse(GiustificazioneControllo.objects.exists())
+
+
+def chiusura_fiscale_sysspy(totale, quando, cassa=1):
+    """Righe di una chiusura fiscale («quando»: «gg/mm/aaaa hh:mm»)."""
+    return "\n".join(["8232                 TO.CAL. SRL", "8232                                         Euro",
+                      f"9949 TOTALE GIORNALIERO{totale:>26}", f"9956 CORRISP. NON RISCOSSI{'0,00':>22}",
+                      f"9964 NUMERO CASSA{cassa:>33}", f"8232 {quando}", "8232 "]) + "\n"
+
+
+class TestChiusureFiscaliSpostate(TestCase):
+    def test_chiusura_stampata_la_mattina_dopo_e_doppia_chiusura_a_zero(self):
+        testo = (sysspy_scontrini("17/10/2026", 1, [(1, "19:00", [("PANE", "5,00")])])
+                 # La sera del 17 nessuna chiusura: la cassa la stampa la mattina del 18, prima delle vendite.
+                 + chiusura_fiscale_sysspy("5,00", "18/10/2026 08:43")
+                 + sysspy_scontrini("18/10/2026", 1, [(2, "10:00", [("LATTE", "3,00")])])
+                 + chiusura_fiscale_sysspy("3,00", "18/10/2026 13:20")
+                 + chiusura_fiscale_sysspy("0,00", "18/10/2026 13:25"))   # seconda chiusura, a zero
+        giornate = {g["data"]: g for g in sysspy.analizza("SysSpy.20261019.1", testo.encode("latin-1"))["giornate"]}
+        self.assertEqual(giornate[date(2026, 10, 17)]["valori_fiscali"]["totale_giornaliero"], Decimal("5.00"))
+        self.assertEqual(giornate[date(2026, 10, 18)]["valori_fiscali"]["totale_giornaliero"], Decimal("3.00"))
+        self.assertEqual((giornate[date(2026, 10, 17)]["totale_scontrini"], giornate[date(2026, 10, 18)]["totale_scontrini"]),
+                         (Decimal("5.00"), Decimal("3.00")))
