@@ -1584,6 +1584,10 @@ class TestPrimaNotaPrimaDelleScansioni(Base):
                                 "Movimenti senza certificazione: n. 335830 delle 18:55:01 PAGAMENTO FORNITORI 47,50 €")
         self.assertEqual(self.baserow.righe, {})
         cache.clear()
+        cache.clear()
+        # Il conteggio dei non certificati esclude le righe senza causale (causale 0).
+        from primanota.services import prima_nota as servizio
+        self.assertIn("ISNULL(r.causale, 0) <> 0", servizio.QUERY_PRESENZE)
         with self.prima_nota([("5048", 20260528, 12, 0, Decimal("0"), 0)]):
             r = pv.post("/primanota/upload/", {"data_documento": "2026-05-28", "documento_fiscale": self.pdf(),
                                                "documento_pos": self.pdf(), "documento_versamenti": self.pdf(),

@@ -123,6 +123,14 @@ def _dettagli(riga):
     return out
 
 
+def _intero(valore):
+    """336414.0 (numerico dal database) → 336414; il resto com'è."""
+    try:
+        return int(valore) if valore is not None and float(valore) == int(float(valore)) else valore
+    except (TypeError, ValueError):
+        return valore
+
+
 def _movimento(riga):
     tipo, numero, data_doc = _testo(riga.get("tipo_doc_rif")), _testo(riga.get("num_doc_rif")), _data(riga.get("data_doc_rif"))
     numero_doc = " ".join(x for x in (tipo, numero) if x)
@@ -132,7 +140,7 @@ def _movimento(riga):
         "numero_doc": numero_doc, "data_doc": data_doc,
         "certificato": (f"Certificato il {certificato:%d/%m/%Y} {_ora(riga.get('ora_cert'))} da {_testo(riga.get('utente_cert'))}"
                         if certificato else ""),
-        "progressivo": riga.get("progressivo"), "ora": _ora(riga.get("ora")),
+        "progressivo": _intero(riga.get("progressivo")), "ora": _ora(riga.get("ora")),
         "causale": int(riga.get("causale") or 0), "importo": _importo(riga.get("importo")),
         "colonna": COLONNA.get(_testo(riga.get("segno")).upper(), "evidenze"),
         "descrizione": _testo(riga.get("int_ragsoc")), "documento": documento,
@@ -220,7 +228,7 @@ QUERY_PRESENZE = """
 SELECT r.pv, r.data, COUNT(*),
        SUM(CASE WHEN r.causale = 17 THEN 1 ELSE 0 END),
        SUM(CASE WHEN r.causale = 17 THEN r.importo ELSE 0 END),
-       SUM(CASE WHEN ISNULL(r.data_cert, 0) = 0 THEN 1 ELSE 0 END)
+       SUM(CASE WHEN ISNULL(r.data_cert, 0) = 0 AND ISNULL(r.causale, 0) <> 0 THEN 1 ELSE 0 END)
   FROM WEBNETSRV.newdis.dbo.ONLCassaCentrale AS r
  WHERE r.data BETWEEN %s AND %s
    AND {non_annullata}
@@ -232,7 +240,9 @@ SELECT r.pv, r.data, COUNT(*),
 def presenze(dal, al, codici=(), fresca=False):
     """
     {(pv, giorno): {"movimenti", "fatture", "importo_fatture", "certificata"}} per sapere quali giornate hanno
-    la prima nota (e se è certificata: tutti i movimenti con data di certificazione) e spese del giorno con fattura (causale 17). None se il database non è configurato o non risponde:
+    la prima nota (e se è certificata: tutti i movimenti con data di certificazione, tranne quelli senza causale,
+    causale 0, che il gestionale può aggiungere dopo la certificazione e non sono voci della prima nota)
+    e spese del giorno con fattura (causale 17). None se il database non è configurato o non risponde:
     in quel caso la scansione della fattura resta caricabile ma non obbligatoria. Risultato tenuto 10 minuti;
     fresca=True rilegge comunque il database (per sapere subito se il negozio ha appena certificato).
     """
@@ -299,7 +309,8 @@ def non_certificati(codice_pv, giorno):
     data = str(giorno).replace("-", "")
     try:
         righe = esegui(c, QUERY_MOVIMENTI.format(non_annullata=NON_ANNULLATA,
-                                                 filtro_pv="AND r.pv = %s AND ISNULL(r.data_cert, 0) = 0"),
+                                                 filtro_pv="AND r.pv = %s AND ISNULL(r.data_cert, 0) = 0 "
+                                                           "AND ISNULL(r.causale, 0) <> 0"),
                        (data, data, str(codice_pv)), dizionari=True)
     except RuntimeError:
         return []

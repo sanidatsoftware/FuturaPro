@@ -154,7 +154,7 @@ def _blocco_prima_nota(negozio_id, giorno):
     if stato == "non_certificata":
         from .services.prima_nota import non_certificati
         movimenti = non_certificati((negozio(negozio_id) or {}).get("codice"), d)
-        dettaglio = "; ".join(f"n. {m['progressivo']} delle {m['ora']} {m['causale_descr'] or m['causale']} "
+        dettaglio = "; ".join(f"n. {m['progressivo']} delle {m['ora']} {m['causale_descr'] or 'causale ' + str(m['causale'])} "
                               + f"{m['importo']:.2f} €".replace(".", ",") for m in movimenti[:5])
         if len(movimenti) > 5:
             dettaglio += f" e altri {len(movimenti) - 5}"
