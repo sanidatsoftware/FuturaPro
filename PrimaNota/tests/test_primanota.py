@@ -1912,7 +1912,8 @@ class TestGiustificazioni(Base):
         self.assertEqual(pos["esito"], "attenzione")
         self.assertFalse(f.quadrato)
         pv = self.client_per("pv@x")
-        self.assertContains(pv.get("/primanota/giornata/10/2026-05-28/"), "Giustifica questa anomalia")
+        self.assertContains(pv.get("/primanota/giornata/10/2026-05-28/"), "Punto vendita: spiega alla sede il motivo")
+        self.assertContains(self.client_per("ufficio@x").get("/primanota/giornata/10/2026-05-28/"), "Sede: registra la giustificazione")
         pv.post("/primanota/giornata/10/2026-05-28/", {"azione": "giustifica", "cassa": "1", "controllo": "POS",
                                                        "testo": "POS guasto, chiusura non stampata"})
         f = FileSysSpy.objects.get()

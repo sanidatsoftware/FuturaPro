@@ -102,13 +102,13 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
                     <input type="hidden" name="azione" value="togli_giustificazione"><input type="hidden" name="cassa" value="{{ r.file.cassa }}">
                     <input type="hidden" name="controllo" value="{{ c.nome }}"><button class="btn btn-light">Togli giustificazione</button></form></div>
             {% elif c.esito == 'attenzione' %}
-            <details class="giustifica"><summary>Giustifica questa anomalia</summary>
+            <details class="giustifica"><summary>{% if utente_negozio %}Punto vendita: spiega alla sede il motivo di questa anomalia{% else %}Sede: registra la giustificazione di questa anomalia{% endif %}</summary>
                 <form method="post">{% csrf_token %}
                     <input type="hidden" name="azione" value="giustifica"><input type="hidden" name="cassa" value="{{ r.file.cassa }}">
                     <input type="hidden" name="controllo" value="{{ c.nome }}">
                     <textarea name="testo" required placeholder="Motivo (es. POS guasto, chiusura non stampata: ticket assistenza n. …; incasso carte 412,22 € verificato sull'estratto conto)"></textarea>
                     <button class="btn btn-dark">Salva giustificazione</button>
-                    {% if utente_negozio %}<span class="small">La sede la riceve tra le note e anomalie.</span>{% endif %}
+                    <span class="small">{% if utente_negozio %}La sede la riceve tra le note e anomalie e decide se accettarla.{% else %}Ad esempio dopo una telefonata con il negozio o una verifica sull'estratto conto.{% endif %}</span>
                 </form></details>
             {% endif %}
         </div>
