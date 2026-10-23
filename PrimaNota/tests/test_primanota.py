@@ -1983,3 +1983,15 @@ class TestMonitorSoloAttivi(Base):
         Condivisione.objects.create(negozio_id=11, codice_negozio="5050", percorso="", attiva=False)
         self.assertEqual(negozi("/primanota/monitor/"), [10])
         self.assertEqual(negozi("/primanota/versamenti/monitor/"), [10])
+
+
+class TestScansioniSoloConsultazione(Base):
+    def test_note_da_aprire_e_niente_pulsanti_di_stato(self):
+        ieri = (date.today() - timedelta(days=1)).isoformat()
+        self.scansione_sede("Resi", giorno=ieri)
+        Nota.objects.create(negozio_id=10, data=ieri, tipo=Nota.ANOMALIA, testo="doc annullato", creata_da="Pv")
+        r = self.client_per("ufficio@x").get("/primanota/admin/")
+        self.assertContains(r, f'href="/primanota/giornata/10/{ieri}/#note">Apri</a>')
+        self.assertNotContains(r, "Segna lavorat")
+        self.assertNotContains(r, 'name="stato"')
+        self.assertContains(r, "● Da lavorare")

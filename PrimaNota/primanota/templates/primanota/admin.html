@@ -44,8 +44,7 @@
                 <td>{{ n.data|date:"d/m/Y" }}</td>
                 <td>{% if n.versamento %}<span class="badge badge-grey">Versamento</span>{% elif n.tipo == "RICHIESTA_CONTATTO" %}<span class="badge badge-red">🔴 {{ n.get_tipo_display }}</span>{% elif n.tipo == "ANOMALIA" %}<span class="badge badge-no">🟠 {{ n.get_tipo_display }}</span>{% else %}{{ n.get_tipo_display }}{% endif %}</td>
                 <td>{{ n.testo|linebreaksbr }}</td>
-                <td><form method="post" action="/primanota/note/{{ n.id }}/chiudi/">{% csrf_token %}
-                    <input type="hidden" name="ritorno" value="{{ request.get_full_path }}"><button class="btn btn-dark">Segna lavorata</button></form></td>
+                <td><a class="btn btn-dark" href="/primanota/giornata/{{ n.negozio_id }}/{{ n.data|date:'Y-m-d' }}/#note">Apri</a></td>
             </tr>
         {% endfor %}
         </tbody>
@@ -74,7 +73,8 @@
 <div class="card">
     <div class="top-actions" style="margin-bottom:8px">
         <h2 style="margin:0;flex:1">{{ g.negozio }} · {{ g.data_fmt }}</h2>
-        {% include "primanota/_stato_giornata.html" with negozio_id=g.negozio_id data=g.data stato=g.stato %}
+        {# Qui solo lo stato: si cambia dalla pagina della giornata, dopo averla aperta. #}
+        {% if g.stato.stato == "lavorato" %}<span class="badge badge-ok">✓ Lavorato</span>{% elif g.stato.stato == "chiusura" %}<span class="badge badge-grey">Giornata Chiusura PV</span>{% else %}<span class="badge badge-red">● Da lavorare</span>{% endif %}
         <a class="btn btn-orange" href="/primanota/giornata/{{ g.negozio_id }}/{{ g.data }}/">Apri giornata e SysSpy</a>
     </div>
     <table class="table">
