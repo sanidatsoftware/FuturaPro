@@ -11,6 +11,7 @@ from audit.models import registra
 from clienti.models import Sede
 from core.api import CONTENUTI, GESTIONE, RiferimentoCliente, ViewSetCliente, VistaConContesto, sedi_visibili
 from core.contesto import contesto_cliente
+from core.email import cifra, decifra
 from dispositivi.api import VistaPlayer, credenziale_dalla_richiesta
 from dispositivi.models import Monitor, impronta
 from layout.manifest import layout_del_monitor
@@ -31,6 +32,8 @@ class RepartoSerializer(serializers.ModelSerializer):
     in_coda = serializers.IntegerField(read_only=True)
     ultimo_emesso = serializers.IntegerField(read_only=True)
     ha_chiave = serializers.SerializerMethodField()
+    # Il collegamento si può rimostrare (le chiavi più vecchie il server non le conserva).
+    chiave_leggibile = serializers.SerializerMethodField()
     # Se la sede ha un totem, numeri e chiamate stanno lì e non sul server.
     totem = serializers.CharField(source="sede.indirizzo_totem", read_only=True)
     annunci = RiferimentoCliente(SerieAnnunci, required=False, allow_null=True)
@@ -39,12 +42,15 @@ class RepartoSerializer(serializers.ModelSerializer):
         model = Reparto
         fields = [
             "id", "sede", "nome", "colore", "colore_testo", "ordine", "massimo", "attivo", "azzeramento_automatico",
-            "numero", "in_coda", "ultimo_emesso", "chiamato_il", "ha_chiave", "totem", "annunci",
+            "numero", "in_coda", "ultimo_emesso", "chiamato_il", "ha_chiave", "chiave_leggibile", "totem", "annunci",
         ]
         read_only_fields = ["chiamato_il"]
 
     def get_ha_chiave(self, reparto):
         return hasattr(reparto, "credenziale")
+
+    def get_chiave_leggibile(self, reparto):
+        return hasattr(reparto, "credenziale") and bool(reparto.credenziale.chiave_cifrata)
 
 
 def verifica_code_sul_server(reparto):
@@ -128,19 +134,32 @@ class RepartiViewSet(ViewSetCliente):
         """Un biglietto dal banco (per esempio per un cliente al telefono)."""
         return self._esegui(servizi.emetti)
 
-    @action(detail=True, methods=["post", "delete"])
+    @action(detail=True, methods=["get", "post", "delete"])
     def chiave(self, request, pk=None):
-        """Una chiave nuova per pulsantiere e bilance (la vecchia smette di valere); DELETE la revoca.
+        """GET la chiave attuale per pulsantiere e bilance; POST una nuova (la vecchia smette di
+        valere: bilancia persa o sostituita); DELETE la revoca.
 
-        La chiave si vede solo adesso: il server ne conserva l'impronta.
+        Per riconoscerla basta l'impronta; la chiave stessa è conservata cifrata perché il
+        pannello possa rimostrare il collegamento senza crearne uno nuovo.
         """
         reparto = self.get_object()
+        if request.method == "GET":
+            if request.user.ruolo not in GESTIONE:
+                raise exceptions.PermissionDenied()
+            credenziale = getattr(reparto, "credenziale", None)
+            chiave = decifra(credenziale.chiave_cifrata) if credenziale else ""
+            if not chiave:
+                raise exceptions.NotFound("Nessun collegamento da mostrare: creane uno nuovo.")
+            registra(request.user, "chiave_pulsante_mostrata", reparto)
+            return Response({"chiave": chiave})
         CredenzialePulsante.objects.filter(reparto=reparto).delete()
         if request.method == "DELETE":
             registra(request.user, "chiave_pulsante_revocata", reparto)
             return Response(status=status.HTTP_204_NO_CONTENT)
         chiave = secrets.token_urlsafe(24)
-        CredenzialePulsante.objects.create(impronta_chiave=impronta(chiave), reparto=reparto, cliente_id=reparto.cliente_id)
+        CredenzialePulsante.objects.create(
+            impronta_chiave=impronta(chiave), chiave_cifrata=cifra(chiave), reparto=reparto, cliente_id=reparto.cliente_id
+        )
         registra(request.user, "chiave_pulsante_creata", reparto)
         return Response({"chiave": chiave}, status=status.HTTP_201_CREATED)
 

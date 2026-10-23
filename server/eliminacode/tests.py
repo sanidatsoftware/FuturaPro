@@ -8,7 +8,7 @@ from core.tests.test_isolamento import Base
 from dispositivi.models import CredenzialeDispositivo, Monitor, impronta
 
 from . import servizi
-from .models import Reparto
+from .models import CredenzialePulsante, Reparto
 
 CATANIA = {"localita": "Catania", "latitudine": 37.5, "longitudine": 15.08}
 
@@ -119,6 +119,18 @@ class BancoTest(ConReparti):
         self.assertEqual(r.json()["numero"], 42)
         self.assertEqual(self.client.post("/api/eliminacode/pulsante/imposta/", {"numero": 100}, **pulsante).status_code, 400)
         self.assertIsNone(self.stato(self.macelleria).numero)
+
+        # Il collegamento si rimostra quando serve, senza crearne uno nuovo; lo vede solo la gestione.
+        self.come(self.admin_a)
+        self.assertEqual(self.client.get(f"/api/reparti/{self.salumeria.id}/chiave/").json()["chiave"], chiave)
+        self.assertTrue(self.client.get(f"/api/reparti/{self.salumeria.id}/").json()["chiave_leggibile"])
+        self.assertEqual(self.client.get(f"/api/reparti/{self.macelleria.id}/chiave/").status_code, 404)
+        self.come(self.user_a)
+        self.assertEqual(self.client.get(f"/api/reparti/{self.salumeria.id}/chiave/").status_code, 403)
+        self.come(self.admin_b)
+        self.assertEqual(self.client.get(f"/api/reparti/{self.salumeria.id}/chiave/").status_code, 404)
+        with contesto_cliente(self.a.id):
+            self.assertNotIn(chiave, CredenzialePulsante.objects.get(reparto=self.salumeria).chiave_cifrata)
 
         self.come(self.admin_a)
         self.client.delete(f"/api/reparti/{self.salumeria.id}/chiave/")

@@ -116,6 +116,22 @@ class DownloadTest(Base):
         self.come(self.user_a)
         self.assertEqual(self.client.put("/api/download/", {"attivo": False}, format="json").status_code, 403)
 
+    def test_ogni_quanto_gli_schermi_controllano_palinsesto_e_versione(self):
+        self.come(self.admin_a)
+        with contesto_cliente(self.a.id):
+            controlli = palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))["controlli"]
+        self.assertEqual(controlli, {"palinsesto": 30, "versione": 60})
+        # Sotto i minimi no: con tanti schermi il server riceverebbe troppe richieste.
+        self.assertEqual(self.client.put("/api/download/", {"controllo_palinsesto": 5}, format="json").status_code, 400)
+        self.assertEqual(self.client.put("/api/download/", {"controllo_versione": 30}, format="json").status_code, 400)
+        r = self.client.put("/api/download/", {"controllo_palinsesto": 120, "controllo_versione": 3600}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        with contesto_cliente(self.a.id):
+            manifest = palinsesto.manifest(Monitor.objects.get(id=self.mon_a_milano.id))
+        self.assertEqual(manifest["controlli"], {"palinsesto": 120, "versione": 3600})
+        # La fascia di download resta spenta: i controlli valgono comunque.
+        self.assertIsNone(manifest["download"])
+
 
 class StoricoERegistroTest(Base):
     def test_storico_allarmi_e_registro_con_filtri(self):

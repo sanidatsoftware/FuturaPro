@@ -361,7 +361,7 @@ export async function schedaStato() {
   crea("button", { testo: "Apri lo storico allarmi", onclick: () => H.mostra("storico_allarmi") }, storico);
 }
 
-// --- Fasce di download ------------------------------------------------------------------------
+// --- Download e aggiornamenti: fasce di download e controlli degli schermi -------------------
 
 export async function schedaDownload() {
   const { crea, sezione, api, prova } = H;
@@ -398,6 +398,29 @@ export async function schedaDownload() {
     crea("p", { classe: "nota", testo: `«Scarica adesso» attivo fino alle ${new Date(d.subito_fino).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}.` }, box);
   }
   for (const c of [attivo, dalle, alle, kbps]) c.disabled = !H.ruoloGestione();
+
+  // Ogni quanto gli schermi chiedono al server se c'è qualcosa di nuovo.
+  const controlli = sezione("Controlli degli schermi");
+  crea("p", {
+    classe: "nota",
+    testo: "Ogni quanto ogni schermo chiede al server se ci sono nuove pubblicazioni o variazioni di palinsesto, e se c'è una versione nuova del player. "
+      + "Tempi più brevi: le modifiche arrivano prima; più lunghi: meno richieste al server, utile con molti schermi. Il nuovo tempo vale dal controllo successivo.",
+  }, controlli);
+  const durata = (secondi) => (secondi < 60 ? `${secondi} secondi` : secondi < 3600 ? `${secondi / 60} minut${secondi === 60 ? "o" : "i"}` : `${secondi / 3600} or${secondi === 3600 ? "a" : "e"}`);
+  // Il valore salvato resta tra le scelte anche se non è uno di quelli proposti (es. impostato dall'API).
+  const tempi = (valori, attuale) => [...new Set([...valori, attuale])].sort((x, y) => x - y).map((v) => [v, `ogni ${durata(v)}`]);
+  const rigaControlli = crea("div", { classe: "riga" }, controlli);
+  const palinsesto = H.campo("Nuove pubblicazioni e palinsesto", H.scelta(tempi([10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600], d.controllo_palinsesto), d.controllo_palinsesto), rigaControlli);
+  const versione = H.campo("Aggiornamento del player", H.scelta(tempi([60, 300, 900, 1800, 3600, 6 * 3600, 12 * 3600, 24 * 3600], d.controllo_versione), d.controllo_versione), rigaControlli);
+  crea("p", {
+    classe: "tenue",
+    testo: "Predefiniti: 30 secondi e 1 minuto. Lo stato «in linea» degli schermi e gli allarmi non cambiano: si basano sul segnale che ogni schermo manda una volta al minuto.",
+  }, controlli);
+  const salvaControlli = crea("button", {
+    classe: "primario", testo: "Salva",
+    onclick: () => prova(() => api("PUT", "/api/download/", { controllo_palinsesto: parseInt(palinsesto.value, 10), controllo_versione: parseInt(versione.value, 10) }), "Salvato: gli schermi usano i nuovi tempi dal prossimo controllo."),
+  }, crea("div", { classe: "riga" }, controlli));
+  for (const c of [palinsesto, versione, salvaControlli]) c.disabled = !H.ruoloGestione();
 }
 
 // --- Anagrafica Stampanti Ticket (Hardware) -------------------------------------------

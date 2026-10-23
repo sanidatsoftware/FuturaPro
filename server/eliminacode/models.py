@@ -127,6 +127,9 @@ class CredenzialePulsante(models.Model):
     impronta_chiave = models.CharField(max_length=64, primary_key=True)
     reparto = models.OneToOneField(Reparto, on_delete=models.CASCADE, related_name="credenziale")
     cliente_id = models.UUIDField()
+    # La chiave stessa, cifrata con una chiave derivata da SECRET_KEY: il pannello la rimostra
+    # senza crearne una nuova. Vuota per le chiavi create prima che si conservasse.
+    chiave_cifrata = models.TextField(blank=True)
     creata = models.DateTimeField(auto_now_add=True)
 
 

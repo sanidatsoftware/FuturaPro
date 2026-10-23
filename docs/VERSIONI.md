@@ -75,6 +75,15 @@ layout video, eliminacode, player per monitor e totem, teleassistenza, registro)
   più mescolare file vecchi e nuovi; se comunque resta su «Avvio…» l'errore compare sullo schermo.
 - **Accesso automatico di Windows** (`accesso-automatico.ps1`): password nei segreti di sistema,
   orario di attività di Windows Update sull'apertura del negozio.
+- **Collegamenti dei reparti sempre visibili**: in «Reparti ed eliminacode» il pulsante
+  **🔗 Collegamento** in fondo a ogni riga riapre l'indirizzo per bilance e pulsanti, da copiare,
+  e **Prova** apre la pagina del banco in una finestra per provare i tasti (senza salvare la chiave
+  sul PC). Un collegamento nuovo serve solo per una bilancia persa o sostituita. Quelli creati
+  prima di questa versione vanno ricreati una volta.
+- **Controlli degli schermi dal pannello** («Impostazioni → Download e aggiornamenti»): ogni
+  quanto gli schermi chiedono le nuove pubblicazioni e le variazioni di palinsesto (da 10 secondi
+  a un'ora, di solito 30 secondi) e se c'è un player nuovo (da un minuto a un giorno, di solito un
+  minuto).
 
 ### Come ci si è arrivati: le tappe della 1.6 (ricostruite dallo storico)
 

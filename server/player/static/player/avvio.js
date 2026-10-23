@@ -5,7 +5,12 @@ import { Motore } from "./motore.js";
 import { preparaLettore } from "./plugin.js";
 import { istanteNelFuso } from "./regole.js";
 
+// Ogni quanto chiedere il palinsesto e la versione del player: li sceglie il pannello
+// (Impostazioni → Download e aggiornamenti) e arrivano con il manifest; questi valgono finché
+// non è arrivato. Il segnale periodico resta al minuto: su quello contano lo stato «in linea»,
+// i minuti di collegamento e il guardiano di Windows.
 const OGNI_MANIFEST = 30_000;
+const OGNI_VERSIONE = 60_000;
 const OGNI_HEARTBEAT = 60_000;
 const OGNI_STATO = 5_000;
 // Ogni quanto il player chiede se il pannello vuole una fotografia dello schermo.
@@ -554,6 +559,12 @@ async function avviaPlayer() {
     inviaConfigCode(mostrato, scaricaFile);
   }
 
+  // Millisecondi tra un controllo e l'altro, dall'ultimo manifest ricevuto (anche se in attesa).
+  const ogni = (chiave, predefinito, minimo) => {
+    const secondi = Number((inAttesa?.manifest || mostrato)?.controlli?.[chiave]);
+    return secondi > 0 ? Math.max(minimo, secondi * 1000) : predefinito;
+  };
+
   let etichetta = null;
   let inCorso = false;
   let inAttesa = null; // { manifest, etichetta, fascia }: un palinsesto nuovo con file ancora da scaricare
@@ -651,6 +662,7 @@ async function avviaPlayer() {
   };
 
   // Il segnale periodico dice anche quale versione del palinsesto è in onda.
+  let versioneControllata = 0; // all'avvio si guarda subito
   const battito = async () => {
     await leggiImprontaTotem();
     await leggiStampantiWindows();
@@ -671,11 +683,20 @@ async function avviaPlayer() {
         distribuzione: riassuntoAvanzamento(), in_onda: Object.entries(motore.inOnda).map(([zona, voce]) => ({ zona, ...voce })) }),
     })
       .then((risposta) => (risposta.ok && risposta.status !== 204 ? risposta.json() : null))
-      .then((dati) => { if (dati?.versione_player) aggiornaSeServe(dati.versione_player); })
+      .then((dati) => {
+        // La versione arriva a ogni segnale, ma si guarda solo quando è ora (qualche secondo di tolleranza).
+        if (!dati?.versione_player || Date.now() - versioneControllata < ogni("versione", OGNI_VERSIONE, 60_000) - 5000) return;
+        versioneControllata = Date.now();
+        aggiornaSeServe(dati.versione_player);
+      })
       .catch(() => {});
   };
   await aggiorna();
-  setInterval(aggiorna, OGNI_MANIFEST);
+  const giroPalinsesto = async () => {
+    await aggiorna();
+    setTimeout(giroPalinsesto, ogni("palinsesto", OGNI_MANIFEST, 10_000));
+  };
+  setTimeout(giroPalinsesto, ogni("palinsesto", OGNI_MANIFEST, 10_000));
   battito();
   setInterval(battito, OGNI_HEARTBEAT);
   setInterval(() => inviaPassaggi(intestazioni), 2 * 60_000);

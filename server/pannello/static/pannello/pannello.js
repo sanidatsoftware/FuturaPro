@@ -381,7 +381,7 @@ async function schedaMonitor() {
         inOnda.append(m.attesa_download ? " · aspetta la fascia di download" : " · non aggiornato");
         inOnda.className = "attenzione";
         inOnda.title = m.attesa_download
-          ? "Il palinsesto nuovo è arrivato: i suoi file si scaricano nella fascia di download (Schermi → Fasce di download, «Scarica adesso» per non aspettare)."
+          ? "Il palinsesto nuovo è arrivato: i suoi file si scaricano nella fascia di download (Impostazioni → Download e aggiornamenti, «Scarica adesso» per non aspettare)."
           : "Lo schermo non ha ancora ricevuto (o scaricato) l'ultimo palinsesto.";
       }
     }).catch(() => (inOnda.textContent = "?"));
@@ -601,8 +601,8 @@ async function schedaReparti() {
   }
 
   const tutti = sezione("Reparti");
-  crea("p", { classe: "nota", testo: "Numeri da 0 a 99; la coda riparte ogni giorno. Il collegamento per bilancia o pulsantiera si apre una volta sul dispositivo, che lo ricorda." }, tutti);
-  const corpo = tabella(["Nome", "Sede", "Colori", "Ordine", "Attivo", "Ora", "Annunci (mp3)", "Bilancia / pulsantiera", ""], tutti);
+  crea("p", { classe: "nota", testo: "Numeri da 0 a 99; la coda riparte ogni giorno. Il collegamento per bilancia o pulsantiera si apre una volta sul dispositivo, che lo ricorda; con «🔗 Collegamento» lo rivedi quando vuoi, per copiarlo o provare i tasti." }, tutti);
+  const corpo = tabella(["Nome", "Sede", "Colori", "Ordine", "Attivo", "Ora", "Annunci (mp3)", "Bilancia / pulsantiera", "", "Prova"], tutti);
   for (const r of reparti) {
     const riga = crea("tr", {}, corpo);
     const nome = crea("input", { value: r.nome, disabled: !gestione }, crea("td", {}, riga));
@@ -624,32 +624,18 @@ async function schedaReparti() {
     if (gestione) {
       crea("button", {
         testo: r.ha_chiave ? "Nuovo collegamento" : "Crea collegamento",
-        "data-aiuto": "Crea l'indirizzo da aprire sulla bilancia o sulla pulsantiera per chiamare i numeri di questo reparto. Uno nuovo disattiva il precedente.",
+        "data-aiuto": "Crea l'indirizzo da aprire sulla bilancia o sulla pulsantiera per chiamare i numeri di questo reparto. Uno nuovo disattiva il precedente: serve quando una bilancia si perde o si sostituisce.",
         onclick: async () => {
-          if (r.ha_chiave && !confirm("Il collegamento attuale smetterà di funzionare. Continuare?")) return;
+          if (r.ha_chiave && !confirm("Il collegamento attuale smetterà di funzionare: le bilance e i pulsanti che lo usano andranno reimpostati. Continuare?")) return;
           try {
             const { chiave: segreto } = await api("POST", `/api/reparti/${r.id}/chiave/`);
-            chiave.replaceChildren();
-            crea("p", { classe: "nota", testo: "Copialo ora: non sarà più mostrato. Aprilo sulla bilancia (indirizzo della pagina iniziale del browser)." }, chiave);
-            // Con il totem la bilancia parla direttamente con lui, nella rete del negozio.
-            const indirizzi = r.totem
-              ? [`http://${r.totem}:8090`, `https://${r.totem}:8443`]
-              : [`https://${location.host}`, `http://${location.host}`];
-            for (const base of indirizzi) {
-              crea("input", { readOnly: true, value: `${base}/banco/#chiave=${segreto}`, classe: "link", onfocus: (e) => e.target.select() }, chiave);
-            }
-            crea("p", {
-              classe: "nota",
-              testo: r.totem
-                ? "Il totem riceve la chiave entro mezzo minuto. Per le bilance usa il primo (http)."
-                : "La versione http funziona solo dalla rete del negozio, se abilitata all'installazione. Per i pulsanti: deploy/installa/pulsante.py.",
-            }, chiave);
+            finestraCollegamento(r, segreto);
           } catch (errore) {
             avvisa(errore.message);
           }
         },
       }, chiave);
-      if (r.ha_chiave) crea("button", { testo: "Revoca", classe: "pericolo", onclick: () => prova(() => api("DELETE", `/api/reparti/${r.id}/chiave/`), "Collegamento revocato.") }, chiave);
+      if (r.ha_chiave) crea("button", { testo: "Revoca", classe: "pericolo", onclick: () => confirm(`Revocare il collegamento di «${r.nome}»? Bilance e pulsanti che lo usano smettono subito di funzionare.`) && prova(() => api("DELETE", `/api/reparti/${r.id}/chiave/`), "Collegamento revocato.") }, chiave);
     } else {
       chiave.textContent = r.ha_chiave ? "collegato" : "—";
     }
@@ -661,9 +647,83 @@ async function schedaReparti() {
       }, azioni);
       crea("button", { testo: "Elimina", classe: "pericolo", onclick: () => confirm(`Eliminare «${r.nome}»?`) && prova(() => api("DELETE", `/api/reparti/${r.id}/`), "Eliminato.") }, azioni);
     }
+    // Il collegamento del reparto, sempre a portata: da copiare o da provare in una finestra.
+    const apri = crea("td", {}, riga);
+    if (gestione) {
+      crea("button", {
+        testo: "🔗 Collegamento", classe: "senza-a-capo", disabled: !r.ha_chiave,
+        title: r.ha_chiave ? "" : "Prima crea il collegamento del reparto.",
+        "data-aiuto": "Mostra l'indirizzo della bilancia o della pulsantiera di questo reparto, da copiare o da aprire in una finestra per provare i tasti.",
+        onclick: () => finestraCollegamento(r),
+      }, apri);
+    }
   }
   if (!reparti.length) crea("p", { classe: "vuoto", testo: "Nessun reparto." }, tutti);
   sezioneAnnunci(serie, reparti, sedi, gestione);
+}
+
+// Il collegamento di un reparto per bilance e pulsantiere: si rivede quando serve (non va
+// ricreato) e si prova in una finestra a parte. «segreto» c'è quando è appena stato creato.
+async function finestraCollegamento(r, segreto = null) {
+  if (!segreto) {
+    if (!r.chiave_leggibile) {
+      avvisa(`Il collegamento di «${r.nome}» è stato creato prima che il pannello lo conservasse e non si può rivedere: crea un «Nuovo collegamento» una volta e reimpostalo sulla bilancia. Da quel momento si potrà sempre rivedere.`);
+      return;
+    }
+    try {
+      ({ chiave: segreto } = await api("GET", `/api/reparti/${r.id}/chiave/`));
+    } catch (errore) {
+      avvisa(errore.message);
+      return;
+    }
+  }
+  const finestra = crea("dialog", { classe: "finestra collegamento" }, document.body);
+  // Chiudendo si ridisegna la scheda: un collegamento appena creato cambia i pulsanti della riga.
+  finestra.addEventListener("close", () => {
+    finestra.remove();
+    mostra(stato.scheda);
+  });
+  crea("button", { "aria-label": "Chiudi", testo: "✕" }, crea("form", { method: "dialog", classe: "chiudi" }, finestra));
+  crea("h2", { testo: `🔗 Collegamento · ${r.nome}` }, finestra);
+  crea("p", {
+    testo: "Imposta l'indirizzo come pagina iniziale del browser della bilancia e aprilo una volta: la chiave resta salvata sul dispositivo. "
+      + "«Prova» apre la pagina del banco in una finestra, per provare i tasti senza salvare nulla su questo PC. Attenzione: i tasti chiamano davvero i numeri.",
+  }, finestra);
+  // Con il totem la bilancia parla direttamente con lui, nella rete del negozio.
+  const indirizzi = r.totem
+    ? [[`http://${r.totem}:8090`, "Bilance e pulsanti (rete del negozio)"], [`https://${r.totem}:8443`, "Tablet o PC in https (certificato del totem)"]]
+    : [[`https://${location.host}`, "Da qualunque rete (https)"], [`http://${location.host}`, "Solo dalla rete del negozio (http, se abilitato all'installazione)"]];
+  for (const [base, etichetta] of indirizzi) {
+    const link = `${base}/banco/#chiave=${segreto}`;
+    const blocco = crea("div", { classe: "collegamento-riga" }, finestra);
+    crea("span", { classe: "etichetta", testo: etichetta }, blocco);
+    const riga = crea("div", { classe: "riga" }, blocco);
+    const campoLink = crea("input", { readOnly: true, value: link, classe: "link", onfocus: (e) => e.target.select() }, riga);
+    crea("button", {
+      type: "button", testo: "📋 Copia",
+      onclick: async (e) => {
+        try {
+          await navigator.clipboard.writeText(link);
+        } catch {
+          campoLink.select();
+          document.execCommand("copy");
+        }
+        e.target.textContent = "✓ Copiato";
+        setTimeout(() => { e.target.textContent = "📋 Copia"; }, 2000);
+      },
+    }, riga);
+    crea("button", {
+      type: "button", classe: "primario", testo: "▶ Prova",
+      onclick: () => window.open(`${link}&prova=1`, `banco-${r.id}`, "popup,width=480,height=760"),
+    }, riga);
+  }
+  crea("p", {
+    classe: "nota",
+    testo: r.totem
+      ? "Un collegamento appena creato arriva al totem entro mezzo minuto. Per le bilance usa il primo (http). La versione https chiede di accettare il certificato del totem."
+      : "Per i pulsanti fisici o gli script: deploy/installa/pulsante.py con la parte dopo «#chiave=».",
+  }, finestra);
+  finestra.showModal();
 }
 
 // --- Annunci dei numeri: un file audio per numero (es. «SALUMERIA_27.mp3») -----------------------

@@ -323,10 +323,13 @@ class ImpostazioniDownloadSerializer(serializers.ModelSerializer):
     dalle = serializers.TimeField(format="%H:%M")
     alle = serializers.TimeField(format="%H:%M")
     kbps = serializers.IntegerField(min_value=0, max_value=1_000_000)
+    # Non sotto i 10 secondi e il minuto: con tanti schermi il server riceverebbe troppe richieste.
+    controllo_palinsesto = serializers.IntegerField(min_value=10, max_value=3600, required=False)
+    controllo_versione = serializers.IntegerField(min_value=60, max_value=24 * 3600, required=False)
 
     class Meta:
         model = ImpostazioniDownload
-        fields = ["attivo", "dalle", "alle", "kbps", "subito_fino"]
+        fields = ["attivo", "dalle", "alle", "kbps", "subito_fino", "controllo_palinsesto", "controllo_versione"]
         read_only_fields = ["subito_fino"]
 
 
@@ -342,7 +345,10 @@ class DownloadView(VistaConContesto, APIView):
         dati = ImpostazioniDownloadSerializer(impostazioni, data=request.data, partial=True)
         dati.is_valid(raise_exception=True)
         salvate = dati.save()
-        registra(request.user, "download_modificato", None, attivo=salvate.attivo)
+        registra(
+            request.user, "download_modificato", None, attivo=salvate.attivo,
+            controllo_palinsesto=salvate.controllo_palinsesto, controllo_versione=salvate.controllo_versione,
+        )
         return Response(ImpostazioniDownloadSerializer(salvate).data)
 
     def post(self, request):
@@ -541,6 +547,12 @@ class StampantiViewSet(ViewSetCliente):
         stampanti.richiedi_prova(stampante, abbinati[0])
         registra(request.user, "prova_stampa", stampante, totem=abbinati[0].nome)
         return Response(self.get_serializer(stampante).data, status=status.HTTP_202_ACCEPTED)
+
+def controlli_del_monitor(monitor):
+    """Per il manifest: ogni quanti secondi chiedere il palinsesto e la versione del player."""
+    impostazioni = ImpostazioniDownload.objects.first() or ImpostazioniDownload()
+    return {"palinsesto": impostazioni.controllo_palinsesto, "versione": impostazioni.controllo_versione}
+
 
 def download_del_monitor(monitor):
     """Per il manifest: la fascia di download o None (si scarica sempre, senza limiti)."""

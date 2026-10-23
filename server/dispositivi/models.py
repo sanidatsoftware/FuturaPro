@@ -328,6 +328,11 @@ class ImpostazioniDownload(ModelloCliente):
     kbps = models.PositiveIntegerField(default=0)
     # «Scarica adesso»: fino a quest'ora la fascia non vale.
     subito_fino = models.DateTimeField(null=True, blank=True)
+    # Ogni quanti secondi gli schermi chiedono se il palinsesto è cambiato (nuove pubblicazioni,
+    # variazioni) e se c'è una versione nuova del player. Il segnale periodico resta al minuto:
+    # su quello contano lo stato «in linea», i minuti di collegamento e il guardiano di Windows.
+    controllo_palinsesto = models.PositiveIntegerField(default=30)
+    controllo_versione = models.PositiveIntegerField(default=60)
 
     class Meta:
         verbose_name_plural = "impostazioni download"
