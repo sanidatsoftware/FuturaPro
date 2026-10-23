@@ -44,6 +44,16 @@ def _sysspy_per_giorno(dal, al):
     return out
 
 
+def _stato_prima_nota(prima_nota, codice, giorno, oggi, state):
+    """«mancante» o «non_certificata» per le giornate passate da segnalare; "" se è a posto o non si può sapere."""
+    if prima_nota is None or giorno >= oggi or state in ("closed", "future"):
+        return ""
+    g = prima_nota.get((str(codice or "").strip(), giorno))
+    if not g:
+        return "mancante"
+    return "" if g["certificata"] else "non_certificata"
+
+
 def _note_aperte_per_giorno(dal, al, versamento=False):
     out = {}
     for r in (Nota.objects.filter(data__range=(dal, al), chiusa=False, versamento=versamento).values("negozio_id", "data")
@@ -75,8 +85,8 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
     lettura = _ESECUTORE.submit(elenco_scansioni, data_da=dal.isoformat(), data_a=al.isoformat())
     sysspy = _sysspy_per_giorno(days[0], days[-1])
     emergenze = Emergenza.giorni(days[0], days[-1])
-    # La prima nota serve al monitor generale e, per le giornate in Emergenza, anche a quello dei versamenti.
-    prima_nota = presenze(days[0], days[-1]) if not versamenti or emergenze else None
+    # La prima nota serve a entrambi i monitor: certificazione, Emergenza e (chiusure) fatture spese.
+    prima_nota = presenze(days[0], days[-1])
     # Il monitor generale esclude i versamenti, che hanno un monitor proprio.
     tutte = lettura.result()
     scansioni = [s for s in tutte if s["versamento"] == versamenti]
@@ -167,6 +177,8 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
                 "note_aperte": n["n"],
                 "richieste_contatto": n["contatto"],
                 "emergenza": emergenza.motivo if emergenza else "",
+                # Sfondo azzurro: giornata passata con la prima nota assente o non ancora certificata.
+                "prima_nota": _stato_prima_nota(prima_nota, negozio.get("codice"), day, today, state),
                 "mancanti": mancanti if inviata else [],
                 "detail_url": "" if day > today else (
                     f"/primanota/versamenti/?negozio={negozio_id}&data_da={iso}&data_a={iso}" if versamenti

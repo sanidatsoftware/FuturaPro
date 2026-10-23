@@ -2006,3 +2006,28 @@ class TestIndietroAlMonitor(Base):
         self.assertContains(r, "Indietro al monitor")
         uff.get("/primanota/versamenti/monitor/", {"anno": "2026", "mese": "9", "vista": "mese"})
         self.assertContains(uff.get("/primanota/versamenti/"), 'href="/primanota/versamenti/monitor/?anno=2026&amp;mese=9&amp;vista=mese"')
+
+
+class TestMonitorPrimaNotaNonCertificata(Base):
+    def setUp(self):
+        super().setUp()
+        from django.core.cache import cache
+        cache.clear()
+
+    def test_sfondo_azzurro_in_entrambi_i_monitor(self):
+        oggi = date.today()
+        g1, g2, g3 = (oggi - timedelta(days=n) for n in (3, 2, 1))
+        if g1.month != oggi.month:   # tre giorni nello stesso mese del monitor
+            return
+        righe = [("5048", int(g1.strftime("%Y%m%d")), 10, 0, Decimal("0"), 0),    # certificata
+                 ("5048", int(g2.strftime("%Y%m%d")), 10, 0, Decimal("0"), 2)]    # due movimenti non certificati
+        esegui = lambda c, sql, parametri=(), dizionari=False: righe if "COUNT(*)" in sql else []
+        with mock.patch.multiple("primanota.services.prima_nota", esegui=esegui, configurazione=lambda: {"host": "x"}):
+            for url in ("/primanota/monitor/", "/primanota/versamenti/monitor/"):
+                r = self.client_per("direttore@x").get(url)
+                riga = next(x for x in r.context["monitor"]["rows"] if x["store_id"] == 10)
+                celle = {c["date"]: c["prima_nota"] for c in riga["cells"]}
+                self.assertEqual((celle[g1.isoformat()], celle[g2.isoformat()], celle[g3.isoformat()], celle[oggi.isoformat()]),
+                                 ("", "non_certificata", "mancante", ""))
+                self.assertContains(r, "pn-da-certificare")
+                self.assertContains(r, "prima nota non ancora certificata")
