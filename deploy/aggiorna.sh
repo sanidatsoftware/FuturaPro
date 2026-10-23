@@ -32,6 +32,13 @@ fi
 if [ -f Caddyfile ] && ! grep -q 'Cache-Control "no-cache"' Caddyfile; then
     sed -i 's|^\thandle /static/\* {$|&\n\t\theader Cache-Control "no-cache"|' Caddyfile
 fi
+# Controllo Remoto (MeshCentral): la chiave dei gettoni, generata una volta, e la sua strada in Caddy.
+if [ -f .env ] && ! grep -q '^FP_MESH_CHIAVE=' .env; then
+    (umask 077; echo "FP_MESH_CHIAVE=$(openssl rand -hex 80)" >> .env)
+fi
+if [ -f Caddyfile ] && ! grep -q 'handle /mesh/\*' Caddyfile; then
+    sed -i 's|^\thandle /static/\* {$|\thandle /mesh/* {\n\t\treverse_proxy meshcentral:4430\n\t}\n&|' Caddyfile
+fi
 # I servizi code dei totem si aggiornano da soli scaricando /installa/ in HTTPS.
 if [ -f Caddyfile ] && [ "$(grep -c 'handle /installa/' Caddyfile)" -lt 2 ]; then
     sed -i 's|^\thandle /static/\* {$|\thandle /installa/* {\n\t\troot * /srv\n\t\tfile_server\n\t}\n&|' Caddyfile

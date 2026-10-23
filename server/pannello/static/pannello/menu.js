@@ -6,7 +6,9 @@ const nonTecnico = (io) => io.ruolo !== "tecnico";
 
 // pagina: un'altra pagina, nella stessa finestra; incorporata: una pagina mostrata dentro il
 // pannello, sotto il menu; le altre sono schede del pannello.
-export const GRUPPI = ["Hardware", "Contenuti", "Code", "Plugin", "Report & Log", "Impostazioni"];
+export const GRUPPI = ["Hardware", "Contenuti", "Code", "Plugin", "Report & Log", "Impostazioni", "Controllo Remoto"];
+// Il Controllo Remoto è solo della piattaforma (SystemAdministrator e Tecnici), mai delle aziende.
+const piattaforma = (io) => ["admin_assoluto", "tecnico"].includes(io.ruolo);
 
 export const VOCI = [
   { chiave: "panoramica", titolo: "Panoramica", visibile: () => true, serveCliente: false,
@@ -53,6 +55,12 @@ export const VOCI = [
     aiuto: "Chi accede al pannello del cliente, con quale ruolo ed eventualmente limitato ad alcune sedi. L'Administrator crea gli User della sua azienda; gli Administrator li crea il SystemAdministrator." },
   { chiave: "utenti_piattaforma", gruppo: "Impostazioni", titolo: "Utenti di piattaforma", visibile: (io) => io.ruolo === "admin_assoluto", serveCliente: false,
     aiuto: "Gli altri SystemAdministrator e i tecnici di teleassistenza: li crea e li gestisce solo il SystemAdministrator." },
+  { chiave: "remoto_dispositivi", gruppo: "Controllo Remoto", titolo: "Dispositivi", visibile: piattaforma, serveCliente: false,
+    aiuto: "I PC dei monitor e dei totem di tutte le aziende, con lo stato in linea: collegati al loro schermo per assisterli, in rete locale o da fuori." },
+  { chiave: "remoto_sessioni", gruppo: "Controllo Remoto", titolo: "Sessioni", visibile: piattaforma, serveCliente: false,
+    aiuto: "Il registro dei collegamenti: chi, a quale PC, quando, perché e per quanto." },
+  { chiave: "remoto_installazione", gruppo: "Controllo Remoto", titolo: "Installazione e sicurezza", visibile: piattaforma, serveCliente: false,
+    aiuto: "Come si aggiungono i PC, come funziona l'abbinamento e la sicurezza; la console completa per il SystemAdministrator." },
   { chiave: "profilo", gruppo: "Impostazioni", titolo: "Profilo", visibile: () => true, serveCliente: false,
     aiuto: "Il tuo profilo: nome utente, nome, email e password (per cambiarli serve la password attuale)." },
   { chiave: "email", gruppo: "Impostazioni", titolo: "Email (server di posta)", visibile: gestione,

@@ -37,6 +37,11 @@ class Utente(AbstractUser):
     )
     # La pagina che si apre dopo l'accesso (una voce del menu); vuota: quella del ruolo.
     pagina_iniziale = models.CharField(max_length=30, blank=True)
+    # Verifica in due passaggi (utenti.doppio): il segreto cifrato, se è attiva, e l'ultimo codice
+    # usato (un codice non vale due volte). Obbligatoria per il Controllo Remoto.
+    doppio_segreto = models.TextField(blank=True)
+    doppio_attivo = models.BooleanField(default=False)
+    doppio_ultimo_passo = models.BigIntegerField(default=0)
 
     @property
     def apertura(self) -> str:

@@ -50,6 +50,77 @@ export async function schedaProfilo() {
       document.getElementById("utente").textContent = `${aggiornato.username} · ${RUOLI[aggiornato.ruolo].replace(" Teleassistenza", "")}`;
     }, "Fatto."),
   }, r2);
+
+  await sezioneDoppio(io);
+}
+
+// --- Verifica in due passaggi (codice a 6 cifre da un'app sul telefono) -------------------------
+
+function caricaQr() {
+  if (window.qrcode) return Promise.resolve();
+  return new Promise((ok, ko) => {
+    const script = document.createElement("script");
+    script.src = "/static/player/vendor/qrcode.js";
+    script.onload = ok;
+    script.onerror = () => ko(new Error("Impossibile mostrare il QR: usa il codice scritto sotto."));
+    document.head.appendChild(script);
+  });
+}
+
+async function sezioneDoppio(io) {
+  const { crea, sezione, campo, api, prova } = H;
+  const box = sezione("🛡 Verifica in due passaggi");
+  crea("p", {
+    classe: "nota",
+    testo: io.di_piattaforma
+      ? "Obbligatoria per il Controllo Remoto: prima di collegarti allo schermo di un PC (al massimo ogni 12 ore) il pannello ti chiede il codice di 6 cifre dell'app di autenticazione sul telefono (Google Authenticator, Microsoft Authenticator o simili)."
+      : "Facoltativa: un codice di 6 cifre dall'app di autenticazione sul telefono (Google Authenticator, Microsoft Authenticator o simili).",
+  }, box);
+  if (io.doppio_attivo) {
+    crea("p", { classe: "messaggio ok", testo: "✅ Attiva." }, box);
+    const riga = crea("div", { classe: "riga" }, box);
+    const password = campo("Password", crea("input", { type: "password", autocomplete: "current-password" }), riga);
+    const codice = campo("Codice dell'app", crea("input", { inputmode: "numeric", autocomplete: "one-time-code", maxLength: 6, size: 8 }), riga);
+    crea("button", {
+      classe: "pericolo", testo: "Disattiva",
+      onclick: () => confirm("Disattivare la verifica in due passaggi? Senza, non potrai usare il Controllo Remoto.")
+        && prova(() => api("POST", "/api/io/doppio/", { azione: "disattiva", password: password.value, codice: codice.value }), "Verifica in due passaggi disattivata."),
+    }, riga);
+    return;
+  }
+  const passi = crea("div", {}, box);
+  crea("button", {
+    classe: "primario", testo: "Attiva",
+    onclick: async () => {
+      try {
+        const { segreto, indirizzo } = await api("POST", "/api/io/doppio/", { azione: "prepara" });
+        passi.replaceChildren();
+        crea("p", { testo: "1. Con l'app di autenticazione inquadra questo QR (oppure inserisci a mano il codice sotto)." }, passi);
+        const qr = crea("img", { alt: "QR per l'app di autenticazione", classe: "qr-doppio" }, passi);
+        crea("p", { classe: "tenue", testo: `Codice: ${segreto.replace(/(.{4})/g, "$1 ").trim()}` }, passi);
+        try {
+          await caricaQr();
+          const codiceQr = window.qrcode(0, "M");
+          codiceQr.addData(indirizzo);
+          codiceQr.make();
+          qr.src = codiceQr.createDataURL(5, 8);
+        } catch (errore) {
+          qr.remove();
+          H.avvisa(errore.message);
+        }
+        crea("p", { testo: "2. Scrivi il codice di 6 cifre che compare nell'app." }, passi);
+        const riga = crea("div", { classe: "riga" }, passi);
+        const codice = campo("Codice dell'app", crea("input", { inputmode: "numeric", autocomplete: "one-time-code", maxLength: 6, size: 8 }), riga);
+        crea("button", {
+          classe: "primario", testo: "Conferma",
+          onclick: () => prova(() => api("POST", "/api/io/doppio/", { azione: "attiva", codice: codice.value }), "Verifica in due passaggi attiva."),
+        }, riga);
+        codice.focus();
+      } catch (errore) {
+        H.avvisa(errore.message);
+      }
+    },
+  }, passi);
 }
 
 export async function schedaUtentiPiattaforma() {

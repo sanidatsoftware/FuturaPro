@@ -34,7 +34,8 @@ class SessioniViewSet(
     vede il registro (chi, quando, su quale monitor e perché) ma non può avviarle.
     """
 
-    ruoli_lettura = TELEASSISTENZA | {Ruolo.ADMIN_CLIENTE}
+    # Solo la piattaforma (le aziende vedono gli interventi nel proprio Registro operazioni).
+    ruoli_lettura = TELEASSISTENZA
     ruoli_scrittura = TELEASSISTENZA
     serializer_class = SessioneSerializer
 

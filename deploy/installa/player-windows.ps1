@@ -13,7 +13,9 @@
        al server se il player si fa sentire e, se la pagina si è bloccata o è andata in
        crash («Uffa!»), chiude e riapre il browser (a server spento non fa nulla);
     3. sul totem abilita la stampa senza finestre (--kiosk-printing);
-    4. impedisce lo spegnimento dello schermo e la sospensione.
+    4. impedisce lo spegnimento dello schermo e la sospensione;
+    5. se il server ha il Controllo Remoto, installa l'agente della teleassistenza (MeshCentral)
+       come servizio di Windows: si collega lui al server, nel negozio non si apre nessuna porta.
 
   Altre opzioni:
     -Tipo monitor|totem   non chiedere il tipo
@@ -28,7 +30,8 @@
   certificato (reinstallazione) non si chiede nulla.
     -Configura            apre il browser del player in una finestra normale, per
                           accettare il certificato di una stampante o controllare le impostazioni
-    -Rimuovi              toglie il player da questo PC
+    -Rimuovi              toglie il player da questo PC (anche l'agente del Controllo Remoto)
+    -SenzaRemoto          non installare l'agente del Controllo Remoto
 #>
 #Requires -RunAsAdministrator
 param(
@@ -40,7 +43,8 @@ param(
     [string]$Impronta,
     [string]$ImprontaTotem,
     [switch]$Configura,
-    [switch]$Rimuovi
+    [switch]$Rimuovi,
+    [switch]$SenzaRemoto
 )
 
 $ErrorActionPreference = "Stop"
@@ -53,6 +57,7 @@ $NomeAttivita = "FuturaPro Player"
 $NomeAttivitaCode = "FuturaPro Code"
 $CartellaCode = Join-Path $Cartella "code"
 $AppIdCode = "{6f0b1d6e-2a4c-4f7e-9c1d-5a1f2b3c4d5e}"
+$AgenteRemoto = Join-Path $env:ProgramFiles "Mesh Agent\MeshAgent.exe"
 
 function Scrivi([string]$testo, [string]$colore = "Cyan") { Write-Host $testo -ForegroundColor $colore }
 
@@ -121,6 +126,10 @@ if ($Rimuovi) {
     if (Test-Path (Join-Path $CartellaCode "stato.json")) {
         Copy-Item (Join-Path $CartellaCode "stato.json") (Join-Path $env:TEMP "futurapro-code-stato.json") -Force
         Scrivi "Copia dello stato delle code in $env:TEMP\futurapro-code-stato.json" "Yellow"
+    }
+    if (Test-Path $AgenteRemoto) {
+        & $AgenteRemoto -fulluninstall | Out-Null
+        Scrivi "Agente del Controllo Remoto rimosso." "Green"
     }
     Remove-Item $Cartella -Recurse -Force -ErrorAction SilentlyContinue
     Scrivi "Player FuturaPro rimosso. I certificati installati restano tra quelli attendibili." "Green"
@@ -382,6 +391,39 @@ powercfg /change standby-timeout-ac 0 | Out-Null
 powercfg /change hibernate-timeout-ac 0 | Out-Null
 Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name ScreenSaveActive -Value "0" -ErrorAction SilentlyContinue
 Scrivi "Sospensione e spegnimento dello schermo disattivati." "Green"
+
+# --- 5. Controllo Remoto (teleassistenza) --------------------------------------------------------------
+# L'agente arriva dal server già legato al suo gruppo e riconosce solo questo server. Il tag (nel
+# file MeshAgent.tag accanto al programma, che l'agente rilegge a ogni avvio) è l'inizio
+# dell'impronta del codice della postazione, la stessa che il player manda con il segnale
+# periodico: così il PC si abbina da solo al suo monitor.
+if (-not $SenzaRemoto) {
+    $sha = [Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($postazione))
+    $tag = (-join ($sha | ForEach-Object { $_.ToString("x2") })).Substring(0, 32)
+    $installato = Test-Path $AgenteRemoto
+    if (-not $installato) {
+        $programma = Join-Path $env:TEMP "futurapro-agente-remoto.exe"
+        try {
+            Invoke-WebRequest -Uri "https://$Server/api/player/agente-remoto/?tag=$tag" -OutFile $programma -UseBasicParsing -TimeoutSec 600
+            & $programma -fullinstall | Out-Null
+            Remove-Item $programma -Force -ErrorAction SilentlyContinue
+            $installato = Test-Path $AgenteRemoto
+        } catch {
+            $codice = $_.Exception.Response.StatusCode.value__
+            if ($codice -eq 404) {
+                Scrivi "Controllo Remoto non ancora attivo sul server: rilancia questo comando dopo averlo aggiornato." "Yellow"
+            } else {
+                Scrivi "Attenzione: agente del Controllo Remoto non installato ($($_.Exception.Message))." "Yellow"
+            }
+        }
+    }
+    if ($installato) {
+        # Già installato: si aggiorna solo il tag (reinstallarlo creerebbe un PC doppione).
+        Set-Content -Path ([IO.Path]::ChangeExtension($AgenteRemoto, ".tag")) -Value $tag -NoNewline -Encoding ASCII
+        Restart-Service -Name "Mesh Agent" -ErrorAction SilentlyContinue
+        Scrivi "Controllo Remoto: agente attivo (servizio «Mesh Agent»)." "Green"
+    }
+}
 
 # --- Avvio adesso ---------------------------------------------------------------------------------------
 # Reinstallazione: il profilo del browser resta, quindi lo schermo è già abbinato.

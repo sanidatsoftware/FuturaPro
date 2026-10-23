@@ -94,6 +94,15 @@ layout video, eliminacode, player per monitor e totem, teleassistenza, registro)
   Con «Prova» si controlla un file o una diretta senza salvarli. Al primo aggiornamento il
   server scarica il modello (89 MB).
 
+- **Controllo Remoto** (nuova sezione del menu, solo SystemAdministrator e Tecnici): la
+  teleassistenza dei PC dei monitor e dei totem, con MeshCentral (open source) installato sul
+  server. Inventario dei PC di tutte le aziende, abbinati da soli al loro monitor; «Collegati»
+  apre lo schermo del PC in una finestra (mouse, tastiera, file), in rete locale e da internet,
+  senza aprire porte nei negozi; sullo schermo compare la barra «Teleassistenza FuturaPro in
+  corso». Motivo obbligatorio e **verifica in due passaggi** (nuova, nel Profilo); registro delle
+  sessioni. Le aziende non vedono la sezione: nel loro Registro operazioni resta solo che c'è
+  stato un intervento. L'agente lo installa il comando di installazione dei PC.
+
 ### Come ci si è arrivati: le tappe della 1.6 (ricostruite dallo storico)
 
 Prima della 1.6 non c'erano numeri di versione: le tappe sono indicate con i numeri di build

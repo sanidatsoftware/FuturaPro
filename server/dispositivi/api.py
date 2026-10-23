@@ -960,9 +960,14 @@ class HeartbeatView(VistaPlayer):
             if in_onda is not None:
                 info["in_onda"] = in_onda
             monitor.info_dispositivo = info
-            monitor.save(update_fields=["ultimo_contatto", "versione_player", "manifest_ricevuto", "info_dispositivo"])
+            campi = ["ultimo_contatto", "versione_player", "manifest_ricevuto", "info_dispositivo"]
+            # Il PC da cui gira il player: abbina il Controllo Remoto (teleassistenza.mesh) a questo monitor.
+            postazione = str(request.data.get("postazione") or "")
+            if re.fullmatch(r"[0-9a-f]{32}", postazione) and monitor.impronta_postazione != impronta(postazione):
+                monitor.impronta_postazione = impronta(postazione)
+                campi.append("impronta_postazione")
+            monitor.save(update_fields=campi)
         # Il segnale della postazione, per il guardiano dello script di Windows (vedi SegnalePostazione).
-        postazione = str(request.data.get("postazione") or "")
         if re.fullmatch(r"[0-9a-f]{32}", postazione):
             SegnalePostazione.objects.update_or_create(impronta=impronta(postazione), defaults={"ultimo": adesso})
         # La versione attuale del player: se il player ne ha un'altra, si aggiorna da solo.

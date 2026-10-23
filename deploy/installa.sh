@@ -60,6 +60,8 @@ segreto() { openssl rand -hex 32; }
 FP_SECRET_KEY=$(precedente FP_SECRET_KEY); FP_SECRET_KEY=${FP_SECRET_KEY:-$(segreto)}
 FP_DB_PASSWORD=$(precedente FP_DB_PASSWORD); FP_DB_PASSWORD=${FP_DB_PASSWORD:-$(segreto)}
 FP_DB_SUPERPASSWORD=$(precedente FP_DB_SUPERPASSWORD); FP_DB_SUPERPASSWORD=${FP_DB_SUPERPASSWORD:-$(segreto)}
+# La chiave dei gettoni del Controllo Remoto (MeshCentral): 80 byte, 160 caratteri esadecimali.
+FP_MESH_CHIAVE=$(precedente FP_MESH_CHIAVE); FP_MESH_CHIAVE=${FP_MESH_CHIAVE:-$(openssl rand -hex 80)}
 
 umask 077
 cat > .env <<EOF
@@ -68,6 +70,7 @@ FP_INDIRIZZO=$FP_INDIRIZZO
 FP_SECRET_KEY=$FP_SECRET_KEY
 FP_DB_PASSWORD=$FP_DB_PASSWORD
 FP_DB_SUPERPASSWORD=$FP_DB_SUPERPASSWORD
+FP_MESH_CHIAVE=$FP_MESH_CHIAVE
 EOF
 # Le impostazioni facoltative aggiunte a mano (email degli allarmi, indirizzo pubblico della
 # coda sul telefono) restano.
@@ -151,6 +154,10 @@ https://$FP_INDIRIZZO {
 		header Cache-Control "no-cache"
 		root * /srv
 		file_server
+	}
+	# Controllo Remoto (MeshCentral): pannello dei tecnici e collegamento degli agenti dei PC.
+	handle /mesh/* {
+		reverse_proxy meshcentral:4430
 	}
 	handle {
 		reverse_proxy app:8000

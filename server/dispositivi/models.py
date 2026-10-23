@@ -137,6 +137,9 @@ class Monitor(ModelloCliente):
     stampante = models.ForeignKey(
         "dispositivi.StampanteTicket", on_delete=models.SET_NULL, null=True, blank=True, related_name="monitor"
     )
+    # L'impronta del codice della postazione (il PC) da cui arriva il segnale periodico: abbina il
+    # PC del Controllo Remoto (l'agente ne porta l'inizio come tag) a questo monitor.
+    impronta_postazione = models.CharField(max_length=64, blank=True, db_index=True)
 
     class Meta:
         ordering = ["nome"]

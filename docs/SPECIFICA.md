@@ -28,7 +28,7 @@ progetto: le scelte qui sotto valgono finché non le cambiamo esplicitamente.
 | Motore di rendering | JavaScript senza dipendenze, condiviso da player nel browser, app native e anteprima | **in sviluppo** (`server/player/`) |
 | Player Android | Kotlin, WebView per i layout + Media3/ExoPlayer per i video, device owner | da fare |
 | Player Windows | Servizio .NET 8 (watchdog, aggiornamenti, teleassistenza) + app WebView2 | da fare |
-| Teleassistenza | Segnalazione WSS con mTLS, WebRTC, relay coturn nostro | da fare |
+| Teleassistenza | MeshCentral (Apache-2.0) integrato: «Controllo Remoto», solo piattaforma | Windows fatto, Android da fare |
 | Distribuzione | Docker Compose: un unico pacchetto per cloud e installazione presso il cliente | da fare |
 
 Dimensionamento: centinaia di schermi per installazione. Basta un server
@@ -46,7 +46,7 @@ teleassistenza.
 |---|---|---|
 | **SystemAdministrator** | Piattaforma (chi gestisce l'installazione) | Tutto. Sceglie l'azienda dal selettore e opera nel suo contesto; crea clienti, Administrator, tecnici e altri SystemAdministrator («Utenti di piattaforma»); decide le abilitazioni di ogni cliente. |
 | **Tecnico Teleassistenza** | Piattaforma | Designato dal SystemAdministrator. Apre sessioni remote sui player di **tutti** i clienti; legge l'elenco clienti e i monitor. Non gestisce contenuti né configurazioni. |
-| **Administrator** | Un cliente | Amministra il proprio parco **entro le abilitazioni concesse**: sedi, gruppi, monitor, contenuti, gli User del cliente (gli Administrator li crea e li gestisce solo il SystemAdministrator). Legge le abilitazioni e il registro di audit e teleassistenza del cliente. Non avvia la teleassistenza. |
+| **Administrator** | Un cliente | Amministra il proprio parco **entro le abilitazioni concesse**: sedi, gruppi, monitor, contenuti, gli User del cliente (gli Administrator li crea e li gestisce solo il SystemAdministrator). Legge le abilitazioni e il registro di audit del cliente (dove compaiono anche gli interventi di teleassistenza). Non vede né avvia il Controllo Remoto. |
 | **User** | Una sola azienda (quella di appartenenza) | Gestisce contenuti, playlist e programmazione. Facoltativamente limitato a certe sedi: allora vede solo quelle e i loro monitor. |
 
 **Chi crea chi.** Solo il SystemAdministrator crea SystemAdministrator, Tecnici e Administrator;
@@ -70,7 +70,8 @@ wall, …) man mano che arrivano.
 
 **Registro.** Ogni modifica finisce nel registro di audit del cliente, comprese quelle fatte
 dalla piattaforma per suo conto (marcate `per_conto_piattaforma`). Ogni sessione di
-teleassistenza è visibile all'Administrator: chi, quando, su quale monitor, perché.
+teleassistenza resta nel Registro operazioni dell'azienda: chi, quando, su quale PC, perché
+(la sezione «Controllo Remoto» però è solo della piattaforma, §9).
 
 Nelle installazioni presso il cliente il SystemAdministrator resta il gestore della piattaforma; il cliente ha
 il proprio Administrator.
@@ -109,7 +110,9 @@ viste che controllano prima il cliente (in produzione nginx con `X-Accel-Redirec
 **Fuori dalla RLS, di proposito:** `utenti_utente` (il login la legge prima di sapere chi è
 l'utente; le viste la filtrano), `dispositivi_richiestaabbinamento` (un player non ancora
 abbinato non ha cliente), `dispositivi_credenzialedispositivo` (dice a quale cliente appartiene
-un player: va letta per prima). Contengono solo impronte, mai segreti.
+un player: va letta per prima). Contengono solo impronte, mai segreti. E
+`teleassistenza_sessioneremota` (il registro del Controllo Remoto, §9): è solo della piattaforma,
+nessuna vista la mostra alle aziende, e un PC può non essere ancora abbinato a nessuna.
 
 **Test.** `server/core/tests/test_isolamento.py` prova ogni barriera da sola: togliendo l'una o
 l'altra, falliscono test diversi. Un altro test elenca le tabelle con `cliente_id` prive di
@@ -887,42 +890,58 @@ decodifica hardware.
 la riavvia se si blocca, gestisce aggiornamenti e teleassistenza; funziona anche senza utenti
 collegati.
 
-## 9. Teleassistenza
+## 9. Teleassistenza: «Controllo Remoto»
 
-**Chi.** Solo SystemAdministrator e Tecnici Teleassistenza, su tutti i clienti. Accesso al
-pannello con 2FA obbligatoria (WebAuthn, in alternativa TOTP). L'Administrator vede il registro,
-non avvia sessioni. Già implementati: permessi, registro delle sessioni, audit.
+**Chi.** Solo SystemAdministrator e Tecnici della piattaforma, su tutte le aziende. Le aziende
+non vedono la sezione e le sue API rispondono 403; nel loro Registro operazioni resta che c'è
+stato un intervento (`controllo_remoto_aperto` / `_chiuso`: chi, quale PC, perché, quanto).
 
-**Come** (da fare):
+**Con cosa.** [MeshCentral](https://github.com/Ylianst/MeshCentral) (Apache-2.0, versione
+bloccata in `deploy/meshcentral/Dockerfile`), come servizio Docker accanto al server, scelto al
+posto della soluzione scritta da zero (WebRTC, relay, CA propria) per tempi e collaudo. Caddy lo
+pubblica sotto `https://SERVER/mesh/` (dominio per percorso «mesh»), con lo stesso certificato
+del pannello: nessuna porta nuova. Sui PC c'è il suo agente (servizio di Windows), che **si
+collega lui** al server: funziona in rete locale e da internet senza aprire porte nei negozi.
 
-1. Il tecnico apre una sessione dal pannello (`POST /api/teleassistenza/sessioni/`): il server
-   emette un gettone di sessione firmato, monouso, valido 5 minuti e legato a quel monitor e
-   a quel tecnico.
-2. Il server avvisa il player sul suo canale WebSocket (autenticato con il certificato del
-   dispositivo, mTLS).
-3. Player e browser del tecnico negoziano una connessione **WebRTC** tramite la nostra
-   segnalazione; il traffico passa dal **nostro relay coturn** quando la connessione diretta
-   non è possibile. Cifratura DTLS-SRTP end-to-end.
-4. Canali: video dello schermo (H.264 con encoder hardware), input mouse/tastiera, file,
-   comandi di diagnostica (log, riavvio app/dispositivo, rete). Nessuna shell libera.
-5. Accesso senza presenza sul posto (scelta di progetto), con sessione chiudibile da pannello,
-   durata massima, eventuale registrazione video, revoca immediata del certificato di un
-   dispositivo.
+- **Configurazione** (`deploy/meshcentral/avvio.js`, riscritta a ogni avvio): HTTP sulla porta
+  4430 della rete interna dietro Caddy (`tlsOffload`), `certUrl` sul certificato di Caddy (lo
+  rilegge quando cambia), nessuna registrazione (`newAccounts: false`), barra «Teleassistenza
+  FuturaPro in corso» sempre visibile sullo schermo del PC (`userConsentFlags`), nessuna richiesta
+  di consenso (accesso non presidiato). Un account di servizio «futurapro» creato una volta.
+- **Identità.** L'agente riconosce il server con `ServerID` (il certificato degli agenti, nel
+  volume `mesh_dati`: va conservato, è nel backup) oltre al certificato TLS di Caddy.
+- **Comando dal server** (`server/teleassistenza/mesh.py`): WebSocket `control.ashx` della rete
+  interna, autenticato con un «login cookie» di MeshCentral (AES-256-GCM con
+  `FP_MESH_CHIAVE`, 160 caratteri esadecimali in `.env`, la stessa data a MeshCentral). Un solo
+  gruppo di dispositivi («Player FuturaPro»); un account MeshCentral per ogni tecnico, con
+  controllo remoto, file e dettagli ma **nessun terminale** (niente shell libera).
+- **Abbinamento PC ↔ monitor.** Lo script di installazione dà all'agente un tag (file
+  `MeshAgent.tag`): l'inizio dell'impronta SHA-256 del codice della postazione. Il player manda
+  lo stesso codice con il segnale periodico e il server ne conserva l'impronta sul monitor
+  (`Monitor.impronta_postazione`): l'inventario mostra azienda, negozio e monitor di ogni PC.
+- **Collegarsi** (`POST /api/remoto/sessioni/`): motivo obbligatorio e **verifica in due
+  passaggi** (TOTP, `utenti/doppio.py`, attivata dal Profilo; il codice si richiede ogni 12 ore
+  per browser, al massimo 30 tentativi l'ora). Il server crea l'account del tecnico se manca e
+  firma un gettone valido 2 minuti che apre direttamente il desktop del PC in una finestra.
+  Ogni sessione è in `SessioneRemota` (tecnico, PC, monitor, azienda, motivo, IP, inizio, fine);
+  si chiude dal pannello o da sola nel registro dopo la durata massima (60 minuti).
+- **Console completa** di MeshCentral: solo per il SystemAdministrator, dalla pagina
+  «Installazione e sicurezza».
+- **Da fuori sede**: serve che il server sia raggiungibile da internet (dominio, porta 443).
 
-**Identità.** Ogni installazione (cloud o presso il cliente) ha **la propria CA**. Il player crea
-la coppia di chiavi nel Keystore/TPM e invia una CSR durante l'abbinamento; la CA firma un
-certificato legato a monitor e cliente.
+| API | Chi |
+|---|---|
+| `GET /api/remoto/` (inventario), `GET /api/remoto/dispositivi/?nodo=` (hardware) | SystemAdministrator, Tecnico |
+| `GET/POST /api/remoto/sessioni/`, `POST /api/remoto/sessioni/{id}/chiudi/` | SystemAdministrator, Tecnico |
+| `GET /api/player/agente-remoto/?tag=` (rimanda all'installatore dell'agente) | script di installazione |
+| `GET/POST /api/io/doppio/` (verifica in due passaggi del proprio account) | tutti, per sé |
 
-**Requisiti di piattaforma.**
+Il registro precedente (`SessioneTeleassistenza`, `/api/teleassistenza/sessioni/`) resta, ora
+solo per la piattaforma.
 
-- Android: cattura con MediaProjection; input remoto con app *device owner* + servizio di
-  accessibilità, oppure con firma di sistema del produttore. Da verificare per l'hardware scelto.
-- Windows: servizio di sistema con Desktop Duplication API e iniezione input, gestione della
-  schermata di login e dei prompt UAC (desktop sicuro).
-
-**Installazioni presso il cliente.** Il cliente ha accesso fisico al server: non possiamo
-impedirgli tecnicamente di alterare il proprio database. L'isolamento lì è comunque irrilevante
-(c'è un solo cliente); la licenza firmata e il contratto regolano l'accesso del gestore della piattaforma.
+**Android (fase successiva).** L'agente MeshCentral per Android dà inventario e comandi; lo
+schermo remoto completo richiede la nostra app Android (MediaProjection per lo schermo; input
+con servizio di accessibilità o modalità dispositivo dedicato), nella stessa sezione.
 
 ## 10. Hardware Android — cosa verificare
 
@@ -955,7 +974,7 @@ piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
 | `GET/PATCH/DELETE /api/monitor/`, `POST /api/monitor/abbina/` | lettura: tutti — scrittura: SystemAdministrator, Administrator (se abilitato) |
 | `/api/utenti/` | SystemAdministrator, Administrator (se abilitato; solo gli User) |
 | `GET /api/audit/` | SystemAdministrator, Administrator |
-| `GET /api/teleassistenza/sessioni/` | SystemAdministrator, Tecnico, Administrator |
+| `GET /api/teleassistenza/sessioni/` | SystemAdministrator, Tecnico |
 | `POST /api/teleassistenza/sessioni/`, `POST …/{id}/chiudi/` | SystemAdministrator, Tecnico |
 | `/api/contenuti/` (upload multipart), `GET /api/contenuti/{id}/file/` | lettura: tutti — scrittura: SystemAdministrator, Administrator, User |
 | `/api/playlist/`, `/api/pubblicazioni/` | lettura: tutti — scrittura: SystemAdministrator, Administrator, User |
