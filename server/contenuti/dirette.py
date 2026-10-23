@@ -10,7 +10,9 @@ from django.utils import timezone
 
 from layout.fonti import scarica
 
-from .models import Contenuto, Tipo
+from plugin import filtro
+
+from .models import Contenuto, Controllo, Tipo
 
 MASSIMO_LISTA = 8 * 1024 * 1024
 MASSIMO_CANALI = 5000
@@ -72,6 +74,8 @@ def crea_dirette(canali: list[dict], utente) -> list[Contenuto]:
     """Aggiunge i canali alla libreria; quelli con lo stesso indirizzo esistono già e si riusano."""
     esistenti = {c.url: c for c in Contenuto.objects.filter(tipo=Tipo.DIRETTA)}
     adesso = timezone.now()
+    # Con il «Filtro contenuti» attivo per le dirette, quelle nuove vanno in onda solo dopo il controllo.
+    da_controllare = filtro.severita_per("diretta") is not None
     risultato = []
     for canale in canali:
         contenuto = esistenti.get(canale["url"])
@@ -81,6 +85,7 @@ def crea_dirette(canali: list[dict], utente) -> list[Contenuto]:
                 logo_url=canale.get("logo", "")[:500], durata=DURATA_DIRETTA,
                 # Le dirette sono quasi sempre 16:9: vanno ai monitor orizzontali.
                 larghezza=1920, altezza=1080, caricato_da=utente.username,
+                controllo=Controllo.ATTESA if da_controllare else "",
             )
         contenuto.autorizzata_da, contenuto.autorizzata_il = utente.username, adesso
         contenuto.save(update_fields=["autorizzata_da", "autorizzata_il"])

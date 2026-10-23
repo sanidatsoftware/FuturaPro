@@ -54,7 +54,8 @@ services:
       - media:/dati/media
       - static:/dati/static
 
-  # I lavori periodici, ogni minuto: allarmi degli schermi scollegati e rapporti per email.
+  # I lavori periodici, ogni minuto: allarmi degli schermi scollegati, rapporti per email e
+  # controllo delle dirette del plugin «Filtro contenuti».
   pianificatore:
     build: ../server
     restart: unless-stopped

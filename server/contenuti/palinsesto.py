@@ -165,6 +165,22 @@ def durata_effettiva(elemento) -> int | None:
     return None if elemento.contenuto.tipo == Tipo.VIDEO else DURATA_IMMAGINE
 
 
+def dirette_escluse(contenuti: dict) -> set:
+    """Le dirette da non mandare in onda: quelle bloccate dal filtro sempre; quelle in verifica o
+    non verificabili finché il filtro è attivo per le dirette (spento, non le controllerebbe più)."""
+    from plugin.filtro import severita_per
+
+    from .models import Controllo
+
+    dirette = {k: c for k, c in contenuti.items() if c.tipo == Tipo.DIRETTA and c.controllo}
+    if not dirette:
+        return set()
+    sospese = {Controllo.BLOCCATA}
+    if severita_per("diretta") is not None:
+        sospese |= {Controllo.ATTESA, Controllo.NON_VERIFICABILE}
+    return {k for k, c in dirette.items() if c.controllo in sospese}
+
+
 def _voce(contenuto) -> dict:
     voce = {"tipo": contenuto.tipo, "nome": contenuto.nome}
     if contenuto.tipo == Tipo.WEB:
@@ -265,6 +281,15 @@ def manifest(monitor) -> dict:
             voce["audio"] = True
         playlist.setdefault(str(elemento.playlist_id), []).append(voce)
         contenuti[str(elemento.contenuto_id)] = elemento.contenuto
+
+    # Plugin «Filtro contenuti»: le dirette bloccate (o non ancora verificate) non arrivano agli schermi.
+    esclusi = dirette_escluse(contenuti)
+    if esclusi:
+        for chiave in esclusi:
+            del contenuti[chiave]
+        playlist = {chiave: [v for v in voci if v["contenuto"] not in esclusi] for chiave, voci in playlist.items()}
+        eventi = [e for e in eventi if str(e.contenuto_id) not in esclusi]
+        interruzioni = [e for e in interruzioni if e["contenuto"] not in esclusi]
 
     corpo = {
         "monitor": str(monitor.id),

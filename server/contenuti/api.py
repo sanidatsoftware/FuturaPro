@@ -22,6 +22,7 @@ from clienti.models import Insegna
 from dispositivi.models import GruppoMonitor, Monitor
 
 from layout import fonti
+from plugin import filtro
 
 from . import palinsesto
 from .file import crea_miniatura, impronta_e_dimensione, misure_immagine, riconosci
@@ -29,6 +30,37 @@ from . import campagne, dirette, listini, messa_in_onda
 from .models import Campagna, Contenuto, ElementoPlaylist, EventoStraordinario, Listino, MessaInOnda, Playlist, Promozione, Pubblicazione, Tipo, Uso
 
 MB = 1024 * 1024
+
+
+class ContenutoVietato(Exception):
+    """Il plugin «Filtro contenuti» ha riconosciuto nudo o contenuto esplicito: il file non si salva.
+
+    Non è una ValidationError perché la vista la intercetta e annota il rifiuto nel registro fuori
+    dalla transazione della richiesta (che un errore annullerebbe)."""
+
+    def __init__(self, nome: str, tipo: str, esito):
+        super().__init__(nome)
+        self.nome, self.tipo, self.esito = nome, tipo, esito
+
+
+def controlla_con_filtro(file, tipo: str) -> None:
+    """Immagini e video passano dal filtro, se l'azienda l'ha attivato per quel tipo."""
+    if tipo not in (Tipo.IMMAGINE, Tipo.VIDEO):
+        return
+    severita = filtro.severita_per(tipo)
+    if severita is None:
+        return
+    try:
+        esito = (filtro.controlla_immagine if tipo == Tipo.IMMAGINE else filtro.controlla_video)(file, severita)
+    except filtro.FiltroNonDisponibile:
+        raise serializers.ValidationError({"file": (
+            "Il filtro contenuti è attivo ma sul server non riesce a partire: il file non si può controllare "
+            "e quindi non si carica. Avvisa l'amministratore della piattaforma."
+        )})
+    except Exception:
+        raise serializers.ValidationError({"file": "Il filtro contenuti non riesce a leggere il file: non si carica."})
+    if esito.vietato:
+        raise ContenutoVietato(getattr(file, "name", ""), tipo, esito)
 
 
 def _servi(contenuto):
@@ -90,6 +122,7 @@ class ContenutoSerializer(serializers.ModelSerializer):
         dati["tipo"], dati["mime"] = formato
         if dati.get("uso") == Uso.RISERVA and dati["tipo"] not in (Tipo.IMMAGINE, Tipo.VIDEO):
             raise serializers.ValidationError({"file": "La riserva di uno schermo è un'immagine o un video."})
+        controlla_con_filtro(file, dati["tipo"])
         dati["sha256"], dati["dimensione"] = impronta_e_dimensione(file)
         if dati["tipo"] == Tipo.IMMAGINE:
             misure = misure_immagine(file)
@@ -110,6 +143,19 @@ class ContenutiViewSet(ViewSetCliente):
         # ?uso=libreria: solo le immagini delle promozioni; ?uso=riserva: solo i loghi degli schermi.
         uso = self.request.query_params.get("uso")
         return contenuti.filter(uso=uso) if uso in Uso.values else contenuti
+
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except ContenutoVietato as vietato:
+            # Una risposta normale (non un'eccezione): il rifiuto resta nel registro.
+            registra(request.user, "contenuto_rifiutato_filtro", None, nome=vietato.nome, tipo=vietato.tipo, **vietato.esito.come_dati())
+            cosa = "L'immagine" if vietato.tipo == Tipo.IMMAGINE else "Il video"
+            dove = f" (al secondo {vietato.esito.secondo:.0f})" if vietato.esito.secondo else ""
+            return Response({"file": [
+                f"{cosa} è stat{'a' if vietato.tipo == Tipo.IMMAGINE else 'o'} rifiutat{'a' if vietato.tipo == Tipo.IMMAGINE else 'o'} "
+                f"dal filtro contenuti: contiene nudo o contenuti espliciti{dove}. Non si può caricare."
+            ], "filtro": vietato.esito.come_dati()}, status=status.HTTP_400_BAD_REQUEST)
 
     def perform_create(self, serializer):
         contenuto = serializer.save(caricato_da=self.request.user.username)

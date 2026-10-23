@@ -16,6 +16,16 @@ class Tipo(models.TextChoices):
     DIRETTA = "diretta", "Diretta (streaming)"
 
 
+class Controllo(models.TextChoices):
+    """Lo stato di una diretta per il plugin «Filtro contenuti»."""
+
+    ATTESA = "attesa", "In verifica"
+    OK = "ok", "Verificata"
+    BLOCCATA = "bloccata", "Bloccata dal filtro"
+    # Il server non la raggiunge (rete interna, canale spento): non si può controllare, non va in onda.
+    NON_VERIFICABILE = "irraggiungibile", "Non verificabile"
+
+
 class Uso(models.TextChoices):
     LIBRERIA = "libreria", "Libreria delle promozioni"
     # Il logo o il video che uno schermo mostra quando non c'è nulla in onda: caricato
@@ -50,6 +60,12 @@ class Contenuto(ModelloCliente):
     # Misure in pixel: le immagini le legge il server, i video le manda il pannello.
     larghezza = models.PositiveIntegerField(null=True, blank=True)
     altezza = models.PositiveIntegerField(null=True, blank=True)
+    # Dirette e plugin «Filtro contenuti»: vuoto se la diretta non è da controllare (filtro spento
+    # quando è stata aggiunta); altrimenti va in onda solo se l'ultimo controllo è «ok».
+    controllo = models.CharField(max_length=16, choices=Controllo.choices, blank=True)
+    controllo_il = models.DateTimeField(null=True, blank=True)
+    # L'esito dell'ultimo controllo: punteggi, motivo, tentativi falliti di fila.
+    controllo_esito = models.JSONField(default=dict, blank=True)
     creato = models.DateTimeField(auto_now_add=True)
 
     class Meta:
