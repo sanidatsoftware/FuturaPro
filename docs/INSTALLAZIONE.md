@@ -145,6 +145,22 @@ server deve poter raggiungere `huggingface.co` e i suoi indirizzi di download; p
 scarica ogni giorno anche il database dei canali da `iptv-org.github.io`. Se il modello non
 arriva, il pannello lo segnala in «Plugin → Filtro contenuti»: basta rilanciare l'aggiornamento.
 
+### Controllo Remoto (teleassistenza)
+
+Con l'aggiornamento il server installa anche **MeshCentral**, il motore della teleassistenza: lo
+trovi nel pannello in «Controllo Remoto» (solo SystemAdministrator e Tecnici). Non servono
+porte nuove: passa dallo stesso indirizzo HTTPS del pannello (`https://SERVER/mesh/`).
+
+- La prima volta il server scarica i programmi degli agenti da GitHub (circa 120 MB).
+- Ogni tecnico, prima di collegarsi, attiva la **verifica in due passaggi** nel suo Profilo
+  (Google Authenticator, Microsoft Authenticator o simili).
+- Sui PC l'agente lo installa il comando di installazione dei monitor e dei totem (vedi sotto);
+  sui PC già installati basta rilanciare lo stesso comando. Per non installarlo: `-SenzaRemoto`.
+- **Da fuori sede** funziona se il server è raggiungibile da internet (nome di dominio, porta
+  443); altrimenti solo dalla rete interna o con una VPN.
+- Il backup notturno salva anche i dati di MeshCentral (`backup/controllo-remoto-*.tar.gz`): i
+  suoi certificati sono quelli che gli agenti riconoscono, non vanno persi.
+
 ### Email (facoltativo)
 
 Ogni azienda imposta il **suo** server di posta nel pannello, in «Impostazioni → Email (server di

@@ -93,7 +93,10 @@ class DatabaseTest(Base):
             scoperte = {riga[0] for riga in cursor.fetchall()}
         # Le uniche eccezioni volute: vedi docs/SPECIFICA.md, «Fuori dalla RLS».
         self.assertEqual(
-            scoperte, {"dispositivi_credenzialedispositivo", "eliminacode_credenzialepulsante", "utenti_utente"}
+            scoperte, {
+                "dispositivi_credenzialedispositivo", "eliminacode_credenzialepulsante", "utenti_utente",
+                "teleassistenza_sessioneremota",
+            }
         )
 
     def test_senza_contesto_il_database_non_restituisce_nulla(self):
@@ -166,11 +169,12 @@ class AdminClienteTest(Base):
         for url in ("/api/piattaforma/clienti/", "/api/piattaforma/utenti/", "/api/piattaforma/audit/"):
             self.assertEqual(self.client.get(url).status_code, 403, url)
 
-    def test_non_avvia_la_teleassistenza_ma_ne_vede_il_registro(self):
+    def test_la_teleassistenza_non_e_delle_aziende(self):
+        # Né avviarla né leggerne le pagine: gli interventi li vede nel proprio Registro operazioni.
         self.come(self.admin_a)
         r = self.client.post("/api/teleassistenza/sessioni/", {"monitor": str(self.mon_a_milano.id), "motivo": "x"})
         self.assertEqual(r.status_code, 403)
-        self.assertEqual(self.client.get("/api/teleassistenza/sessioni/").status_code, 200)
+        self.assertEqual(self.client.get("/api/teleassistenza/sessioni/").status_code, 403)
 
     def test_non_si_assegna_ruoli_di_piattaforma(self):
         self.come(self.admin_a)

@@ -106,6 +106,8 @@ REST_FRAMEWORK = {
         "abbinamento": _env("THROTTLE_ABBINAMENTO", "120/hour"), "biglietto": "40/min",
         # Il guardiano di ogni postazione chiede ogni 2 minuti; i PC di un negozio escono con lo stesso IP.
         "postazione": _env("THROTTLE_POSTAZIONE", "1200/hour"),
+        # Aprire lo schermo di un PC (con il codice della verifica in due passaggi): pochi tentativi.
+        "remoto": _env("THROTTLE_REMOTO", "30/hour"),
     },
 }
 
@@ -150,6 +152,14 @@ if FUTURAPRO_URL_PUBBLICO:
     _host_pubblico = urlsplit(FUTURAPRO_URL_PUBBLICO).hostname
     if _host_pubblico and _host_pubblico not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(_host_pubblico)
+
+# Controllo Remoto (MeshCentral, vedi teleassistenza.mesh): l'indirizzo interno con cui il server
+# lo comanda (rete di Docker) e la chiave con cui firma i gettoni d'accesso (160 caratteri
+# esadecimali, la stessa data a MeshCentral). Senza, la sezione dice che non è configurato.
+FUTURAPRO_MESH_URL = _env("MESH_URL", "")
+FUTURAPRO_MESH_CHIAVE = _env("MESH_CHIAVE", "")
+# L'indirizzo pubblico di MeshCentral per i browser dei tecnici e per gli agenti (stesso host del pannello).
+FUTURAPRO_MESH_PUBBLICO = _env("MESH_PUBBLICO", f"https://{FUTURAPRO_INDIRIZZO}/mesh/" if FUTURAPRO_INDIRIZZO else "")
 
 STATIC_URL = "static/"
 STATIC_ROOT = Path(_env("STATIC_ROOT", BASE_DIR / "staticfiles"))

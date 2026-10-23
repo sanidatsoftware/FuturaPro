@@ -50,6 +50,9 @@ services:
       # Il numero di build (commit) della versione mostrata nel pannello: lo scrive aggiorna.sh.
       FUTURAPRO_BUILD: ${FP_BUILD:-}
       FUTURAPRO_BUILD_DATA: ${FP_BUILD_DATA:-}
+      # Controllo Remoto: MeshCentral nella rete interna e la chiave dei gettoni (la stessa sotto).
+      FUTURAPRO_MESH_URL: http://meshcentral:4430/mesh/
+      FUTURAPRO_MESH_CHIAVE: ${FP_MESH_CHIAVE:-}
     volumes:
       - media:/dati/media
       - static:/dati/static
@@ -64,6 +67,19 @@ services:
     entrypoint: ["python", "manage.py", "pianificatore"]
     volumes:
       - media:/dati/media
+
+  # Controllo Remoto (teleassistenza dei PC dei negozi): MeshCentral, pubblicato da Caddy sotto
+  # https://SERVER/mesh/. Non ha porte verso l'esterno: lo raggiunge solo Caddy.
+  meshcentral:
+    build: ./meshcentral
+    restart: unless-stopped
+    environment:
+      FP_INDIRIZZO: ${FP_INDIRIZZO}
+      FP_MESH_CHIAVE: "${FP_MESH_CHIAVE:?manca FP_MESH_CHIAVE in .env, rilancia aggiorna.sh}"
+    volumes:
+      # Contiene i certificati che gli agenti riconoscono: perderlo vuol dire reinstallare gli agenti.
+      - mesh_dati:/opt/meshcentral/meshcentral-data
+      - mesh_file:/opt/meshcentral/meshcentral-files
 
   caddy:
     image: caddy:2
@@ -80,6 +96,8 @@ services:
       - caddy_config:/config
 
 volumes:
+  mesh_dati:
+  mesh_file:
   db:
   media:
   static:
