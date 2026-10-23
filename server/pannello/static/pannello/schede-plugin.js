@@ -317,3 +317,156 @@ async function schedaPlugin(tipo) {
     }), "Salvato: gli schermi lo ricevono entro un minuto."),
   }, fine);
 }
+
+// --- Filtro contenuti: niente nudo sugli schermi (immagini, video, dirette) -----------------------
+
+const TIPI_FILTRO = [
+  ["immagini", "Immagini", "JPEG, PNG, GIF, WebP: controllate al caricamento. Un'immagine vietata non si carica: in coda va la successiva."],
+  ["video", "Video", "MP4, MOV, WebM: controllati al caricamento su tutta la durata. Il video si carica, ma i tratti vietati sullo schermo restano coperti dall'immagine di riserva, senza audio."],
+  ["dirette", "Dirette streaming", "Bollino del canale all'importazione, poi sorveglianza continua mentre sono in onda. Una diretta bloccata è sostituita dall'immagine di riserva."],
+];
+const NOMI_SEVERITA = { bassa: "Bassa", media: "Media", alta: "Alta" };
+const STATI_DIRETTA = { attesa: "⏳ In verifica", ok: "✅ Verificata", bloccata: "⛔ Bloccata", irraggiungibile: "⚠️ Non verificabile" };
+const percento = (v) => (v == null ? "—" : `${Math.round(v * 100)}%`);
+
+function spiegaSeverita(tipo, s) {
+  if (tipo === "immagini") return `blocca da ${s.soglia}% di probabilità di nudo`;
+  if (tipo === "video") return `blocca da ${s.soglia}%; un fotogramma ogni ${s.ogni_secondi} s`;
+  return `blocca da ${s.soglia}%; in onda ricontrollata ogni ${s.ricontrollo} min (${s.fotogrammi_diretta} fotogrammi)`;
+}
+
+export async function schedaFiltroContenuti() {
+  const { crea, sezione, api, prova, campo, scelta, tabella } = H;
+  const f = await api("GET", "/api/plugin/filtro-contenuti/");
+
+  const intro = sezione("Filtro contenuti");
+  crea("p", {
+    classe: "nota",
+    testo: "Impedisce che sugli schermi vada nudo o contenuto esplicito. Il riconoscimento gira sul vostro server (nessuna immagine esce): "
+      + "distingue il nudo da intimo, costumi e abiti, che restano ammessi. Quello che il filtro riconosce come vietato non va in onda e nessuno lo può sbloccare: "
+      + "un'immagine non si carica, i tratti di un video e le dirette bloccate sono coperti dall'immagine di riserva dello schermo (quella mostrata quando non ci sono promozioni). "
+      + "Vale per i contenuti nuovi; quelli già caricati restano come sono.",
+  }, intro);
+  crea("p", {
+    classe: f.disponibile ? "nota" : "messaggio errore",
+    testo: f.disponibile
+      ? "✅ Modello di riconoscimento pronto."
+      : "⚠️ Il modello di riconoscimento non è installato su questo server: con il filtro attivo i contenuti di quel tipo non si possono caricare. Va rilanciato l'aggiornamento del server (scarica il modello).",
+  }, intro);
+  crea("p", {
+    classe: "tenue",
+    testo: f.database_canali
+      ? `Database dei canali (iptv-org): ${f.database_canali.canali.toLocaleString("it-IT")} canali, aggiornato ${quando(f.database_canali.aggiornato)}. Si aggiorna da solo ogni giorno.`
+      : "Database dei canali (iptv-org): si scarica al primo uso del filtro per le dirette.",
+  }, intro);
+
+  // --- Attivazione per tipo, con la severità ---
+  const impostazioni = sezione("Cosa controllare");
+  const corpo = tabella(["Tipo", "Attivo", "Severità", ""], impostazioni);
+  const controlli = {};
+  for (const [chiave, titolo, descrizione] of TIPI_FILTRO) {
+    const riga = crea("tr", {}, corpo);
+    const nome = crea("td", {}, riga);
+    crea("strong", { testo: titolo }, nome);
+    crea("div", { classe: "tenue", testo: descrizione }, nome);
+    const attivo = crea("input", { type: "checkbox", checked: f[chiave], disabled: !H.ruoloGestione() }, crea("label", { classe: "spunta interruttore" }, crea("td", {}, riga)));
+    const severita = scelta(Object.entries(NOMI_SEVERITA), f[`severita_${chiave}`]);
+    severita.disabled = !H.ruoloGestione();
+    crea("td", {}, riga).appendChild(severita);
+    const spiega = crea("td", { classe: "tenue" }, riga);
+    const aggiorna = () => { spiega.textContent = spiegaSeverita(chiave, f.severita[severita.value]); };
+    severita.addEventListener("change", aggiorna);
+    aggiorna();
+    controlli[chiave] = { attivo, severita };
+  }
+  crea("p", {
+    classe: "tenue",
+    testo: "Bassa: blocca solo il nudo evidente. Media: l'equilibrio consigliato. Alta: blocca anche i casi dubbi (qualche quadro o foto artistica in più). "
+      + "Nelle dirette un fotogramma dubbio da solo non basta per bloccarle: ne servono due di fila, o uno quasi certo.",
+  }, impostazioni);
+  crea("button", {
+    classe: "primario", testo: "Salva",
+    onclick: () => {
+      const dati = {};
+      for (const [chiave, c] of Object.entries(controlli)) Object.assign(dati, { [chiave]: c.attivo.checked, [`severita_${chiave}`]: c.severita.value });
+      prova(() => api("PUT", "/api/plugin/filtro-contenuti/", dati), "Filtro contenuti salvato.");
+    },
+  }, crea("div", { classe: "riga" }, impostazioni));
+
+  // --- Prova: un file o una diretta, senza salvare ---
+  const sezioneProva = sezione("Prova il filtro");
+  crea("p", { classe: "nota", testo: "Scegli un'immagine o un video, oppure incolla l'indirizzo di una diretta: il filtro dice cosa farebbe, senza salvare nulla." }, sezioneProva);
+  const rigaProva = crea("div", { classe: "riga" }, sezioneProva);
+  const file = campo("Immagine o video", crea("input", { type: "file", accept: "image/*,video/*" }), rigaProva);
+  const url = campo("…oppure indirizzo della diretta", crea("input", { placeholder: "https://…/playlist.m3u8", size: 40 }), rigaProva);
+  const severitaProva = campo("Severità", scelta(Object.entries(NOMI_SEVERITA), "media"), rigaProva);
+  const esito = crea("div", { classe: "esito-filtro" }, sezioneProva);
+  crea("button", {
+    classe: "primario", testo: "▶ Prova",
+    onclick: async (e) => {
+      const dati = new FormData();
+      if (file.files[0]) dati.append("file", file.files[0]);
+      else dati.append("url", url.value.trim());
+      dati.append("severita", severitaProva.value);
+      e.target.disabled = true;
+      esito.replaceChildren(crea("p", { classe: "tenue", testo: "Controllo in corso… (un video o una diretta possono richiedere fino a un minuto)" }));
+      try {
+        const r = await api("POST", "/api/plugin/filtro-contenuti/", dati);
+        esito.replaceChildren();
+        crea("p", {
+          classe: `messaggio ${r.vietato ? "errore" : "ok"}`,
+          testo: !r.vietato
+            ? `✅ Ammesso: nudo al massimo al ${percento(r.punteggio)}.`
+            : r.tipo === "video"
+              ? `🛡 Il video si caricherebbe con ${r.coperture.length} ${r.coperture.length === 1 ? "tratto coperto" : "tratti coperti"}: ${r.coperture.map(([da, a]) => `${Math.round(da)}–${Math.round(a)} s`).join(", ")}.`
+              : r.tipo === "diretta"
+                ? `⛔ Vietata: nudo al ${percento(r.punteggio)}. Andrebbe bloccata e sostituita dall'immagine di riserva.`
+                : `⛔ Vietata: nudo al ${percento(r.punteggio)}. Non si caricherebbe.`,
+        }, esito);
+        const c = r.categorie || {};
+        crea("p", { classe: "tenue", testo: `Fotogramma peggiore: nudo ${percento(c.nudo)} · intimo/costume ${percento(c.intimo)} · vestito ${percento(c.vestito)} · altro ${percento(c.altro)} · fotogrammi guardati: ${r.fotogrammi}` }, esito);
+      } catch (errore) {
+        esito.replaceChildren(crea("p", { classe: "messaggio errore", testo: errore.message }));
+      } finally {
+        e.target.disabled = false;
+      }
+    },
+  }, crea("div", { classe: "riga" }, sezioneProva));
+
+  // --- Dirette controllate ---
+  const sezioneDirette = sezione("Dirette sotto controllo");
+  if (!f.dirette_controllate.length) {
+    crea("p", { classe: "vuoto", testo: "Nessuna: le dirette aggiunte con il filtro attivo per le dirette compaiono qui." }, sezioneDirette);
+  } else {
+    crea("p", { classe: "nota", testo: "In onda va solo una diretta «Verificata». Una diretta bloccata non torna più in onda; una non verificabile (il server non la raggiunge) si riprova ogni qualche ora." }, sezioneDirette);
+    const corpoDirette = tabella(["Canale", "Bollino", "Stato", "Ultimo controllo", "Nudo (max)"], sezioneDirette);
+    for (const d of f.dirette_controllate) {
+      const riga = crea("tr", {}, corpoDirette);
+      const nome = crea("td", {}, riga);
+      crea("strong", { testo: d.nome }, nome);
+      crea("div", { classe: "tenue", testo: d.url }, nome);
+      const canale = d.esito?.canale;
+      crea("td", { testo: canale ? `${{ riconosciuto: "🟢", sconosciuto: "🟡", vietato: "🔴" }[canale.bollino] || ""} ${canale.motivo}` : "—" }, riga);
+      crea("td", { testo: STATI_DIRETTA[d.controllo] || d.stato, title: d.esito?.errore || "" }, riga);
+      crea("td", { testo: quando(d.controllo_il) }, riga);
+      crea("td", { testo: d.esito?.punteggio != null ? percento(d.esito.punteggio) : "—" }, riga);
+    }
+  }
+
+  // --- Ultimi rifiuti ---
+  const sezioneRifiuti = sezione("Ultimi blocchi");
+  if (!f.rifiuti.length) {
+    crea("p", { classe: "vuoto", testo: "Nessun contenuto bloccato finora." }, sezioneRifiuti);
+  } else {
+    const corpoRifiuti = tabella(["Quando", "Chi", "Cosa", "Nome", "Nudo / coperto"], sezioneRifiuti);
+    for (const r of f.rifiuti) {
+      const riga = crea("tr", {}, corpoRifiuti);
+      crea("td", { testo: quando(r.quando) }, riga);
+      crea("td", { testo: r.utente || "controllo automatico" }, riga);
+      crea("td", { testo: { diretta_bloccata_filtro: "Diretta bloccata", video_coperto_filtro: "Video con tratti coperti" }[r.azione] || "Immagine rifiutata" }, riga);
+      crea("td", { testo: r.nome }, riga);
+      crea("td", { testo: r.azione === "video_coperto_filtro" ? `${r.secondi} s coperti` : percento(r.punteggio) }, riga);
+    }
+    crea("p", { classe: "tenue", testo: "L'elenco completo è nel Registro operazioni." }, sezioneRifiuti);
+  }
+}

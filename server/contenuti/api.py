@@ -15,13 +15,14 @@ from rest_framework.views import APIView
 
 from audit.models import registra
 from clienti.models import Abilitazioni
-from core.api import CONTENUTI, TUTTI, RiferimentoCliente, ViewSetCliente, VistaConContesto, sedi_visibili
+from core.api import CONTENUTI, GESTIONE, TUTTI, RiferimentoCliente, ViewSetCliente, VistaConContesto, sedi_visibili
 from core.contesto import contesto_cliente
 from dispositivi.api import VistaPlayer, credenziale_dalla_richiesta
 from clienti.models import Insegna
 from dispositivi.models import GruppoMonitor, Monitor
 
 from layout import fonti
+from plugin import canali as canali_db
 from plugin import filtro
 
 from . import palinsesto
@@ -30,6 +31,14 @@ from . import campagne, dirette, listini, messa_in_onda
 from .models import Campagna, Contenuto, ElementoPlaylist, EventoStraordinario, Listino, MessaInOnda, Playlist, Promozione, Pubblicazione, Tipo, Uso
 
 MB = 1024 * 1024
+
+
+def con_bollini(canali: list[dict]) -> list[dict]:
+    """Con il Filtro contenuti attivo per le dirette, ogni canale ha il suo bollino (vedi plugin.canali)."""
+    if filtro.severita_per("diretta") is None:
+        return canali
+    dati = canali_db.indice()
+    return [{**c, "bollino": canali_db.valuta(c, dati)} for c in canali]
 
 
 class ContenutoVietato(Exception):
@@ -43,13 +52,16 @@ class ContenutoVietato(Exception):
         self.nome, self.tipo, self.esito = nome, tipo, esito
 
 
-def controlla_con_filtro(file, tipo: str) -> None:
-    """Immagini e video passano dal filtro, se l'azienda l'ha attivato per quel tipo."""
+def controlla_con_filtro(file, tipo: str):
+    """Immagini e video passano dal filtro, se l'azienda l'ha attivato per quel tipo.
+
+    Un'immagine vietata non si carica (ContenutoVietato). Un video sì: l'esito dice quali tratti
+    coprire sullo schermo. Restituisce l'esito (None se il filtro non c'entra)."""
     if tipo not in (Tipo.IMMAGINE, Tipo.VIDEO):
-        return
+        return None
     severita = filtro.severita_per(tipo)
     if severita is None:
-        return
+        return None
     try:
         esito = (filtro.controlla_immagine if tipo == Tipo.IMMAGINE else filtro.controlla_video)(file, severita)
     except filtro.FiltroNonDisponibile:
@@ -59,8 +71,9 @@ def controlla_con_filtro(file, tipo: str) -> None:
         )})
     except Exception:
         raise serializers.ValidationError({"file": "Il filtro contenuti non riesce a leggere il file: non si carica."})
-    if esito.vietato:
+    if esito.vietato and tipo == Tipo.IMMAGINE:
         raise ContenutoVietato(getattr(file, "name", ""), tipo, esito)
+    return esito
 
 
 def _servi(contenuto):
@@ -82,8 +95,12 @@ class ContenutoSerializer(serializers.ModelSerializer):
         fields = [
             "id", "nome", "tipo", "file", "url", "mime", "dimensione", "sha256", "durata",
             "larghezza", "altezza", "orientamento", "logo_url", "autorizzata_da", "autorizzata_il", "caricato_da", "uso", "creato",
+            "controllo", "coperture",
         ]
-        read_only_fields = ["tipo", "mime", "dimensione", "sha256", "logo_url", "autorizzata_da", "autorizzata_il", "caricato_da", "creato"]
+        read_only_fields = [
+            "tipo", "mime", "dimensione", "sha256", "logo_url", "autorizzata_da", "autorizzata_il", "caricato_da", "creato",
+            "controllo", "coperture",
+        ]
         extra_kwargs = {
             "nome": {"required": False},
             "durata": {"min_value": 1},
@@ -122,7 +139,9 @@ class ContenutoSerializer(serializers.ModelSerializer):
         dati["tipo"], dati["mime"] = formato
         if dati.get("uso") == Uso.RISERVA and dati["tipo"] not in (Tipo.IMMAGINE, Tipo.VIDEO):
             raise serializers.ValidationError({"file": "La riserva di uno schermo è un'immagine o un video."})
-        controlla_con_filtro(file, dati["tipo"])
+        esito = controlla_con_filtro(file, dati["tipo"])
+        if esito is not None and esito.coperture:
+            dati["coperture"] = esito.coperture
         dati["sha256"], dati["dimensione"] = impronta_e_dimensione(file)
         if dati["tipo"] == Tipo.IMMAGINE:
             misure = misure_immagine(file)
@@ -155,11 +174,14 @@ class ContenutiViewSet(ViewSetCliente):
             return Response({"file": [
                 f"{cosa} è stat{'a' if vietato.tipo == Tipo.IMMAGINE else 'o'} rifiutat{'a' if vietato.tipo == Tipo.IMMAGINE else 'o'} "
                 f"dal filtro contenuti: contiene nudo o contenuti espliciti{dove}. Non si può caricare."
-            ], "filtro": vietato.esito.come_dati()}, status=status.HTTP_400_BAD_REQUEST)
+            ]}, status=status.HTTP_400_BAD_REQUEST)
 
     def perform_create(self, serializer):
         contenuto = serializer.save(caricato_da=self.request.user.username)
         registra(self.request.user, "contenuto_caricato", contenuto, nome=contenuto.nome, dimensione=contenuto.dimensione)
+        if contenuto.coperture:
+            secondi = round(sum(a - da for da, a in contenuto.coperture))
+            registra(self.request.user, "video_coperto_filtro", contenuto, nome=contenuto.nome, tratti=contenuto.coperture, secondi=secondi)
 
     def perform_update(self, serializer):
         registra(self.request.user, "contenuto_modificato", serializer.save())
@@ -191,7 +213,8 @@ class ContenutiViewSet(ViewSetCliente):
                 if dirette.e_flusso_hls(testo):
                     nome = indirizzo.rstrip("/").rsplit("/", 2)[-2 if indirizzo.endswith("index.m3u8") else -1][:200]
                     gia = Contenuto.objects.filter(tipo=Tipo.DIRETTA, url=indirizzo).exists()
-                    return Response({"canali": [{"nome": nome, "url": indirizzo, "logo": "", "gruppo": "", "presente": gia}]})
+                    canale = {"nome": nome, "url": indirizzo, "logo": "", "gruppo": "", "tvg_id": "", "presente": gia}
+                    return Response({"canali": con_bollini([canale]), "filtro": filtro.severita_per("diretta") is not None})
         except exceptions.ValidationError:
             raise
         except Exception:
@@ -200,7 +223,10 @@ class ContenutiViewSet(ViewSetCliente):
         if not canali:
             raise exceptions.ValidationError({"url": "Nessun canale trovato: non sembra una lista M3U."})
         gia = set(Contenuto.objects.filter(tipo=Tipo.DIRETTA).values_list("url", flat=True))
-        return Response({"canali": [{**c, "presente": c["url"] in gia} for c in canali]})
+        return Response({
+            "canali": con_bollini([{**c, "presente": c["url"] in gia} for c in canali]),
+            "filtro": filtro.severita_per("diretta") is not None,
+        })
 
     @action(detail=False, methods=["post"])
     def dirette(self, request):
@@ -223,10 +249,35 @@ class ContenutiViewSet(ViewSetCliente):
                 "url": url,
                 "nome": str(canale.get("nome") or "").strip()[:200],
                 "logo": logo if logo.lower().startswith(("http://", "https://")) else "",
+                "gruppo": str(canale.get("gruppo") or "")[:100],
+                "tvg_id": str(canale.get("tvg_id") or "")[:100],
             })
-        creati = dirette.crea_dirette(validi, request.user)
-        registra(request.user, "dirette_aggiunte", None, canali=len(creati), autorizzazione_confermata=True)
+        bollini = self._verifica_bollini(request, validi)
+        creati = dirette.crea_dirette(validi, request.user, bollini)
+        conteggio = {}
+        for valutazione in bollini.values():
+            conteggio[valutazione["bollino"]] = conteggio.get(valutazione["bollino"], 0) + 1
+        registra(request.user, "dirette_aggiunte", None, canali=len(creati), autorizzazione_confermata=True, **conteggio)
         return Response(ContenutoSerializer(creati, many=True).data, status=status.HTTP_201_CREATED)
+
+    def _verifica_bollini(self, request, canali) -> dict:
+        """Con il Filtro contenuti attivo per le dirette: i canali vietati non entrano, gli
+        sconosciuti solo se chi gestisce l'azienda lo conferma. Il bollino si ricalcola qui."""
+        if filtro.severita_per("diretta") is None:
+            return {}
+        bollini = {c["url"]: c["bollino"] for c in con_bollini(canali)}
+        vietati = [c["nome"] or c["url"] for c in canali if bollini[c["url"]]["bollino"] == canali_db.VIETATO]
+        if vietati:
+            elenco = ", ".join(vietati[:5]) + (f" e altri {len(vietati) - 5}" if len(vietati) > 5 else "")
+            raise exceptions.ValidationError({"canali": f"Canali vietati dal filtro contenuti (per adulti): {elenco}. Toglili dalla scelta."})
+        sconosciuti = [c for c in canali if bollini[c["url"]]["bollino"] == canali_db.SCONOSCIUTO]
+        if sconosciuti and request.data.get("conferma_sconosciuti") is not True:
+            raise exceptions.ValidationError({"conferma_sconosciuti": (
+                f"{len(sconosciuti)} canali non sono nel database dei canali: vanno confermati da chi gestisce l'azienda."
+            )})
+        if sconosciuti and request.user.ruolo not in GESTIONE:
+            raise exceptions.PermissionDenied("I canali sconosciuti li conferma solo chi gestisce l'azienda (Administrator).")
+        return bollini
 
     @action(detail=False, methods=["get", "post"])
     def pulizia(self, request):

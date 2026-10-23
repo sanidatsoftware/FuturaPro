@@ -66,6 +66,9 @@ class Contenuto(ModelloCliente):
     controllo_il = models.DateTimeField(null=True, blank=True)
     # L'esito dell'ultimo controllo: punteggi, motivo, tentativi falliti di fila.
     controllo_esito = models.JSONField(default=dict, blank=True)
+    # Video e plugin «Filtro contenuti»: i tratti con nudo ([da, a] in secondi) che sullo schermo
+    # restano coperti dall'immagine di riserva, senza audio.
+    coperture = models.JSONField(default=list, blank=True)
     creato = models.DateTimeField(auto_now_add=True)
 
     class Meta:

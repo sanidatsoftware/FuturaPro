@@ -137,6 +137,14 @@ Da internet si raggiungono solo la pagina del biglietto e i suoi dati, mai il pa
 attiva dal pannello in «Code → Coda sul telefono». Sul totem va rilanciata l'installazione
 (servizio code 1.2) perché il biglietto abbia il suo codice.
 
+### Filtro contenuti (facoltativo)
+
+Il plugin «Filtro contenuti» (niente nudo sugli schermi) usa un modello di riconoscimento che il
+server scarica da Hugging Face durante `installa.sh` / `aggiorna.sh` (89 MB, una volta sola). Il
+server deve poter raggiungere `huggingface.co` e i suoi indirizzi di download; per le dirette
+scarica ogni giorno anche il database dei canali da `iptv-org.github.io`. Se il modello non
+arriva, il pannello lo segnala in «Plugin → Filtro contenuti»: basta rilanciare l'aggiornamento.
+
 ### Email (facoltativo)
 
 Ogni azienda imposta il **suo** server di posta nel pannello, in «Impostazioni → Email (server di

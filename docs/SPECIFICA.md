@@ -752,6 +752,45 @@ chiedono prezzi e ingredienti al suo servizio (`https://IP-master:8443/plugin/�
 **File troppo grandi da spedire.** `deploy/installa/struttura-sqlite.ps1` scrive struttura e
 righe di esempio in un testo di pochi KB e cerca dei codici in tutte le colonne.
 
+## 7ter. Plugin: Filtro contenuti (facoltativo)
+
+Niente nudo né contenuti espliciti sugli schermi. Lo attiva chi gestisce l'azienda (Administrator
+o SystemAdministrator) in «Plugin → Filtro contenuti», per tipo (immagini, video, dirette) e con
+una severità per ognuno (bassa, media, alta). Nessuna eccezione: quello che il filtro vieta non si
+sblocca. Vale per i contenuti nuovi; quelli già caricati restano come sono.
+
+- **Riconoscimento** (`plugin/filtro.py`): CLIP ViT-B/32 (licenza MIT) in ONNX quantizzato, sul
+  server, senza mandare immagini fuori. Ogni immagine si confronta con quattro descrizioni
+  (nudo, intimo/costume, vestito, nessuna persona; `plugin/modello/frasi.json`): si blocca solo
+  il nudo, l'intimo passa. Le immagini larghe o alte si guardano a pezzi quadrati sovrapposti
+  (CLIP vede un quadrato). Soglie di «nudo»: bassa 0,70, media 0,50, alta 0,35; taratura e
+  numeri in `plugin/modello/LEGGIMI.md`. Il modello (89 MB) non è nel repository: lo scarica la
+  costruzione dell'immagine Docker da Hugging Face con controllo SHA-256, e se non ci riesce
+  l'avvio del container riprova nella cartella dei dati. Senza modello, con il filtro attivo, i
+  contenuti di quel tipo non si caricano.
+- **Immagini**: controllate al caricamento; una vietata non si salva (risposta 400, rifiuto nel
+  registro): in coda va la successiva.
+- **Video**: controllati al caricamento su tutta la durata (un fotogramma ogni 5 / 2 / 1 s). Il
+  video si salva; ogni fotogramma oltre la soglia diventa un tratto da coprire, dal fotogramma
+  guardato prima a quello dopo (`Contenuto.coperture`, `coperture` nella voce del manifest). Il
+  player copre quei tratti con l'immagine di riserva dello schermo (o il nero), senza audio.
+- **Dirette**: all'importazione di una lista M3U ogni canale ha un **bollino** dal database
+  pubblico iptv-org (`plugin/canali.py`, aggiornato ogni giorno): 🔴 vietato (per adulti nel
+  database, in lista nera, o con nome/gruppo da adulti) non si importa; 🟢 riconosciuto; 🟡
+  sconosciuto, che solo chi gestisce l'azienda può confermare. Una diretta nuova è «in verifica»
+  e va in onda solo dopo un controllo riuscito; poi il pianificatore la sorveglia: quelle in onda
+  ogni 15 / 5 / 2 minuti (4 / 6 / 10 fotogrammi), le altre ogni 6 ore, fino a 4 in parallelo.
+  Due fotogrammi di fila oltre la soglia (o uno ≥ 0,90) la bloccano per sempre; tre tentativi
+  falliti di fila la rendono «non verificabile». Nel manifest una diretta bloccata, in verifica
+  o non verificabile è sostituita dall'immagine di riserva dello schermo per la stessa durata
+  (senza riserva si passa al contenuto successivo).
+- **Limiti**: una diretta è controllata a intervalli, non fotogramma per fotogramma; tra un
+  controllo e l'altro, e fino al successivo aggiornamento del palinsesto sugli schermi, una scena
+  può restare visibile qualche minuto. Per questo valgono anche le fonti fidate (il bollino).
+- **API**: `GET/PUT /api/plugin/filtro-contenuti/` (gestione), `POST` per provare un file o una
+  diretta senza salvarli. Registro: `contenuto_rifiutato_filtro`, `video_coperto_filtro`,
+  `diretta_bloccata_filtro`, `filtro_contenuti_modificato`.
+
 ## 8. Player
 
 **Certificati senza confronti a occhio.** Lo script di Windows deve fidarsi del certificato

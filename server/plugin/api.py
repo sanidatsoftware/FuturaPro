@@ -15,6 +15,7 @@ from core.api import GESTIONE, RiferimentoCliente, VistaConContesto, ViewSetClie
 from core.email import cifra
 from dispositivi.models import Monitor
 
+from . import canali as canali_db
 from . import filtro
 from . import query as q
 from .models import FiltroContenuti, FontePlugin, ImpostazioniPlugin, TipoPlugin
@@ -340,6 +341,7 @@ class FiltroContenutiView(VistaConContesto, APIView):
 
         dati = FiltroContenutiSerializer(impostazioni).data
         dati["disponibile"] = filtro.disponibile()
+        dati["database_canali"] = canali_db.stato()
         dati["severita"] = {
             nome: {"soglia": round(v["soglia"] * 100), "ogni_secondi": v["ogni_secondi"],
                    "fotogrammi_diretta": v["fotogrammi_diretta"], "ricontrollo": v["ricontrollo"]}
@@ -351,10 +353,12 @@ class FiltroContenutiView(VistaConContesto, APIView):
              "stato": Controllo(c.controllo).label, "controllo_il": c.controllo_il, "esito": c.controllo_esito}
             for c in dirette
         ]
-        rifiuti = EventoAudit.objects.filter(azione__in=["contenuto_rifiutato_filtro", "diretta_bloccata_filtro"]).order_by("-quando")[:30]
+        rifiuti = EventoAudit.objects.filter(
+            azione__in=["contenuto_rifiutato_filtro", "diretta_bloccata_filtro", "video_coperto_filtro"]
+        ).order_by("-quando")[:30]
         dati["rifiuti"] = [
             {"quando": e.quando, "utente": e.utente, "azione": e.azione, "nome": e.dettagli.get("nome", ""),
-             "tipo": e.dettagli.get("tipo", "diretta"), "punteggio": e.dettagli.get("punteggio")}
+             "tipo": e.dettagli.get("tipo", "diretta"), "punteggio": e.dettagli.get("punteggio"), "secondi": e.dettagli.get("secondi")}
             for e in rifiuti
         ]
         return dati

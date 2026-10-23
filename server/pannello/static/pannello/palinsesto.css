@@ -458,6 +458,13 @@ code { background: var(--carta-forte); padding: 1px 6px; border-radius: 5px; }
 .canale { display: grid; grid-template-columns: auto 40px 1fr; gap: 8px; align-items: center; padding: 6px; border-radius: 8px; cursor: pointer; }
 .canale:hover { background: var(--carta-hover); }
 .canale.presente { opacity: .6; }
+/* Filtro contenuti: il bollino del canale; quelli vietati non si scelgono. */
+.canale.vietato { opacity: .5; cursor: not-allowed; }
+.testi-canale small.bollino { display: block; }
+.testi-canale small.bollino.vietato { color: var(--rosso); }
+.conferma-sconosciuti { font-weight: 500; }
+.didascalia .stato-filtro { display: block; font-weight: 600; color: var(--ambra); }
+.didascalia .stato-filtro.bloccata, .didascalia .stato-filtro.irraggiungibile { color: var(--rosso); }
 .dirette-libreria:not(:empty) { margin: 12px 0; padding: 12px; border: 1px solid var(--linea); border-radius: 12px; }
 .dirette-libreria .lista-canali { max-height: 220px; }
 .dirette-libreria .canale { grid-template-columns: 40px 1fr auto; cursor: default; }

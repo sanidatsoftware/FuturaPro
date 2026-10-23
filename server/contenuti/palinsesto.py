@@ -194,6 +194,8 @@ def _voce(contenuto) -> dict:
             dimensione=contenuto.dimensione,
             mime=contenuto.mime,
         )
+        if contenuto.coperture:
+            voce["coperture"] = contenuto.coperture  # Filtro contenuti: tratti coperti dalla riserva
     return voce
 
 
@@ -282,14 +284,21 @@ def manifest(monitor) -> dict:
         playlist.setdefault(str(elemento.playlist_id), []).append(voce)
         contenuti[str(elemento.contenuto_id)] = elemento.contenuto
 
-    # Plugin «Filtro contenuti»: le dirette bloccate (o non ancora verificate) non arrivano agli schermi.
+    # Plugin «Filtro contenuti»: le dirette bloccate (o non ancora verificate) non arrivano agli
+    # schermi; al loro posto, per la stessa durata, l'immagine di riserva dello schermo (senza
+    # riserva si passa al contenuto successivo).
     esclusi = dirette_escluse(contenuti)
     if esclusi:
         for chiave in esclusi:
             del contenuti[chiave]
-        playlist = {chiave: [v for v in voci if v["contenuto"] not in esclusi] for chiave, voci in playlist.items()}
-        eventi = [e for e in eventi if str(e.contenuto_id) not in esclusi]
-        interruzioni = [e for e in interruzioni if e["contenuto"] not in esclusi]
+        sostituisci = lambda voce: {**voce, "contenuto": riserva, "riserva": True, "audio": False} if riserva else None  # noqa: E731
+        playlist = {
+            chiave: [v if v["contenuto"] not in esclusi else sostituisci(v) for v in voci]
+            for chiave, voci in playlist.items()
+        }
+        playlist = {chiave: [v for v in voci if v] for chiave, voci in playlist.items()}
+        interruzioni = [e if e["contenuto"] not in esclusi else sostituisci(e) for e in interruzioni]
+        interruzioni = [e for e in interruzioni if e]
 
     corpo = {
         "monitor": str(monitor.id),
@@ -338,6 +347,12 @@ def manifest(monitor) -> dict:
         # La stampante dei biglietti abbinata (per la stampa di prova); null: quella del layout.
         "stampante": per_il_player_stampante(monitor.stampante if monitor.stampante_id else None),
     }
+    if esclusi:
+        # Eventi straordinari con una diretta bloccata: la riserva al suo posto, o niente evento.
+        corpo["eventi"] = [
+            {**e, "contenuto": riserva, "audio": False} if e["contenuto"] in esclusi and riserva else e
+            for e in corpo["eventi"] if e["contenuto"] not in esclusi or riserva
+        ]
     # I plugin (Info Prezzo, Info Ingredienti): come mostrarli e, al Totem Master, dove cercare.
     corpo["plugin"], servizio_plugin = plugin_del_monitor(monitor, corpo["code"])
     if servizio_plugin:

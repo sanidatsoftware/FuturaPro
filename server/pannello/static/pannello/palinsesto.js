@@ -430,6 +430,12 @@ function disegnaGallerie(box, visibili, uso) {
       }
       const didascalia = crea("div", { classe: "didascalia" }, scheda);
       crea("strong", { testo: c.nome }, didascalia);
+      // Filtro contenuti: una diretta va in onda solo «verificata»; bloccata non va mai.
+      const filtro = { attesa: "⏳ in verifica dal filtro", bloccata: "⛔ bloccata dal filtro: non va in onda", irraggiungibile: "⚠️ non verificabile: non va in onda" }[c.controllo];
+      if (filtro) crea("span", { classe: `stato-filtro ${c.controllo}`, testo: filtro }, didascalia);
+      if (c.coperture?.length) {
+        crea("span", { classe: "stato-filtro", testo: `🛡 ${c.coperture.length} ${c.coperture.length === 1 ? "tratto coperto" : "tratti coperti"} dal filtro` }, didascalia);
+      }
       crea("span", {
         testo: c.tipo === "diretta"
           ? `diretta · ${minuti(c.durata)} min come intermezzo${c.autorizzata_da ? ` · autorizzata da ${c.autorizzata_da}` : ""}`
@@ -624,8 +630,13 @@ async function caricaFile(file, cartella) {
   for (const c of caricati) S.selezione.add(c.id);
   disegnaLibreria();
   disegnaSelezione();
-  if (errori.length) avvisa(`Non caricati: ${errori.join(" · ")}`);
-  else avvisa(`${caricati.length} immagini caricate${scartati ? ` (${scartati} file ignorati)` : ""}: sono già selezionate.`, "ok");
+  // Filtro contenuti: i video con tratti coperti si caricano, ma lo si dice.
+  const coperti = caricati.filter((c) => c.coperture?.length);
+  const notaCoperti = coperti.length
+    ? ` 🛡 ${coperti.map((c) => `«${c.nome}»`).join(", ")}: il filtro contenuti copre ${coperti.length === 1 ? "alcuni tratti" : "alcuni tratti di questi video"} con l'immagine di riserva degli schermi.`
+    : "";
+  if (errori.length) avvisa(`Non caricati: ${errori.join(" · ")}${notaCoperti}`);
+  else avvisa(`${caricati.length} immagini caricate${scartati ? ` (${scartati} file ignorati)` : ""}: sono già selezionate.${notaCoperti}`, "ok");
   if (cartella && caricati.length && !S.promozione) {
     // Una cartella è quasi sempre una promozione: la si propone già pronta.
     chiediNuovaPromozione({ nome: cartella, contenuti: caricati.map((c) => c.id) });
@@ -1717,11 +1728,21 @@ function preparaDirette() {
   const aggiungi = document.getElementById("aggiungi-dirette");
   const scelti = new Map(); // url → canale
   let canali = [];
+  // Plugin «Filtro contenuti» attivo per le dirette: i canali hanno il bollino; quelli vietati non
+  // si scelgono, quelli sconosciuti (e quelli a mano) vanno confermati da chi gestisce l'azienda.
+  let filtroAttivo = false;
+  const sconosciuti = crea("label", { classe: "conferma-legale conferma-sconosciuti", hidden: true });
+  const confermaSconosciuti = crea("input", { type: "checkbox" }, sconosciuti);
+  const testoSconosciuti = crea("span", {}, sconosciuti);
+  conferma.closest("label").before(sconosciuti);
 
   const aggiorna = () => {
     const manuale = document.getElementById("url-diretta").value.trim();
     const quanti = scelti.size + (manuale ? 1 : 0);
-    aggiungi.disabled = !quanti || !conferma.checked;
+    const daConfermare = [...scelti.values()].filter((c) => c.bollino?.bollino === "sconosciuto").length + (manuale && filtroAttivo ? 1 : 0);
+    sconosciuti.hidden = !daConfermare;
+    testoSconosciuti.textContent = ` 🟡 Confermo ${daConfermare === 1 ? "il canale sconosciuto" : `i ${daConfermare} canali sconosciuti`} (non presenti nel database dei canali): li ho verificati io. Mentre sono in onda resteranno comunque sorvegliati dal filtro.`;
+    aggiungi.disabled = !quanti || !conferma.checked || (daConfermare > 0 && !confermaSconosciuti.checked);
     aggiungi.textContent = quanti ? `Aggiungi ${quanti} ${quanti === 1 ? "canale" : "canali"} alla libreria` : "Aggiungi alla libreria";
   };
 
@@ -1734,15 +1755,26 @@ function preparaDirette() {
     const gruppo = crea("select", {}, filtri);
     crea("option", { value: "", testo: "Tutte le categorie" }, gruppo);
     for (const g of gruppi) crea("option", { value: g, testo: g }, gruppo);
+    const bollino = crea("select", { hidden: !filtroAttivo }, filtri);
+    for (const [v, t] of [["", "Tutti i bollini"], ["riconosciuto", "🟢 Riconosciuti"], ["sconosciuto", "🟡 Sconosciuti"], ["vietato", "🔴 Vietati"]]) crea("option", { value: v, testo: t }, bollino);
+    if (filtroAttivo) {
+      const conta = (b) => canali.filter((c) => c.bollino?.bollino === b).length;
+      crea("p", {
+        classe: "nota",
+        testo: `Filtro contenuti: 🟢 ${conta("riconosciuto")} riconosciuti · 🟡 ${conta("sconosciuto")} sconosciuti (da confermare) · 🔴 ${conta("vietato")} vietati (per adulti: non si possono scegliere).`,
+      }, elenco);
+    }
     const lista = crea("div", { classe: "lista-canali" }, elenco);
     const riempi = () => {
       lista.replaceChildren();
       const testo = cerca.value.trim().toLowerCase();
-      const visibili = canali.filter((c) => (!testo || c.nome.toLowerCase().includes(testo)) && (!gruppo.value || c.gruppo === gruppo.value));
+      const visibili = canali.filter((c) => (!testo || c.nome.toLowerCase().includes(testo)) && (!gruppo.value || c.gruppo === gruppo.value)
+        && (!bollino.value || c.bollino?.bollino === bollino.value));
       for (const c of visibili.slice(0, 400)) {
-        const voce = crea("label", { classe: `canale${c.presente ? " presente" : ""}` }, lista);
+        const vietato = c.bollino?.bollino === "vietato";
+        const voce = crea("label", { classe: `canale${c.presente ? " presente" : ""}${vietato ? " vietato" : ""}` }, lista);
         crea("input", {
-          type: "checkbox", checked: scelti.has(c.url),
+          type: "checkbox", checked: scelti.has(c.url), disabled: vietato,
           onchange: (e) => { e.target.checked ? scelti.set(c.url, c) : scelti.delete(c.url); aggiorna(); },
         }, voce);
         const logo = crea("span", { classe: "logo-canale" }, voce);
@@ -1753,11 +1785,16 @@ function preparaDirette() {
         const testi = crea("span", { classe: "testi-canale" }, voce);
         crea("strong", { testo: c.nome }, testi);
         crea("small", { testo: [c.gruppo, c.presente ? "già in libreria: sceglilo per riusarlo" : ""].filter(Boolean).join(" · ") }, testi);
+        if (c.bollino) {
+          const segno = { riconosciuto: "🟢", sconosciuto: "🟡", vietato: "🔴" }[c.bollino.bollino];
+          crea("small", { classe: `bollino ${c.bollino.bollino}`, testo: `${segno} ${c.bollino.motivo}` }, testi);
+        }
       }
       if (visibili.length > 400) crea("p", { classe: "nota", testo: `Mostrati 400 canali su ${visibili.length}: usa la ricerca.` }, lista);
     };
     cerca.addEventListener("input", riempi);
     gruppo.addEventListener("change", riempi);
+    bollino.addEventListener("change", riempi);
     riempi();
   };
 
@@ -1811,17 +1848,20 @@ function preparaDirette() {
 
   document.getElementById("apri-dirette").addEventListener("click", () => {
     conferma.checked = false;
+    confermaSconosciuti.checked = false;
     disegnaGiaInLibreria();
     aggiorna();
     finestra.showModal();
   });
   conferma.addEventListener("change", aggiorna);
+  confermaSconosciuti.addEventListener("change", aggiorna);
   document.getElementById("url-diretta").addEventListener("input", aggiorna);
 
   const leggi = async (dati) => {
     try {
       const risposta = await api("POST", "/api/contenuti/m3u/", dati);
       canali = risposta.canali;
+      filtroAttivo = Boolean(risposta.filtro);
       scelti.clear();
       disegnaCanali();
       aggiorna();
@@ -1849,13 +1889,15 @@ function preparaDirette() {
   });
 
   aggiungi.addEventListener("click", async () => {
-    const elencoScelti = [...scelti.values()].map((c) => ({ nome: c.nome, url: c.url, logo: c.logo }));
+    const elencoScelti = [...scelti.values()].map((c) => ({ nome: c.nome, url: c.url, logo: c.logo, gruppo: c.gruppo, tvg_id: c.tvg_id }));
     const manuale = document.getElementById("url-diretta").value.trim();
     if (manuale) elencoScelti.push({ nome: document.getElementById("nome-diretta").value.trim() || manuale, url: manuale, logo: "" });
     const gia = new Set(S.contenuti.filter((c) => c.tipo === "diretta").map((c) => c.url));
     const riusate = elencoScelti.filter((c) => gia.has(c.url)).length;
     try {
-      const creati = await api("POST", "/api/contenuti/dirette/", { canali: elencoScelti, autorizzazione: conferma.checked });
+      const creati = await api("POST", "/api/contenuti/dirette/", {
+        canali: elencoScelti, autorizzazione: conferma.checked, conferma_sconosciuti: confermaSconosciuti.checked,
+      });
       finestra.close();
       document.getElementById("url-diretta").value = "";
       document.getElementById("nome-diretta").value = "";
@@ -1879,6 +1921,11 @@ function preparaDirette() {
         + "è nel riquadro «Dirette» della vista «Tutti»; mettila in una promozione.", "ok");
       document.querySelector("#gallerie .galleria.diretta")?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (errore) {
+      // Il server ha trovato canali da confermare (es. un canale aggiunto a mano): si mostra la conferma.
+      if (/confermat/.test(errore.message) && !filtroAttivo) {
+        filtroAttivo = true;
+        aggiorna();
+      }
       avvisa(errore.message);
     }
   });

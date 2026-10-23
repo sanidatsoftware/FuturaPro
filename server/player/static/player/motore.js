@@ -517,6 +517,7 @@ class ZonaSlide {
       if (!caricato || !this.attivo) return null;
     }
 
+    if (voce.tipo === "video" && voce.coperture?.length) await this.copri(media, strato, voce.coperture);
     this.entra(strato);
     this.corrente = elemento.contenuto;
 
@@ -540,6 +541,33 @@ class ZonaSlide {
       return { fine };
     }
     return { fine: attendi((elemento.durata || 10) * 1000) };
+  }
+
+  // Plugin «Filtro contenuti»: i tratti del video con nudo ([da, a] in secondi, decisi dal server
+  // al caricamento) restano coperti dall'immagine di riserva dello schermo (o dal nero), muti.
+  async copri(media, strato, coperture) {
+    const m = this.motore.manifest;
+    const copertura = crea("div", "copertura", strato);
+    const riserva = m.riserva && m.contenuti[m.riserva];
+    if (riserva?.tipo === "immagine") {
+      const url = await this.motore.fonte.file(m.riserva, riserva).catch(() => null);
+      if (url) crea("img", "", copertura).src = url;
+    }
+    let audioPrima = null;
+    const controlla = () => {
+      const t = media.currentTime;
+      const coperto = coperture.some(([da, a]) => t >= da && t < a);
+      copertura.style.display = coperto ? "block" : "none";
+      if (coperto && audioPrima === null) {
+        audioPrima = media.muted;
+        media.muted = true;
+      } else if (!coperto && audioPrima !== null) {
+        media.muted = audioPrima;
+        audioPrima = null;
+      }
+    };
+    controlla();
+    for (const evento of ["timeupdate", "seeking", "playing"]) media.addEventListener(evento, controlla);
   }
 
   entra(nuovo) {
