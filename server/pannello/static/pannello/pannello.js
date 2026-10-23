@@ -4,7 +4,7 @@
 import { attivaAiuti } from "./aiuto.js";
 import { VOCI, clienteRicordato, disegnaMenu, ricordaCliente } from "./menu.js";
 import { preparaSchedeImpostazioni, schedaEmail } from "./schede-impostazioni.js";
-import { preparaSchedePlugin, schedaInfoIngredienti, schedaInfoPrezzo } from "./schede-plugin.js";
+import { preparaSchedePlugin, schedaFiltroContenuti, schedaInfoIngredienti, schedaInfoPrezzo } from "./schede-plugin.js";
 import { preparaSchedeTicket, schedaLayoutTicket } from "./schede-ticket.js";
 import { osservaAiuti } from "./aiuti-campi.js";
 import { apriRiquadro, paginaIncorporata } from "./riquadro.js";
@@ -151,6 +151,7 @@ const SCHEDE = {
   layout_ticket: schedaLayoutTicket,
   info_prezzo: schedaInfoPrezzo,
   info_ingredienti: schedaInfoIngredienti,
+  filtro_contenuti: schedaFiltroContenuti,
   listini: schedaListini,
   messa_in_onda: schedaMessaInOnda,
   email: schedaEmail,

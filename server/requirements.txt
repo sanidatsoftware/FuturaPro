@@ -5,3 +5,7 @@ defusedxml>=0.7,<0.8
 gunicorn>=23,<24
 Pillow>=11,<13
 cryptography>=44,<51
+# Plugin «Filtro contenuti»: il modello che riconosce il nudo (ONNX) e la lettura di video e dirette.
+onnxruntime>=1.20,<2
+numpy>=2,<3
+av>=14,<20

@@ -65,3 +65,31 @@ class FontePlugin(ModelloCliente):
     class Meta:
         verbose_name_plural = "fonti plugin"
         constraints = [models.UniqueConstraint(fields=["cliente", "tipo", "sede"], name="fonte_plugin_una_per_sede")]
+
+
+class Severita(models.TextChoices):
+    BASSA = "bassa", "Bassa"
+    MEDIA = "media", "Media"
+    ALTA = "alta", "Alta"
+
+
+class FiltroContenuti(ModelloCliente):
+    """Il plugin «Filtro contenuti»: niente nudo né contenuti espliciti sugli schermi.
+
+    Lo attiva chi gestisce l'azienda (Administrator o SystemAdministrator), per tipo di contenuto
+    e con una severità per ognuno (vedi ``filtro``). Non ci sono eccezioni: quello che il filtro
+    riconosce come vietato non si carica (immagini, video) o non va in onda (dirette), e
+    nessuno lo può sbloccare. Vale per i contenuti nuovi: quelli già caricati restano come sono.
+    """
+
+    immagini = models.BooleanField(default=False)
+    severita_immagini = models.CharField(max_length=5, choices=Severita.choices, default=Severita.MEDIA)
+    video = models.BooleanField(default=False)
+    severita_video = models.CharField(max_length=5, choices=Severita.choices, default=Severita.MEDIA)
+    dirette = models.BooleanField(default=False)
+    severita_dirette = models.CharField(max_length=5, choices=Severita.choices, default=Severita.MEDIA)
+    modificato = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "filtro contenuti"
+        constraints = [models.UniqueConstraint(fields=["cliente"], name="filtro_uno_per_cliente")]

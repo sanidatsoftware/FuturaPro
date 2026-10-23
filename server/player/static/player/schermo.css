@@ -23,6 +23,9 @@ html, body {
 
 /* Slide: gli strati si sovrappongono durante la transizione. */
 .strato { position: absolute; inset: 0; }
+/* Filtro contenuti: copre i tratti vietati di un video con la riserva dello schermo (o il nero). */
+.copertura { position: absolute; inset: 0; z-index: 2; display: none; background: #000; }
+.copertura img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .media { width: 100%; height: 100%; border: 0; display: block; background: transparent; }
 .media.sfocato { position: absolute; inset: 0; object-fit: cover; filter: blur(28px) brightness(0.85); transform: scale(1.15); }
 .strato > .media:not(.sfocato), .zona > .media:not(.sfocato) { position: relative; }

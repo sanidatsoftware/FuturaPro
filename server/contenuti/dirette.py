@@ -10,7 +10,9 @@ from django.utils import timezone
 
 from layout.fonti import scarica
 
-from .models import Contenuto, Tipo
+from plugin import filtro
+
+from .models import Contenuto, Controllo, Tipo
 
 MASSIMO_LISTA = 8 * 1024 * 1024
 MASSIMO_CANALI = 5000
@@ -25,7 +27,7 @@ def e_flusso_hls(testo: str) -> bool:
 
 
 def leggi_m3u(testo: str) -> list[dict]:
-    """I canali di una lista M3U/M3U8 estesa: nome, indirizzo, logo e gruppo."""
+    """I canali di una lista M3U/M3U8 estesa: nome, indirizzo, logo, gruppo e codice tvg-id."""
     canali, visti, informazioni = [], set(), None
     for riga in testo.splitlines():
         riga = riga.strip()
@@ -38,6 +40,8 @@ def leggi_m3u(testo: str) -> list[dict]:
                 "nome": (nome.strip() or attributi.get("tvg-name", "")).strip()[:200],
                 "logo": attributi.get("tvg-logo", "")[:500],
                 "gruppo": attributi.get("group-title", "")[:100],
+                # Il codice del canale nelle guide TV (es. «Rai1.it@SD»): serve al bollino del Filtro contenuti.
+                "tvg_id": attributi.get("tvg-id", "")[:100],
             }
             continue
         if riga.startswith("#"):
@@ -46,7 +50,7 @@ def leggi_m3u(testo: str) -> list[dict]:
             informazioni = None
             continue
         visti.add(riga)
-        voce = informazioni or {"nome": "", "logo": "", "gruppo": ""}
+        voce = informazioni or {"nome": "", "logo": "", "gruppo": "", "tvg_id": ""}
         voce["url"] = riga
         voce["nome"] = voce["nome"] or riga.rsplit("/", 1)[-1][:200]
         if not re.match(r"^https?://", voce["logo"], re.IGNORECASE):
@@ -68,10 +72,14 @@ def scarica_lista(url: str) -> str:
     return dati.decode("utf-8", errors="replace")
 
 
-def crea_dirette(canali: list[dict], utente) -> list[Contenuto]:
-    """Aggiunge i canali alla libreria; quelli con lo stesso indirizzo esistono già e si riusano."""
+def crea_dirette(canali: list[dict], utente, bollini: dict | None = None) -> list[Contenuto]:
+    """Aggiunge i canali alla libreria; quelli con lo stesso indirizzo esistono già e si riusano.
+
+    ``bollini``: per indirizzo, il bollino del Filtro contenuti (si conserva nell'esito del controllo)."""
     esistenti = {c.url: c for c in Contenuto.objects.filter(tipo=Tipo.DIRETTA)}
     adesso = timezone.now()
+    # Con il «Filtro contenuti» attivo per le dirette, quelle nuove vanno in onda solo dopo il controllo.
+    da_controllare = filtro.severita_per("diretta") is not None
     risultato = []
     for canale in canali:
         contenuto = esistenti.get(canale["url"])
@@ -81,6 +89,8 @@ def crea_dirette(canali: list[dict], utente) -> list[Contenuto]:
                 logo_url=canale.get("logo", "")[:500], durata=DURATA_DIRETTA,
                 # Le dirette sono quasi sempre 16:9: vanno ai monitor orizzontali.
                 larghezza=1920, altezza=1080, caricato_da=utente.username,
+                controllo=Controllo.ATTESA if da_controllare else "",
+                controllo_esito={"canale": bollini[canale["url"]]} if bollini and canale["url"] in bollini else {},
             )
         contenuto.autorizzata_da, contenuto.autorizzata_il = utente.username, adesso
         contenuto.save(update_fields=["autorizzata_da", "autorizzata_il"])

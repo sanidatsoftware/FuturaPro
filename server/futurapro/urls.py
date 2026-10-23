@@ -51,7 +51,7 @@ from layout.api import CercaLocalitaView, DatiZonaPlayerView, DatiZonaView, Layo
 from pannello import views as pannello_viste
 from pannello.views import pannello
 from player import views as player
-from plugin.api import FontiPluginViewSet, PluginView
+from plugin.api import FiltroContenutiView, FontiPluginViewSet, PluginView
 from teleassistenza.api import SessioniViewSet
 from utenti.api import IoView, UtentiClienteViewSet, UtentiPiattaformaViewSet
 
@@ -124,6 +124,7 @@ urlpatterns = [
     path("api/", include(router.urls)),
     path("api/piattaforma/aspetto/", pannello_viste.AspettoView.as_view(), name="aspetto"),
     path("api/email/", pannello_viste.EmailView.as_view(), name="email"),
+    path("api/plugin/filtro-contenuti/", FiltroContenutiView.as_view(), name="filtro-contenuti"),
     path("api/plugin/<str:tipo>/", PluginView.as_view(), name="plugin"),
     # La pagina di accesso è la nostra, anche per chi arriva dall'API navigabile.
     path("api/sessione/login/", pannello_viste.Accesso.as_view()),

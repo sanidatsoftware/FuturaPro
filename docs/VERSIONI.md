@@ -84,6 +84,15 @@ layout video, eliminacode, player per monitor e totem, teleassistenza, registro)
   quanto gli schermi chiedono le nuove pubblicazioni e le variazioni di palinsesto (da 10 secondi
   a un'ora, di solito 30 secondi) e se c'è un player nuovo (da un minuto a un giorno, di solito un
   minuto).
+- **Plugin «Filtro contenuti»** («Plugin → Filtro contenuti»): niente nudo sugli schermi, con il
+  riconoscimento sul server (CLIP, nessuna immagine esce). Si attiva per immagini, video e
+  dirette, ognuno con la sua severità; l'intimo e i costumi restano ammessi. Le immagini vietate
+  non si caricano; nei video i tratti vietati sono coperti dall'immagine di riserva dello
+  schermo, senza audio; le dirette hanno un bollino (🟢 riconosciuto, 🟡 sconosciuto da
+  confermare, 🔴 vietato) dal database dei canali iptv-org, vanno in onda solo dopo un controllo
+  e sono sorvegliate mentre sono in onda (una bloccata è sostituita dall'immagine di riserva).
+  Con «Prova» si controlla un file o una diretta senza salvarli. Al primo aggiornamento il
+  server scarica il modello (89 MB).
 
 ### Come ci si è arrivati: le tappe della 1.6 (ricostruite dallo storico)
 

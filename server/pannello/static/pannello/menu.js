@@ -25,6 +25,8 @@ export const VOCI = [
     aiuto: "Facoltativo: passando un prodotto davanti al lettore di codici a barre, lo schermo mostra descrizione e prezzo, con il banner «Offerta» se è in offerta." },
   { chiave: "info_ingredienti", gruppo: "Plugin", titolo: "Info Ingredienti", visibile: gestione,
     aiuto: "Facoltativo: passando l'etichetta di un prodotto della bilancia, lo schermo mostra ingredienti, allergeni e (se vuoi) il prezzo." },
+  { chiave: "filtro_contenuti", gruppo: "Plugin", titolo: "Filtro contenuti", visibile: gestione,
+    aiuto: "Niente nudo sugli schermi: controlla immagini, video e dirette, con la severità per ognuno; intimo e costumi restano ammessi." },
   { chiave: "stato", gruppo: "Report & Log", titolo: "Stato e allarmi", visibile: () => true,
     aiuto: "Quali schermi sono in linea, da quanto sono spenti o scollegati, la disponibilità degli ultimi giorni e gli avvisi via email." },
   { chiave: "distribuzione", gruppo: "Report & Log", titolo: "Distribuzione contenuti", visibile: () => true, serveCliente: false,

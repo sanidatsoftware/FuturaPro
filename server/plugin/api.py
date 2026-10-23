@@ -15,8 +15,10 @@ from core.api import GESTIONE, RiferimentoCliente, VistaConContesto, ViewSetClie
 from core.email import cifra
 from dispositivi.models import Monitor
 
+from . import canali as canali_db
+from . import filtro
 from . import query as q
-from .models import FontePlugin, ImpostazioniPlugin, TipoPlugin
+from .models import FiltroContenuti, FontePlugin, ImpostazioniPlugin, TipoPlugin
 
 COLORE = re.compile(r"^#[0-9a-fA-F]{6}$")
 CARATTERI = ["sans-serif", "serif", "Arial", "Verdana", "Tahoma", "Georgia", "Roboto", "Montserrat", "Oswald"]
@@ -314,3 +316,91 @@ class FontiPluginViewSet(ViewSetCliente):
         fonte.save(update_fields=["richiesta_copia"])
         registra(request.user, "fonte_plugin_aggiorna", fonte)
         return Response(self.get_serializer(fonte).data)
+
+
+# --- Filtro contenuti ----------------------------------------------------------------------------
+
+
+class FiltroContenutiSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FiltroContenuti
+        fields = ["immagini", "severita_immagini", "video", "severita_video", "dirette", "severita_dirette", "modificato"]
+        read_only_fields = ["modificato"]
+
+
+class FiltroContenutiView(VistaConContesto, APIView):
+    """GET/PUT il plugin «Filtro contenuti» (chi gestisce l'azienda); POST prova un file o una
+    diretta senza salvare nulla: dice cosa farebbe il filtro, con i punteggi."""
+
+    ruoli_lettura = GESTIONE
+    ruoli_scrittura = GESTIONE
+
+    def _risposta(self, impostazioni):
+        from contenuti.models import Contenuto, Controllo, Tipo
+        from audit.models import EventoAudit
+
+        dati = FiltroContenutiSerializer(impostazioni).data
+        dati["disponibile"] = filtro.disponibile()
+        dati["database_canali"] = canali_db.stato()
+        dati["severita"] = {
+            nome: {"soglia": round(v["soglia"] * 100), "ogni_secondi": v["ogni_secondi"],
+                   "fotogrammi_diretta": v["fotogrammi_diretta"], "ricontrollo": v["ricontrollo"]}
+            for nome, v in filtro.SEVERITA.items()
+        }
+        dirette = Contenuto.objects.filter(tipo=Tipo.DIRETTA).exclude(controllo="").order_by("nome")
+        dati["dirette_controllate"] = [
+            {"id": str(c.id), "nome": c.nome, "url": c.url, "controllo": c.controllo,
+             "stato": Controllo(c.controllo).label, "controllo_il": c.controllo_il, "esito": c.controllo_esito}
+            for c in dirette
+        ]
+        rifiuti = EventoAudit.objects.filter(
+            azione__in=["contenuto_rifiutato_filtro", "diretta_bloccata_filtro", "video_coperto_filtro"]
+        ).order_by("-quando")[:30]
+        dati["rifiuti"] = [
+            {"quando": e.quando, "utente": e.utente, "azione": e.azione, "nome": e.dettagli.get("nome", ""),
+             "tipo": e.dettagli.get("tipo", "diretta"), "punteggio": e.dettagli.get("punteggio"), "secondi": e.dettagli.get("secondi")}
+            for e in rifiuti
+        ]
+        return dati
+
+    def get(self, request):
+        return Response(self._risposta(FiltroContenuti.objects.first() or FiltroContenuti()))
+
+    def put(self, request):
+        impostazioni = FiltroContenuti.objects.first()
+        dati = FiltroContenutiSerializer(impostazioni, data=request.data, partial=True)
+        dati.is_valid(raise_exception=True)
+        salvate = dati.save()
+        registra(request.user, "filtro_contenuti_modificato", None, **{k: v for k, v in dati.validated_data.items()})
+        return Response(self._risposta(salvate))
+
+    def post(self, request):
+        """Prova: un file (immagine o video) oppure l'indirizzo di una diretta, con una severità."""
+        from contenuti.file import riconosci
+
+        severita = request.data.get("severita") or "media"
+        if severita not in filtro.SEVERITA:
+            raise exceptions.ValidationError({"severita": "Bassa, media o alta."})
+        if not filtro.disponibile():
+            raise exceptions.ValidationError("Il modello del filtro non si avvia su questo server.")
+        file = request.FILES.get("file")
+        try:
+            if file is not None:
+                formato = riconosci(file)
+                if formato is None or formato[0] not in ("immagine", "video"):
+                    raise exceptions.ValidationError({"file": "Scegli un'immagine o un video (JPEG, PNG, GIF, WebP, MP4, MOV, WebM)."})
+                tipo = formato[0]
+                esito = (filtro.controlla_immagine if tipo == "immagine" else filtro.controlla_video)(file, severita)
+            else:
+                url = str(request.data.get("url") or "").strip()
+                if not url.lower().startswith(("http://", "https://")):
+                    raise exceptions.ValidationError({"url": "Indica un file oppure l'indirizzo di una diretta."})
+                tipo = "diretta"
+                esito = filtro.controlla_diretta(url, severita)
+        except filtro.DirettaIrraggiungibile as errore:
+            raise exceptions.ValidationError({"url": f"Diretta non raggiungibile dal server: {errore}"})
+        except exceptions.ValidationError:
+            raise
+        except Exception:
+            raise exceptions.ValidationError({"file": "Il filtro non riesce a leggere questo file."})
+        return Response({"tipo": tipo, "severita": severita, **esito.come_dati()})

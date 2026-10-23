@@ -3,6 +3,8 @@
 # migrate esegue anche i controlli sul database: si ferma se l'utente PostgreSQL
 # potesse aggirare la Row-Level Security (futurapro.E001).
 set -e
+# Il modello del Filtro contenuti, se non è arrivato con l'immagine (non blocca l'avvio).
+timeout 300 python plugin/modello/scarica_modello.py "${FUTURAPRO_MEDIA_ROOT:-/dati/media}/plugin" || true
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput -v 0
 exec gunicorn futurapro.wsgi \
