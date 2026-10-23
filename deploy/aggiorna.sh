@@ -44,7 +44,9 @@ if [ -f Caddyfile ] && [ "$(grep -c 'handle /installa/' Caddyfile)" -lt 2 ]; the
     sed -i 's|^\thandle /static/\* {$|\thandle /installa/* {\n\t\troot * /srv\n\t\tfile_server\n\t}\n&|' Caddyfile
 fi
 docker compose up -d --build
-# Caddy rilegge il Caddyfile solo se glielo si chiede.
-docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile < /dev/null || docker compose restart caddy
+# Caddy rilegge il Caddyfile solo al riavvio. Non basta «caddy reload»: il Caddyfile è montato
+# come singolo file e sed -i lo sostituisce con uno nuovo, che il container non vede finché non
+# riparte (così la strada /mesh/ del Controllo Remoto non arrivava agli agenti dei PC).
+docker compose restart caddy < /dev/null > /dev/null
 docker image prune -f > /dev/null
 echo "Aggiornamento completato."
