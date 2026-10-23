@@ -330,6 +330,12 @@ Cinzel e Montserrat (SIL OFL) sono serviti dal server (`pannello/static/pannello
   fascia di download». Scaricano subito: uno schermo appena installato, i file degli eventi
   straordinari delle prossime 24 ore e tutti per due ore dopo «Scarica adesso». La velocità si
   rispetta leggendo i file a pezzi.
+- **Controlli degli schermi** (stessa pagina e stessa API, «Impostazioni → Download e
+  aggiornamenti»). Ogni quanti secondi ogni schermo chiede se il palinsesto è cambiato (nuove
+  pubblicazioni, variazioni; da 10 secondi a un'ora, predefinito 30) e se c'è una versione nuova
+  del player (da un minuto a un giorno, predefinito un minuto): `controlli` nel manifest, valgono
+  dal controllo successivo. Il segnale periodico resta al minuto, perché su quello contano lo
+  stato «in linea», i minuti di collegamento, gli allarmi e il guardiano di Windows.
 
 ### Registro di messa in onda
 
@@ -377,7 +383,7 @@ funzione nuova deve aggiungere le sue spiegazioni lì.
 - **Report & Log**: Stato e allarmi, Distribuzione contenuti, Messa in onda, Tempi d'attesa, Registro operazioni,
   Storico allarmi.
 - **Impostazioni**: Layout Video, Layout Ticket, Sedi e gruppi, Utenti, Email, Accensione e
-  spegnimento, Fasce di download, Banchi Code, Aspetto interfaccia, Utenti di piattaforma (solo
+  spegnimento, Download e aggiornamenti, Banchi Code, Aspetto interfaccia, Utenti di piattaforma (solo
   SystemAdministrator), Profilo.
 
 Tutte le voci si aprono nella stessa pagina: «Layout Video» (l'editor, `/editor/`) e «Banchi
@@ -540,8 +546,13 @@ ottengono mai lo stesso numero (verificato con 40 emissioni in parallelo).
 imposta numero, azzera. Le chiamate le fa anche lo User; configurare i reparti è della
 gestione. Il banco funziona con l'accesso al pannello oppure con la **chiave del reparto**.
 
-**Pulsantiere, bilance, script.** Una chiave per reparto, generata nel pannello (se ne conserva
-l'impronta, si revoca in ogni momento), vale solo per avanti / indietro / ripeti di quel reparto:
+**Pulsantiere, bilance, script.** Una chiave per reparto, generata nel pannello (si riconosce
+dall'impronta, si revoca in ogni momento), vale solo per avanti / indietro / ripeti di quel reparto.
+La chiave è conservata anche cifrata (con una chiave derivata da `SECRET_KEY`): «🔗 Collegamento»
+nella riga del reparto la rimostra alla gestione (`GET /api/reparti/{id}/chiave/`, annotato nel
+registro) da copiare o da provare in una finestra (`#chiave=…&prova=1`: la pagina del banco la usa
+senza salvarla). Un collegamento nuovo serve solo quando una bilancia si perde o si sostituisce. Le
+chiavi create prima della 1.6 non sono state conservate: vanno ricreate una volta.
 
     curl -X POST -H "Authorization: Pulsante <chiave>" https://server/api/eliminacode/pulsante/avanti/
 
@@ -778,7 +789,8 @@ ricordarsi di cambiare; anche la cache del service worker prende quel nome. Il p
 ogni segnale periodico e il server risponde con quella attuale (`{"versione_player": …}`): se è
 diversa il player aggiorna il service worker e si ricarica (il palinsesto riparte subito dalla
 copia salvata); verso la stessa versione riprova al massimo ogni 30 minuti, così non si ricarica
-all'infinito se qualcosa va storto. In «Stato e allarmi» la colonna Player mostra la versione che
+all'infinito se qualcosa va storto. Ogni quanto guardare la versione (e il palinsesto) lo decide il
+pannello: vedi «Controlli degli schermi». In «Stato e allarmi» la colonna Player mostra la versione che
 gira davvero su ogni schermo, con «da aggiornare» se non è l'ultima; la Panoramica avvisa degli
 schermi rimasti indietro. I player di una versione precedente alla 1.5 non hanno ancora questo
 meccanismo: vanno riavviati una volta a mano, poi si aggiornano da soli.
@@ -917,7 +929,7 @@ piattaforma indicano il cliente con l'intestazione `X-Cliente: <uuid>`.
 | `GET /api/player/zone/{id}/dati/`, `POST /api/player/zone/{id}/emetti/` | player |
 | `/api/reparti/` | lettura: tutti — scrittura: SystemAdministrator, Administrator |
 | `POST /api/reparti/{id}/avanti/` (anche `indietro`, `ripeti`, `imposta`, `azzera`, `emetti`) | SystemAdministrator, Administrator, User |
-| `POST/DELETE /api/reparti/{id}/chiave/` | SystemAdministrator, Administrator |
+| `GET/POST/DELETE /api/reparti/{id}/chiave/` | SystemAdministrator, Administrator |
 | `GET /api/eliminacode/pulsante/`, `POST /api/eliminacode/pulsante/{avanti,indietro,ripeti}/` | chiave del reparto |
 | `GET /api/player/palinsesto/`, `GET /api/player/file/{id}/` | player |
 

@@ -16,7 +16,7 @@ export const STATI = {
   aggiornato: { testo: "In onda, aggiornato", icona: "✓", aiuto: "Lo schermo ha tutti i file del palinsesto attuale e lo sta mostrando." },
   pronto: { testo: "File arrivati", icona: "⇣", aiuto: "Tutti i file sono sullo schermo: il palinsesto nuovo parte al prossimo controllo (entro 30 secondi)." },
   scaricamento: { testo: "In scaricamento", icona: "⇣", aiuto: "Lo schermo sta scaricando i file nuovi; intanto continua a mostrare il palinsesto precedente." },
-  fascia: { testo: "Attende la fascia", icona: "⏰", aiuto: "I file nuovi si scaricano solo nella fascia di download impostata (Impostazioni → Fasce di download). Si può anticipare con «Scarica adesso»." },
+  fascia: { testo: "Attende la fascia", icona: "⏰", aiuto: "I file nuovi si scaricano solo nella fascia di download impostata (Impostazioni → Download e aggiornamenti). Si può anticipare con «Scarica adesso»." },
   errore: { testo: "Download non riuscito", icona: "!", aiuto: "Alcuni file non sono arrivati: lo schermo riprova da solo ogni 30 secondi. Se resta così, controlla la rete del negozio." },
   in_arrivo: { testo: "In arrivo", icona: "…", aiuto: "C'è un palinsesto nuovo: lo schermo lo chiede al server entro 30 secondi e comincia a scaricare." },
   offline: { testo: "Non in linea", icona: "✕", aiuto: "Lo schermo non si fa sentire da qualche minuto: riceverà i file quando torna in linea." },

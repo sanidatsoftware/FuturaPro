@@ -55,11 +55,14 @@
   // Il pannello dà un link /banco/#chiave=…: la chiave si salva sul dispositivo e sparisce
   // dall'indirizzo (la parte dopo # non arriva mai al server, quindi nemmeno nei suoi log).
   var dalLink = parametro("chiave", location.hash);
-  if (dalLink) {
+  // «Prova» dal pannello (#chiave=…&prova=1): la chiave vale solo in questa finestra e non si
+  // salva, altrimenti «Banchi Code» nel pannello resterebbe legato a quel reparto.
+  var prova = dalLink && parametro("prova", location.hash) === "1";
+  if (dalLink && !prova) {
     memoria("futurapro.banco.chiave", dalLink);
     if (history.replaceState) history.replaceState(null, "", location.pathname + location.search);
   }
-  var chiave = memoria("futurapro.banco.chiave") || dalLink;
+  var chiave = prova ? dalLink : memoria("futurapro.banco.chiave") || dalLink;
   var modo = chiave ? "chiave" : "sessione";
 
   // In HTTP passano solo le chiamate con la chiave (bilance): con l'accesso del
@@ -83,6 +86,10 @@
   function carica() {
     var url = modo === "chiave" ? "/api/eliminacode/pulsante/" : "/api/reparti/";
     richiesta("GET", url, null, intestazioni(), function (codice, corpo) {
+      if (codice === 401 && prova) {
+        segnala(false, "Collegamento non più valido");
+        return;
+      }
       if (codice === 401 && modo === "chiave") {
         memoria("futurapro.banco.chiave", null);
         location.reload();

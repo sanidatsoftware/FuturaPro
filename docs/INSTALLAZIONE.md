@@ -308,8 +308,10 @@ FuturaPro il browser della bilancia apre la **pagina del banco**, con gli stessi
 per bilancia.
 
 1. Pannello → **Reparti ed eliminacode** → riga del reparto (es. Salumeria) → **Crea collegamento**.
-2. Compaiono due indirizzi del tipo `…/banco/#chiave=…`. Il collegamento appare **solo ora**:
-   copialo subito.
+2. Si apre una finestra con due indirizzi del tipo `…/banco/#chiave=…`, ognuno con **Copia** e
+   **Prova**. Non serve copiarli subito: con il pulsante **🔗 Collegamento** in fondo alla riga
+   del reparto la finestra si riapre quando vuoi, sempre con lo stesso indirizzo. **Prova** apre la
+   pagina del banco in una finestra a parte per provare i tasti (chiamano davvero i numeri).
    - **Con il totem** (il caso normale): gli indirizzi puntano al totem. Per la bilancia usa il primo,
      `http://IP-TOTEM:8090/banco/#chiave=…`. Il totem riceve la nuova chiave entro mezzo minuto.
    - Senza totem puntano al server: usa quello **https** se il browser della bilancia accetta il
@@ -319,7 +321,10 @@ per bilancia.
    chiave resta salvata sulla bilancia e sparisce dall'indirizzo.
 
 La chiave vale solo per quel reparto e solo per i comandi del banco. Bilancia persa o sostituita?
-**Revoca** o **Nuovo collegamento** dal pannello: il vecchio smette subito di funzionare.
+**Revoca** o **Nuovo collegamento** dal pannello: il vecchio smette subito di funzionare, e va
+reimpostato sulle altre bilance del reparto. Per rivedere o provare il collegamento non si crea
+uno nuovo: basta **🔗 Collegamento**. I collegamenti creati prima di questa versione non si possono
+rivedere: crea un «Nuovo collegamento» una volta e reimpostalo sulla bilancia.
 
 **Pulsanti fisici o script** (al posto di `py/salumeria+.py` e simili), con Python 3 e niente da
 installare:
