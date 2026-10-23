@@ -94,7 +94,11 @@ def _contesto(request, **altro):
     return {"utente": user, "puo_gestire": can_manage_primanota(user), "puo_versamenti": can_see_versamenti(user),
             "utente_negozio": is_store_user(user),
             "tipi_documento": [t for t in TIPI_DOCUMENTO if t["id"] != VERSAMENTO_CONTANTE],
-            "tipi_documento_tutti": TIPI_DOCUMENTO, **altro}
+            "tipi_documento_tutti": TIPI_DOCUMENTO,
+            # L'ultima vista dei monitor (mese o settimana scelti), per tornarci senza perdere le impostazioni.
+            "url_monitor": request.session.get("primanota_monitor", "/primanota/monitor/"),
+            "url_monitor_versamenti": request.session.get("primanota_monitor_versamenti", "/primanota/versamenti/monitor/"),
+            **altro}
 
 
 def _negozio_consentito(request, negozio_id):
@@ -587,6 +591,8 @@ def monitor(request):
         error = None
     except RuntimeError as exc:
         dati, error = None, str(exc)
+    # Si ricorda la vista (mese, settimana): «Indietro al monitor» e il pulsante Monitor la riaprono uguale.
+    request.session["primanota_monitor"] = request.get_full_path()
     return render(request, "primanota/monitor.html", _contesto(request, monitor=dati, error=error))
 
 
@@ -1028,6 +1034,7 @@ def versamenti_monitor(request):
         error = None
     except RuntimeError as exc:
         dati, error = None, str(exc)
+    request.session["primanota_monitor_versamenti"] = request.get_full_path()
     return render(request, "primanota/monitor.html", _contesto(request, monitor=dati, error=error, versamenti_monitor=True))
 
 

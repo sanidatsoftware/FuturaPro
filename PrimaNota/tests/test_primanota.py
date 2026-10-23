@@ -1995,3 +1995,14 @@ class TestScansioniSoloConsultazione(Base):
         self.assertNotContains(r, "Segna lavorat")
         self.assertNotContains(r, 'name="stato"')
         self.assertContains(r, "● Da lavorare")
+
+
+class TestIndietroAlMonitor(Base):
+    def test_torna_alla_stessa_vista(self):
+        uff = self.client_per("ufficio@x")
+        uff.get("/primanota/monitor/", {"vista": "settimana", "settimana": "2026-10-19"})
+        r = uff.get("/primanota/giornata/10/2026-10-20/")
+        self.assertContains(r, 'href="/primanota/monitor/?vista=settimana&amp;settimana=2026-10-19">')
+        self.assertContains(r, "Indietro al monitor")
+        uff.get("/primanota/versamenti/monitor/", {"anno": "2026", "mese": "9", "vista": "mese"})
+        self.assertContains(uff.get("/primanota/versamenti/"), 'href="/primanota/versamenti/monitor/?anno=2026&amp;mese=9&amp;vista=mese"')

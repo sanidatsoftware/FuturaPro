@@ -3,7 +3,7 @@
     {% if utente_negozio %}
     <a class="btn-nav" href="/primanota/upload/">{% include "primanota/_icona.html" with nome="caricamento" %}Caricamento e chiusure</a>
     {% elif attivo == "versamenti" or attivo == "versamenti_monitor" or attivo == "versamenti_note" %}
-    <a class="btn-nav {% if attivo == 'versamenti_monitor' %}attivo{% endif %}" href="/primanota/versamenti/monitor/">{% include "primanota/_icona.html" with nome="monitor" %}Monitor versamenti</a>
+    <a class="btn-nav {% if attivo == 'versamenti_monitor' %}attivo{% endif %}" href="{{ url_monitor_versamenti }}">{% include "primanota/_icona.html" with nome="monitor" %}Monitor versamenti</a>
     <a class="btn-nav {% if attivo == 'versamenti' %}attivo{% endif %}" href="/primanota/versamenti/">{% include "primanota/_icona.html" with nome="versamenti" %}Consultazione versamenti</a>
     <a class="btn-nav {% if attivo == 'versamenti_note' %}attivo{% endif %}" href="/primanota/versamenti/note/">{% include "primanota/_icona.html" with nome="note" %}Note sui versamenti</a>
     <a class="btn-nav btn-nav-esci" href="/primanota/">{% include "primanota/_icona.html" with nome="indietro" %}Documenti Amministrativi</a>
@@ -18,7 +18,7 @@
     {% elif attivo == "prima_nota" %}
     <a class="btn-nav btn-nav-esci" href="/primanota/">{% include "primanota/_icona.html" with nome="indietro" %}Documenti Amministrativi</a>
     {% else %}
-    <a class="btn-nav {% if attivo == 'monitor' %}attivo{% endif %}" href="/primanota/monitor/">{% include "primanota/_icona.html" with nome="monitor" %}Monitor</a>
+    <a class="btn-nav {% if attivo == 'monitor' %}attivo{% endif %}" href="{{ url_monitor }}">{% include "primanota/_icona.html" with nome="monitor" %}Monitor</a>
     <a class="btn-nav {% if attivo == 'admin' %}attivo{% endif %}" href="/primanota/admin/">{% include "primanota/_icona.html" with nome="scansioni" %}Scansioni</a>
     <a class="btn-nav {% if attivo == 'note' %}attivo{% endif %}" href="/primanota/note/">{% include "primanota/_icona.html" with nome="note" %}Note e anomalie</a>
     <a class="btn-nav {% if attivo == 'sysspy' %}attivo{% endif %}" href="/primanota/sysspy/">{% include "primanota/_icona.html" with nome="archivio" %}Archivio SysSpy</a>

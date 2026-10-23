@@ -29,7 +29,8 @@ details summary{cursor:pointer;font-weight:bold;color:#2d4055;margin:6px 0}
     <br><span class="small">Motivo: {{ emergenza.motivo }}. Nel monitor la giornata lampeggia in giallo finché la prima nota non è registrata.</span></div>{% endif %}
 {% if not utente_negozio %}
 <div class="card">
-    <h2 style="margin-top:0">Stato della giornata</h2>
+    <div class="top-actions" style="margin-bottom:6px"><h2 style="margin:0;flex:1">Stato della giornata</h2>
+        <a class="btn-nav btn-nav-menu" href="{{ url_monitor }}">{% include "primanota/_icona.html" with nome="indietro" %}Indietro al monitor</a></div>
     {% if avviso_stato %}<div class="message-error">Stato salvato, ma il «lavorato» di qualche scansione in Baserow non si è aggiornato: riprova.</div>{% endif %}
     {% include "primanota/_stato_giornata.html" with data=giorno stato=stato_giornata %}
     <p class="small">Vale per tutta la giornata del negozio e si può sempre cambiare. «Giornata Chiusura PV»: il negozio era chiuso

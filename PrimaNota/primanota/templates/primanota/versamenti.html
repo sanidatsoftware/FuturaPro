@@ -23,6 +23,8 @@
         <label class="check"><input type="checkbox" name="solo_da_lavorare" {% if solo_da_lavorare %}checked{% endif %}> Solo giornate da lavorare</label>
         <button class="btn btn-orange">Filtra</button>
         <span class="small">{{ scansioni|length }} versament{{ scansioni|length|pluralize:"o,i" }}</span>
+        <span style="flex:1"></span>
+        <a class="btn-nav btn-nav-menu" href="{{ url_monitor_versamenti }}">{% include "primanota/_icona.html" with nome="indietro" %}Indietro al monitor</a>
     </form>
 </div>
 {% for s in scansioni %}
