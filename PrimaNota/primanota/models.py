@@ -531,3 +531,31 @@ class GiustificazioneControllo(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["negozio_id", "data", "cassa", "controllo"], name="giustificazione_unica")]
+
+
+class AspettoMonitor(models.Model):
+    """Come i monitor segnalano la prima nota non certificata: tipo di segno e colore, scelti in Impostazioni."""
+
+    RIGHE = "righe"
+    SFONDO = "sfondo"
+    CORNICE = "cornice"
+    ANGOLO = "angolo"
+    STILI = [(RIGHE, "Righe diagonali"), (SFONDO, "Sfondo pieno"), (CORNICE, "Cornice dentro la cella"),
+             (ANGOLO, "Angolo (triangolo)")]
+
+    stile = models.CharField(max_length=20, choices=STILI, default=RIGHE)
+    colore = models.CharField(max_length=7, default="#8fc1ea")
+
+    @classmethod
+    def corrente(cls):
+        return cls.objects.first() or cls()
+
+    def css(self):
+        """La regola CSS della cella segnalata (il colore è già controllato: #rrggbb)."""
+        c = self.colore
+        return {
+            self.RIGHE: f"background:repeating-linear-gradient(45deg,#ffffff 0 6px,{c} 6px 12px)",
+            self.SFONDO: f"background:{c}",
+            self.CORNICE: f"background:#ffffff;box-shadow:inset 0 0 0 4px {c}",
+            self.ANGOLO: f"background:linear-gradient(135deg,{c} 0 14px,#ffffff 14px)",
+        }.get(self.stile, f"background:{c}")

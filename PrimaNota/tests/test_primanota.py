@@ -2030,4 +2030,19 @@ class TestMonitorPrimaNotaNonCertificata(Base):
                 self.assertEqual((celle[g1.isoformat()], celle[g2.isoformat()], celle[g3.isoformat()], celle[oggi.isoformat()]),
                                  ("", "non_certificata", "mancante", ""))
                 self.assertContains(r, "pn-da-certificare")
-                self.assertContains(r, "prima nota non ancora certificata")
+                self.assertContains(r, "Prima nota non ancora certificata")
+
+
+class TestAspettoMonitor(Base):
+    def test_segno_scelto_in_impostazioni(self):
+        from primanota.models import AspettoMonitor
+        direttore = self.client_per("direttore@x")
+        r = direttore.get("/primanota/monitor/")
+        self.assertContains(r, "repeating-linear-gradient(45deg,#ffffff 0 6px,#8fc1ea 6px 12px)")   # righe azzurre
+        self.assertContains(direttore.get("/primanota/condivisioni/"), "Aspetto del monitor")
+        direttore.post("/primanota/condivisioni/", {"azione": "aspetto", "stile": "sfondo", "colore": "#7FB3E0"})
+        self.assertEqual((AspettoMonitor.corrente().stile, AspettoMonitor.corrente().colore), ("sfondo", "#7fb3e0"))
+        self.assertContains(direttore.get("/primanota/versamenti/monitor/"), "td.pn-da-certificare{ background:#7fb3e0 }")
+        # Un colore non valido non si salva.
+        direttore.post("/primanota/condivisioni/", {"azione": "aspetto", "stile": "righe", "colore": "red;}body{x"})
+        self.assertEqual(AspettoMonitor.corrente().colore, "#7fb3e0")

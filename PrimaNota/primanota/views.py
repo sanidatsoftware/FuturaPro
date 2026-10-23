@@ -593,7 +593,7 @@ def monitor(request):
         dati, error = None, str(exc)
     # Si ricorda la vista (mese, settimana): «Indietro al monitor» e il pulsante Monitor la riaprono uguale.
     request.session["primanota_monitor"] = request.get_full_path()
-    return render(request, "primanota/monitor.html", _contesto(request, monitor=dati, error=error))
+    return render(request, "primanota/monitor.html", _contesto(request, monitor=dati, error=error, aspetto=_aspetto_monitor()))
 
 
 @require_POST
@@ -848,6 +848,14 @@ def sysspy_scarica(request, file_id):
 def condivisioni(request):
     piano = Pianificazione.corrente()
     errore_orari = None
+    if request.method == "POST" and request.POST.get("azione") == "aspetto":
+        from .models import AspettoMonitor
+        stile, colore = request.POST.get("stile"), request.POST.get("colore", "").strip().lower()
+        if stile in dict(AspettoMonitor.STILI) and re.fullmatch(r"#[0-9a-f]{6}", colore):
+            aspetto = AspettoMonitor.corrente()
+            aspetto.stile, aspetto.colore = stile, colore
+            aspetto.save()
+        return redirect("/primanota/condivisioni/?salvato=1#aspetto")
     if request.method == "POST" and request.POST.get("azione") == "regole":
         for t in TIPI_DOCUMENTO:
             valore = request.POST.get(f"regola_{t['chiave']}")
@@ -897,7 +905,13 @@ def condivisioni(request):
         request, righe=righe, piano=piano, giorni=Pianificazione.GIORNI, errore_orari=errore_orari,
         regole=[(t, RegolaDocumento.mappa().get(t["id"])) for t in TIPI_DOCUMENTO], scelte_regole=RegolaDocumento.SCELTE,
         salvato=request.GET.get("salvato") == "1", errore_periodo=request.GET.get("errore_periodo"),
+        aspetto=_aspetto_monitor(), stili_aspetto=_aspetto_monitor().STILI,
         oggi=timezone.localdate().isoformat(), disco=_stato_disco(request.GET.get("disco") == "aggiorna")))
+
+
+def _aspetto_monitor():
+    from .models import AspettoMonitor
+    return AspettoMonitor.corrente()
 
 
 def _stato_disco(ricalcola):
@@ -1035,7 +1049,8 @@ def versamenti_monitor(request):
     except RuntimeError as exc:
         dati, error = None, str(exc)
     request.session["primanota_monitor_versamenti"] = request.get_full_path()
-    return render(request, "primanota/monitor.html", _contesto(request, monitor=dati, error=error, versamenti_monitor=True))
+    return render(request, "primanota/monitor.html", _contesto(request, monitor=dati, error=error, versamenti_monitor=True,
+                                                               aspetto=_aspetto_monitor()))
 
 
 @_accesso(solo_ufficio=True)

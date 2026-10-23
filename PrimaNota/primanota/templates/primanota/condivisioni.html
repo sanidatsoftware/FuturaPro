@@ -5,6 +5,8 @@
 .disco{margin:10px 0 14px}.disco-testa{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
 .disco-barra{height:14px;border-radius:7px;background:#e8edf3;overflow:hidden}
 .disco-barra span{display:block;height:100%;border-radius:7px}
+.cella-anteprima{width:56px;height:48px;display:flex;align-items:center;justify-content:center;border-right:1px solid #d9e0e8}
+.pallino-anteprima{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;border:1px solid rgba(0,0,0,.18)}
 .liv-ok{background:#1baf7a}.liv-attenzione{background:#eda100}.liv-critico{background:#e34948}
 </style>
 {% endblock %}
@@ -42,6 +44,22 @@
 </div>
 {% endif %}
 {% if salvato %}<div class="message-ok">Impostazioni salvate.</div>{% endif %}
+<div class="card" id="aspetto">
+    <h3 style="margin-top:0">Aspetto del monitor · prima nota non certificata</h3>
+    <form method="post" class="filters">{% csrf_token %}<input type="hidden" name="azione" value="aspetto">
+        <label class="field">Segno <select name="stile" id="aspettoStile">{% for k, v in stili_aspetto %}<option value="{{ k }}" {% if aspetto.stile == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+        <label class="field">Colore <input type="color" name="colore" id="aspettoColore" value="{{ aspetto.colore }}" style="width:70px;height:38px;padding:2px"></label>
+        <div class="field">Anteprima
+            <div style="display:flex;gap:0;border:1px solid #d9e0e8;border-radius:8px;overflow:hidden">
+                <span class="cella-anteprima"><span class="pallino-anteprima" style="background:#e53935">0</span></span>
+                <span class="cella-anteprima"><span class="pallino-anteprima" style="background:#35a853">1</span></span>
+                <span class="cella-anteprima"><span class="pallino-anteprima" style="background:#1769e8">2</span></span>
+                <span class="cella-anteprima"><span class="pallino-anteprima" style="background:#fb8c00">✓</span></span>
+            </div></div>
+        <button class="btn btn-orange">Salva</button>
+        <span class="small">Vale per i due monitor (Chiusure Fiscali e Versamenti) e la loro legenda.</span>
+    </form>
+</div>
 {% if errore_orari %}<div class="message-error">{{ errore_orari }}</div>{% endif %}
 <div class="grid2">
     <div class="card">
@@ -133,4 +151,23 @@
         </tbody>
     </table>
 </div>
+{% endblock %}
+{% block script %}
+<script>
+// Anteprima del segno della prima nota non certificata, come lo disegna il monitor.
+(function(){
+    const stile = document.getElementById("aspettoStile"), colore = document.getElementById("aspettoColore");
+    function css(s, c){
+        return {righe: `repeating-linear-gradient(45deg,#ffffff 0 6px,${c} 6px 12px)`, sfondo: c,
+                cornice: "#ffffff", angolo: `linear-gradient(135deg,${c} 0 14px,#ffffff 14px)`}[s];
+    }
+    function aggiorna(){
+        document.querySelectorAll(".cella-anteprima").forEach(e => {
+            e.style.background = css(stile.value, colore.value);
+            e.style.boxShadow = stile.value === "cornice" ? `inset 0 0 0 4px ${colore.value}` : "none";
+        });
+    }
+    stile.addEventListener("change", aggiorna); colore.addEventListener("input", aggiorna); aggiorna();
+})();
+</script>
 {% endblock %}
