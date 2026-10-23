@@ -55,7 +55,7 @@ function chiediCollegamento(pc, io) {
         // Una finestra a parte per lo schermo del PC (già entrati, senza password).
         window.open(r.indirizzo, `remoto-${pc.id.split("/").pop()}`, "popup,width=1440,height=900");
         finestra.close();
-        H.avvisa(`Collegato a ${pc.nome}: lo schermo si è aperto in una finestra. Ricordati di chiudere la sessione quando hai finito.`, "ok");
+        H.avvisa(`Collegato a ${pc.nome}: lo schermo si è aperto in una finestra: premi «Connetti» in alto a sinistra. Ricordati di chiudere la sessione quando hai finito.`, "ok");
         H.mostra("remoto_dispositivi");
       } catch (errore) {
         esito.className = "messaggio errore";

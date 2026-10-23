@@ -221,7 +221,9 @@ def indirizzo_schermo(id_account: str, nodo: str) -> str:
     accesso = gettone({"u": id_account, "a": 3, "expire": max(1, DURATA_GETTONE // 60)})
     nodo_breve = nodo.split("/")[-1]
     base = settings.FUTURAPRO_MESH_PUBBLICO.rstrip("/") + "/"
-    return f"{base}?login={quote(accesso)}&gotonode={quote(nodo_breve)}&viewmode=11&hide=31"
+    # «node» (non «gotonode»): il PC lo sceglie già il server nella pagina che manda. Con «gotonode»
+    # la pagina, appena entrati con il gettone, restava sulla vista vuota (schermo nero, «Connetti» spento).
+    return f"{base}?login={quote(accesso)}&node={quote(nodo_breve)}&viewmode=11&hide=31"
 
 
 def indirizzo_console(id_account: str) -> str:
