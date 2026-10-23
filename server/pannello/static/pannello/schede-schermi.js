@@ -411,7 +411,7 @@ export async function schedaDownload() {
   const tempi = (valori, attuale) => [...new Set([...valori, attuale])].sort((x, y) => x - y).map((v) => [v, `ogni ${durata(v)}`]);
   const rigaControlli = crea("div", { classe: "riga" }, controlli);
   const palinsesto = H.campo("Nuove pubblicazioni e palinsesto", H.scelta(tempi([10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600], d.controllo_palinsesto), d.controllo_palinsesto), rigaControlli);
-  const versione = H.campo("Aggiornamento del player", H.scelta(tempi([60, 300, 900, 1800, 3600, 6 * 3600, 12 * 3600, 24 * 3600], d.controllo_versione), d.controllo_versione), rigaControlli);
+  const versione = H.campo("Aggiornamento software del player", H.scelta(tempi([60, 300, 900, 1800, 3600, 6 * 3600, 12 * 3600, 24 * 3600], d.controllo_versione), d.controllo_versione), rigaControlli);
   crea("p", {
     classe: "tenue",
     testo: "Predefiniti: 30 secondi e 1 minuto. Lo stato «in linea» degli schermi e gli allarmi non cambiano: si basano sul segnale che ogni schermo manda una volta al minuto.",
