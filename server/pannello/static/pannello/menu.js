@@ -59,6 +59,8 @@ export const VOCI = [
     aiuto: "I PC dei monitor e dei totem di tutte le aziende, con lo stato in linea: collegati al loro schermo per assisterli, in rete locale o da fuori." },
   { chiave: "remoto_sessioni", gruppo: "Controllo Remoto", titolo: "Sessioni", visibile: piattaforma, serveCliente: false,
     aiuto: "Il registro dei collegamenti: chi, a quale PC, quando, perché e per quanto." },
+  { chiave: "remoto_credenziali", gruppo: "Controllo Remoto", titolo: "Credenziali aziende", visibile: piattaforma, serveCliente: false,
+    aiuto: "Utente e password del Controllo Remoto di ogni azienda: per collegarsi a un PC dell'azienda vanno scritti uguali. Li imposta il SystemAdministrator." },
   { chiave: "remoto_installazione", gruppo: "Controllo Remoto", titolo: "Installazione e sicurezza", visibile: piattaforma, serveCliente: false,
     aiuto: "Come si aggiungono i PC, come funziona l'abbinamento e la sicurezza; la console completa per il SystemAdministrator." },
   { chiave: "profilo", gruppo: "Impostazioni", titolo: "Profilo", visibile: () => true, serveCliente: false,

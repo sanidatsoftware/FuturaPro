@@ -8,13 +8,11 @@ from django.test import override_settings
 
 from audit.models import EventoAudit
 from core.contesto import contesto_cliente, contesto_piattaforma
-from core.email import decifra
 from core.tests.test_isolamento import Base
 from dispositivi.models import CredenzialeDispositivo, Monitor, impronta
-from utenti import doppio
 
 from . import mesh
-from .models import AccountRemoto, ConfigurazioneRemota, SessioneRemota
+from .models import AccountRemoto, ConfigurazioneRemota, CredenzialeRemota, SessioneRemota
 
 CHIAVE = "ab" * 80
 MESH = {"FUTURAPRO_MESH_URL": "http://meshcentral:4430/mesh/", "FUTURAPRO_MESH_CHIAVE": CHIAVE, "FUTURAPRO_MESH_PUBBLICO": "https://server.lan/mesh/"}
@@ -68,6 +66,7 @@ class GettoniTest(Base):
         domanda = parse_qs(parti.query)
         self.assertEqual((domanda["node"], domanda["viewmode"]), (["AB$c@d"], ["11"]))
         self.assertEqual(leggi_gettone(domanda["login"][0])["expire"], 2)
+        self.assertEqual(parse_qs(urlsplit(mesh.indirizzo_schermo("user/mesh/fp-1", "node/mesh/X", "file")).query)["viewmode"], ["13"])
 
     @override_settings(FUTURAPRO_MESH_CHIAVE="")
     def test_senza_chiave_non_configurato(self):
@@ -76,31 +75,11 @@ class GettoniTest(Base):
             mesh.gettone({})
 
 
-class DoppioTest(Base):
-    def test_attivazione_codici_e_disattivazione(self):
-        self.come(self.tecnico)
-        segreto = self.client.post("/api/io/doppio/", {"azione": "prepara"}, format="json").json()["segreto"]
-        self.assertEqual(self.client.post("/api/io/doppio/", {"azione": "attiva", "codice": "000000"}, format="json").status_code, 400)
-        codice = doppio.codice_attuale(segreto)
-        self.assertEqual(self.client.post("/api/io/doppio/", {"azione": "attiva", "codice": codice}, format="json").status_code, 200)
-        self.tecnico.refresh_from_db()
-        self.assertTrue(self.tecnico.doppio_attivo)
-        self.assertNotIn(segreto, self.tecnico.doppio_segreto)  # conservato cifrato
-        self.assertEqual(decifra(self.tecnico.doppio_segreto), segreto)
-        # Lo stesso codice non vale due volte.
-        self.assertFalse(doppio.verifica_utente(self.tecnico, codice))
-        self.assertTrue(self.client.get("/api/io/").json()["doppio_attivo"])
-        r = self.client.post("/api/io/doppio/", {"azione": "disattiva", "password": "sbagliata", "codice": "1"}, format="json")
-        self.assertEqual(r.status_code, 400)
-
-
-def attiva_doppio(utente):
-    segreto = doppio.nuovo_segreto()
-    from core.email import cifra
-
-    utente.doppio_segreto, utente.doppio_attivo, utente.doppio_ultimo_passo = cifra(segreto), True, 0
-    utente.save()
-    return segreto
+def credenziali(cliente, utente="negozio", password="Segreta-123"):
+    credenziale = CredenzialeRemota(cliente=cliente, utente=utente)
+    credenziale.imposta_password(password)
+    credenziale.save()
+    return credenziale
 
 
 @override_settings(**MESH)
@@ -109,10 +88,14 @@ class ControlloRemotoTest(Base):
     def test_solo_la_piattaforma(self):
         for utente in (self.admin_a, self.user_a):
             self.come(utente, self.a)
-            for url in ("/api/remoto/", "/api/remoto/sessioni/", "/api/remoto/dispositivi/?nodo=node/mesh/PC1"):
+            for url in ("/api/remoto/", "/api/remoto/sessioni/", "/api/remoto/dispositivi/?nodo=node/mesh/PC1", "/api/remoto/credenziali/"):
                 self.assertEqual(self.client.get(url).status_code, 403, url)
-            r = self.client.post("/api/remoto/sessioni/", {"nodo": PC["id"], "motivo": "prova"}, format="json")
-            self.assertEqual(r.status_code, 403)
+            for url, dati in (
+                ("/api/remoto/sessioni/", {"nodo": PC["id"], "motivo": "prova"}),
+                ("/api/remoto/player/", {"nodo": PC["id"], "azione": "pausa"}),
+                ("/api/remoto/credenziali/", {"cliente": str(self.a.id), "utente": "x", "password": "12345678"}),
+            ):
+                self.assertEqual(self.client.post(url, dati, format="json").status_code, 403, url)
 
     def test_inventario_con_abbinamento_dal_segnale_del_player(self):
         # Il player manda il codice della postazione: il PC con quel tag si abbina al monitor.
@@ -133,26 +116,39 @@ class ControlloRemotoTest(Base):
         self.come(self.assoluto)
         self.assertIn("console", self.client.get("/api/remoto/").json())
 
-    def test_sessione_con_verifica_in_due_passaggi_e_registro(self):
+    def test_sessione_con_credenziali_dell_azienda_e_registro(self):
         with contesto_cliente(self.a.id):
             Monitor.objects.filter(id=self.mon_a_milano.id).update(impronta_postazione=impronta(POSTAZIONE))
         self.come(self.tecnico)
         manda = lambda **altro: self.client.post("/api/remoto/sessioni/", {"nodo": PC["id"], "motivo": "Schermo nero", **altro}, format="json")  # noqa: E731
-        r = manda()
-        self.assertEqual(r.status_code, 403)
-        self.assertIn("verifica in due passaggi", r.json()["detail"])
-        segreto = attiva_doppio(self.tecnico)
-        self.assertEqual(manda().status_code, 400)  # serve il codice
-        self.assertEqual(manda(codice="123456").status_code, 400)
+        # L'azienda non ha ancora utente e password del Controllo Remoto: nessuno si collega.
+        r = manda(utente="negozio", password="Segreta-123")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("non sono ancora impostati", str(r.json()))
+        self.assertEqual(self.client.get("/api/remoto/").json()["dispositivi"][0]["accesso"], "mancanti")
+        credenziali(self.a)
+        self.assertEqual(self.client.get("/api/remoto/").json()["dispositivi"][0]["accesso"], "credenziali")
+        self.assertEqual(manda().status_code, 400)
+        self.assertEqual(manda(utente="negozio", password="sbagliata").status_code, 400)
+        self.assertEqual(manda(utente="altro", password="Segreta-123").status_code, 400)
         self.assertEqual(self.client.post("/api/remoto/sessioni/", {"nodo": PC["id"], "motivo": "x"}, format="json").status_code, 400)
-        r = manda(codice=doppio.codice_attuale(segreto))
+        r = manda(utente="Negozio", password="Segreta-123")
         self.assertEqual(r.status_code, 201, r.content)
         self.assertTrue(r.json()["indirizzo"].startswith("https://server.lan/mesh/?login="))
+        self.assertIn("viewmode=11", r.json()["indirizzo"])
+        self.assertIn("viewmode=13", manda(vista="file").json()["indirizzo"])
+        self.assertEqual(manda(vista="terminale").status_code, 400)
         sessione = r.json()["sessione"]
         self.assertEqual((sessione["nome_pc"], sessione["nome_monitor"], sessione["nome_cliente"]), ("CASSA-01", "Ingresso", "Azienda A"))
         self.assertTrue(AccountRemoto.objects.filter(utente=self.tecnico).exists())
-        # Per 12 ore, in questo browser, il codice non si richiede.
+        # Per 12 ore, in questo browser, non si richiedono…
+        self.assertEqual(self.client.get("/api/remoto/").json()["dispositivi"][0]["accesso"], "")
         self.assertEqual(manda().status_code, 201)
+        # …finché non si cambiano.
+        credenziale = CredenzialeRemota.objects.get(cliente=self.a)
+        credenziale.imposta_password("Nuova-Segreta-1")
+        credenziale.save()
+        self.assertEqual(manda().status_code, 400)
         # Nel registro della piattaforma e in quello dell'azienda (che però non vede le pagine).
         with contesto_piattaforma():
             self.assertTrue(EventoAudit.objects.filter(azione="controllo_remoto_aperto", cliente__isnull=True).exists())
@@ -161,10 +157,47 @@ class ControlloRemotoTest(Base):
         r = self.client.post(f"/api/remoto/sessioni/{sessione['id']}/chiudi/")
         self.assertEqual((r.status_code, r.json()["chiusa_da"]), (200, "tecnico"))
         self.assertEqual(self.client.post(f"/api/remoto/sessioni/{sessione['id']}/chiudi/").status_code, 400)
-        # Un PC non ancora abbinato si assiste lo stesso (nessuna azienda nel registro).
+        # Un PC non ancora abbinato si assiste lo stesso (nessuna azienda, nessuna credenziale).
         r = self.client.post("/api/remoto/sessioni/", {"nodo": SCONOSCIUTO["id"], "motivo": "Installazione"}, format="json")
         self.assertEqual((r.status_code, r.json()["sessione"]["nome_cliente"]), (201, ""))
         self.assertEqual(self.client.post("/api/remoto/sessioni/", {"nodo": "node/mesh/NO", "motivo": "Inesistente"}, format="json").status_code, 404)
+
+    def test_pausa_e_riavvio_del_player(self):
+        with contesto_cliente(self.a.id):
+            Monitor.objects.filter(id=self.mon_a_milano.id).update(impronta_postazione=impronta(POSTAZIONE))
+        credenziali(self.a)
+        self.come(self.tecnico)
+        finto = MeshFinto()
+        with mock.patch.object(mesh, "Comando", lambda: finto):
+            manda = lambda azione, **altro: self.client.post("/api/remoto/player/", {"nodo": PC["id"], "azione": azione, **altro}, format="json")  # noqa: E731
+            self.assertEqual(manda("pausa").status_code, 400)  # servono le credenziali
+            self.assertEqual(manda("spegni", utente="negozio", password="Segreta-123").status_code, 400)
+            self.assertEqual(manda("pausa", utente="negozio", password="Segreta-123").status_code, 200)
+            self.assertEqual(manda("riavvia").status_code, 200)
+        comandi = [dati for azione, dati in finto.richieste if azione == "runcommands"]
+        self.assertEqual([c["cmds"] for c in comandi], [mesh.COMANDI_PLAYER["pausa"], mesh.COMANDI_PLAYER["riavvia"]])
+        self.assertEqual((comandi[0]["nodeids"], comandi[0]["type"], comandi[0]["runAsUser"]), ([PC["id"]], 2, 0))
+        self.assertIn("Start-ScheduledTask -TaskName 'FuturaPro Player'", mesh.COMANDI_PLAYER["riavvia"])
+        self.assertNotIn("Start-ScheduledTask", mesh.COMANDI_PLAYER["pausa"])
+        with contesto_cliente(self.a.id):
+            self.assertEqual(set(EventoAudit.objects.values_list("azione", flat=True)), {"player_in_pausa", "player_riavviato"})
+
+    def test_credenziali_le_imposta_il_systemadministrator(self):
+        dati = {"cliente": str(self.a.id), "utente": "negozio", "password": "Segreta-123"}
+        self.come(self.tecnico)
+        self.assertEqual(self.client.post("/api/remoto/credenziali/", dati, format="json").status_code, 403)
+        self.come(self.assoluto)
+        self.assertEqual(self.client.post("/api/remoto/credenziali/", {**dati, "password": "corta"}, format="json").status_code, 400)
+        self.assertEqual(self.client.post("/api/remoto/credenziali/", {**dati, "cliente": "x"}, format="json").status_code, 400)
+        self.assertEqual(self.client.post("/api/remoto/credenziali/", dati, format="json").status_code, 200)
+        credenziale = CredenzialeRemota.objects.get(cliente=self.a)
+        self.assertNotIn("Segreta", credenziale.password)  # solo l'impronta
+        self.assertTrue(credenziale.corrisponde("negozio", "Segreta-123"))
+        self.come(self.tecnico)
+        elenco = {a["nome"]: a for a in self.client.get("/api/remoto/credenziali/").json()}
+        self.assertEqual((elenco["Azienda A"]["utente"], elenco["Azienda A"]["modificata_da"]), ("negozio", "assoluto"))
+        self.assertEqual(elenco["Azienda B"]["utente"], "")
+        self.assertNotIn("password", elenco["Azienda A"])
 
     def test_le_sessioni_dimenticate_si_chiudono_da_sole(self):
         from datetime import timedelta

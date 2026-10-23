@@ -97,9 +97,12 @@ layout video, eliminacode, player per monitor e totem, teleassistenza, registro)
 - **Controllo Remoto** (nuova sezione del menu, solo SystemAdministrator e Tecnici): la
   teleassistenza dei PC dei monitor e dei totem, con MeshCentral (open source) installato sul
   server. Inventario dei PC di tutte le aziende, abbinati da soli al loro monitor; «Collegati»
-  apre lo schermo del PC in una finestra (mouse, tastiera, file), in rete locale e da internet,
+  apre lo schermo del PC in una finestra (mouse e tastiera), «📁 File» i suoi file (scaricare e
+  caricare), in rete locale e da internet,
   senza aprire porte nei negozi; sullo schermo compare la barra «Teleassistenza FuturaPro in
-  corso». Motivo obbligatorio e **verifica in due passaggi** (nuova, nel Profilo); registro delle
+  corso». Motivo obbligatorio e **utente e password del Controllo Remoto dell'azienda** del PC
+  (li imposta il SystemAdministrator in «Credenziali aziende»); «Dettagli e player» mette in pausa
+  o riavvia il player del PC, per lavorarci senza che il guardiano lo riapra; registro delle
   sessioni. Le aziende non vedono la sezione: nel loro Registro operazioni resta solo che c'è
   stato un intervento. L'agente lo installa il comando di installazione dei PC.
 

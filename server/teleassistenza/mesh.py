@@ -123,7 +123,7 @@ class Comando:
             if messaggio.get("action") == "close":
                 raise MeshErrore(f"MeshCentral ha rifiutato l'accesso ({messaggio.get('msg') or messaggio.get('cause')}).")
             if messaggio.get("responseid") == risposta_id or (messaggio.get("action") == azione and "responseid" not in messaggio):
-                if messaggio.get("result") not in (None, "ok") and not messaggio.get("success"):
+                if str(messaggio.get("result") or "ok").lower() != "ok" and not messaggio.get("success"):
                     if not str(messaggio.get("result", "")).startswith("Added"):
                         raise MeshErrore(f"MeshCentral: {azione} non riuscito ({messaggio.get('result')}).")
                 return messaggio
@@ -216,14 +216,39 @@ def assicura_account(mesh: Comando, utente, id_gruppo: str) -> str:
     return f"user/{DOMINIO}/{nome}"
 
 
-def indirizzo_schermo(id_account: str, nodo: str) -> str:
-    """L'indirizzo che apre direttamente lo schermo remoto di un PC, già entrati come il tecnico."""
+# Il player sul PC (vedi deploy/installa/player-windows.ps1): l'attività pianificata «FuturaPro Player»
+# avvia il guardiano (C:\FuturaPro\avvia.ps1), che apre il browser con il profilo C:\FuturaPro\profilo
+# e lo riapre se si chiude. Per lavorare sul PC si ferma tutto; per ripartire si rilancia l'attività.
+# L'agente li esegue come servizio (SYSTEM) in PowerShell.
+_FERMA_PLAYER = r"""
+Stop-ScheduledTask -TaskName 'FuturaPro Player' -ErrorAction SilentlyContinue
+Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like '*C:\FuturaPro\avvia.ps1*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+Get-CimInstance Win32_Process -Filter "Name='chrome.exe' OR Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*C:\FuturaPro\profilo*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+""".strip()
+COMANDI_PLAYER = {
+    "pausa": _FERMA_PLAYER,
+    "riavvia": _FERMA_PLAYER + "\nStart-Sleep -Seconds 2\nStart-ScheduledTask -TaskName 'FuturaPro Player'",
+}
+
+
+def comanda_player(mesh: Comando, nodo: str, azione: str) -> None:
+    """Mette in pausa o fa ripartire il player di un PC Windows (comandi PowerShell dell'agente)."""
+    mesh.richiedi("runcommands", nodeids=[nodo], type=2, cmds=COMANDI_PLAYER[azione], runAsUser=0, reply=False)
+
+
+# Cosa apre la finestra di MeshCentral sul PC (viewmode): lo schermo o i file (scarica, carica,
+# rinomina, elimina: il trasferimento file).
+VISTE = {"schermo": 11, "file": 13}
+
+
+def indirizzo_schermo(id_account: str, nodo: str, vista: str = "schermo") -> str:
+    """L'indirizzo che apre direttamente lo schermo (o i file) di un PC, già entrati come il tecnico."""
     accesso = gettone({"u": id_account, "a": 3, "expire": max(1, DURATA_GETTONE // 60)})
     nodo_breve = nodo.split("/")[-1]
     base = settings.FUTURAPRO_MESH_PUBBLICO.rstrip("/") + "/"
     # «node» (non «gotonode»): il PC lo sceglie già il server nella pagina che manda. Con «gotonode»
     # la pagina, appena entrati con il gettone, restava sulla vista vuota (schermo nero, «Connetti» spento).
-    return f"{base}?login={quote(accesso)}&node={quote(nodo_breve)}&viewmode=11&hide=31"
+    return f"{base}?login={quote(accesso)}&node={quote(nodo_breve)}&viewmode={VISTE[vista]}&hide=31"
 
 
 def indirizzo_console(id_account: str) -> str:

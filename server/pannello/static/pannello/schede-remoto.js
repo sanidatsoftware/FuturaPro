@@ -1,6 +1,7 @@
 // «Controllo Remoto»: la teleassistenza dei PC dei negozi (MeshCentral, vedi teleassistenza/mesh.py).
 // Solo SystemAdministrator e Tecnici: inventario dei PC di tutte le aziende, collegamento allo
-// schermo con il motivo e la verifica in due passaggi, registro delle sessioni.
+// schermo con il motivo e, per i PC di un'azienda, utente e password del suo Controllo Remoto;
+// pausa e riavvio del player; registro delle sessioni.
 
 let H = null;
 
@@ -24,38 +25,62 @@ function nonConfigurato(box, dati) {
   }, box);
 }
 
-// La finestra del collegamento: motivo e (se serve) il codice della verifica in due passaggi.
-function chiediCollegamento(pc, io) {
-  const { crea, api } = H;
+// Utente e password del Controllo Remoto dell'azienda del PC, se in questo browser non sono già
+// stati scritti nelle ultime 12 ore (pc.accesso dall'inventario). Restituisce i campi da mandare.
+function campiCredenziali(pc, contenitore) {
+  const { crea } = H;
+  if (pc.accesso === "mancanti") {
+    crea("p", {
+      classe: "messaggio errore",
+      testo: `Per «${pc.monitor.cliente}» non sono ancora impostati utente e password del Controllo Remoto: li imposta il SystemAdministrator in Controllo Remoto → Credenziali aziende.`,
+    }, contenitore);
+    return null;
+  }
+  if (pc.accesso !== "credenziali") return () => ({});
+  crea("p", { classe: "tenue", testo: `Utente e password del Controllo Remoto di «${pc.monitor.cliente}» (si richiedono al massimo ogni 12 ore).` }, contenitore);
+  const riga = crea("div", { classe: "riga" }, contenitore);
+  const utente = H.campo("Utente", crea("input", { autocomplete: "off", size: 20 }), riga);
+  const password = H.campo("Password", crea("input", { type: "password", autocomplete: "off", size: 20 }), riga);
+  return () => ({ utente: utente.value, password: password.value });
+}
+
+function finestraPc(titolo) {
+  const { crea } = H;
   const finestra = crea("dialog", { classe: "finestra" }, document.body);
   finestra.addEventListener("close", () => finestra.remove());
   crea("button", { "aria-label": "Chiudi", testo: "✕" }, crea("form", { method: "dialog", classe: "chiudi" }, finestra));
-  crea("h2", { testo: `🖥 Collegati a ${pc.nome}` }, finestra);
+  crea("h2", { testo: titolo }, finestra);
+  return finestra;
+}
+
+// La finestra del collegamento: motivo e (se serve) utente e password dell'azienda. «vista»:
+// «schermo» (mouse e tastiera) o «file» (scaricare e caricare file sul PC).
+function chiediCollegamento(pc, vista = "schermo") {
+  const { crea, api } = H;
+  const finestra = finestraPc(vista === "file" ? `📁 File di ${pc.nome}` : `🖥 Collegati a ${pc.nome}`);
   const dove = pc.monitor ? `${pc.monitor.cliente} › ${pc.monitor.sede} › ${pc.monitor.nome}` : "PC non ancora abbinato a un monitor";
   crea("p", { testo: `${dove}. Sullo schermo del negozio comparirà la barra «Teleassistenza FuturaPro in corso».` }, finestra);
-  if (!io.doppio_attivo) {
-    crea("p", { classe: "messaggio errore", testo: "Per collegarti serve la verifica in due passaggi: attivala nel tuo Profilo (Impostazioni → Profilo)." }, finestra);
-    crea("button", { classe: "primario", testo: "Vai al Profilo", onclick: () => { finestra.close(); H.mostra("profilo"); } }, finestra);
+  const credenziali = campiCredenziali(pc, finestra);
+  if (!credenziali) {
     finestra.showModal();
     return;
   }
   const motivo = crea("input", { placeholder: "es. il monitor non mostra le promozioni", size: 50, maxLength: 300 });
-  const codice = crea("input", { inputmode: "numeric", autocomplete: "one-time-code", maxLength: 6, size: 8 });
-  const riga = crea("div", { classe: "riga" }, finestra);
-  H.campo("Motivo (resta nel registro)", motivo, riga);
-  H.campo("Codice dell'app (se richiesto)", codice, riga);
-  crea("p", { classe: "tenue", testo: "Il codice si chiede al massimo ogni 12 ore. La sessione si chiude da sola nel registro dopo la durata massima." }, finestra);
+  H.campo("Motivo (resta nel registro)", motivo, crea("div", { classe: "riga" }, finestra));
+  crea("p", { classe: "tenue", testo: "La sessione si chiude da sola nel registro dopo la durata massima." }, finestra);
   const esito = crea("p", {}, finestra);
   crea("button", {
     classe: "primario", testo: "Collegati",
     onclick: async (e) => {
       e.target.disabled = true;
       try {
-        const r = await api("POST", "/api/remoto/sessioni/", { nodo: pc.id, motivo: motivo.value, codice: codice.value });
-        // Una finestra a parte per lo schermo del PC (già entrati, senza password).
-        window.open(r.indirizzo, `remoto-${pc.id.split("/").pop()}`, "popup,width=1440,height=900");
+        const r = await api("POST", "/api/remoto/sessioni/", { nodo: pc.id, motivo: motivo.value, vista, ...credenziali() });
+        // Una finestra a parte per il PC (già entrati, senza password).
+        window.open(r.indirizzo, `remoto-${vista}-${pc.id.split("/").pop()}`, "popup,width=1440,height=900");
         finestra.close();
-        H.avvisa(`Collegato a ${pc.nome}: lo schermo si è aperto in una finestra: premi «Connetti» in alto a sinistra. Ricordati di chiudere la sessione quando hai finito.`, "ok");
+        H.avvisa(vista === "file"
+          ? `Collegato a ${pc.nome}: i file si sono aperti in una finestra: premi «Connetti» in alto a sinistra, poi «Caricare» per mandare file al PC o seleziona un file e «Scarica». Ricordati di chiudere la sessione quando hai finito.`
+          : `Collegato a ${pc.nome}: lo schermo si è aperto in una finestra: premi «Connetti» in alto a sinistra. Ricordati di chiudere la sessione quando hai finito.`, "ok");
         H.mostra("remoto_dispositivi");
       } catch (errore) {
         esito.className = "messaggio errore";
@@ -68,14 +93,39 @@ function chiediCollegamento(pc, io) {
   motivo.focus();
 }
 
+// Pausa e riavvio del player: in pausa il guardiano non riapre il browser e si può lavorare sul PC.
+function sezionePlayer(pc, finestra) {
+  const { crea, api } = H;
+  if (!/windows/i.test(pc.sistema || "")) return;
+  crea("h3", { testo: "Player" }, finestra);
+  crea("p", { classe: "tenue", testo: "«Metti in pausa» chiude il player e il guardiano non lo riapre: serve per lavorare sul PC dallo schermo remoto. «Riavvia» lo fa ripartire (anche se si è bloccato)." }, finestra);
+  const credenziali = campiCredenziali(pc, finestra);
+  if (!credenziali) return;
+  const riga = crea("div", { classe: "riga" }, finestra);
+  const esito = crea("p", {}, finestra);
+  const comanda = (azione, fatto) => async (e) => {
+    e.target.disabled = true;
+    try {
+      await api("POST", "/api/remoto/player/", { nodo: pc.id, azione, ...credenziali() });
+      esito.className = "messaggio ok";
+      esito.textContent = fatto;
+      pc.accesso = "";
+    } catch (errore) {
+      esito.className = "messaggio errore";
+      esito.textContent = errore.message;
+    }
+    e.target.disabled = false;
+  };
+  crea("button", { testo: "⏸ Metti in pausa il player", onclick: comanda("pausa", "Player in pausa: il PC è libero. Ricordati di riavviarlo quando hai finito.") }, riga);
+  crea("button", { classe: "primario", testo: "▶ Riavvia il player", onclick: comanda("riavvia", "Player riavviato: tra qualche secondo torna sullo schermo.") }, riga);
+}
+
 async function mostraDettagli(pc) {
   const { crea, api } = H;
-  const finestra = crea("dialog", { classe: "finestra" }, document.body);
-  finestra.addEventListener("close", () => finestra.remove());
-  crea("button", { "aria-label": "Chiudi", testo: "✕" }, crea("form", { method: "dialog", classe: "chiudi" }, finestra));
-  crea("h2", { testo: `ℹ ${pc.nome}` }, finestra);
+  const finestra = finestraPc(`ℹ ${pc.nome}`);
   const corpo = crea("div", {}, finestra);
   crea("p", { classe: "tenue", testo: "Lettura dell'inventario dal PC…" }, corpo);
+  sezionePlayer(pc, finestra);
   finestra.showModal();
   try {
     const info = await api("GET", `/api/remoto/dispositivi/?nodo=${encodeURIComponent(pc.id)}`);
@@ -100,7 +150,7 @@ async function mostraDettagli(pc) {
 
 export async function schedaRemotoDispositivi() {
   const { crea, sezione, api, tabella, prova } = H;
-  const [dati, io] = await Promise.all([api("GET", "/api/remoto/"), api("GET", "/api/io/")]);
+  const dati = await api("GET", "/api/remoto/");
 
   if (dati.sessioni_aperte.length) {
     const aperte = sezione("🔴 Sessioni aperte");
@@ -151,8 +201,9 @@ export async function schedaRemotoDispositivi() {
       crea("td", { testo: pc.ip || "—" }, tr);
       crea("td", { testo: pc.in_linea ? "adesso" : quando(pc.ultimo_contatto ? new Date(pc.ultimo_contatto).toISOString() : null) }, tr);
       const azioni = crea("td", { classe: "azioni" }, tr);
-      crea("button", { classe: "primario senza-a-capo", testo: "🖥 Collegati", disabled: !pc.in_linea, title: pc.in_linea ? "" : "Il PC non è in linea.", onclick: () => chiediCollegamento(pc, io) }, azioni);
-      crea("button", { testo: "ℹ Dettagli", disabled: !pc.in_linea, onclick: () => mostraDettagli(pc) }, azioni);
+      crea("button", { classe: "primario senza-a-capo", testo: "🖥 Collegati", disabled: !pc.in_linea, title: pc.in_linea ? "" : "Il PC non è in linea.", onclick: () => chiediCollegamento(pc) }, azioni);
+      crea("button", { classe: "senza-a-capo", testo: "📁 File", disabled: !pc.in_linea, title: "Scaricare e caricare file sul PC", onclick: () => chiediCollegamento(pc, "file") }, azioni);
+      crea("button", { testo: "ℹ Dettagli e player", disabled: !pc.in_linea, onclick: () => mostraDettagli(pc) }, azioni);
     }
     if (!corpo.children.length) crea("td", { colSpan: 7, classe: "vuoto", testo: dati.dispositivi.length ? "Nessun PC con questi filtri." : "Nessun PC ancora: l'agente si installa con il comando di installazione dei monitor e dei totem." }, crea("tr", {}, corpo));
   };
@@ -183,6 +234,55 @@ export async function schedaRemotoSessioni() {
   }
 }
 
+export async function schedaRemotoCredenziali() {
+  const { crea, sezione, api, tabella, prova } = H;
+  const [aziende, io] = await Promise.all([api("GET", "/api/remoto/credenziali/"), api("GET", "/api/io/")]);
+  const puoModificare = io.ruolo === "admin_assoluto";
+  const box = sezione("🔑 Credenziali del Controllo Remoto per azienda");
+  crea("p", {
+    classe: "nota",
+    testo: "Per collegarsi a un PC di un'azienda (schermo, pausa o riavvio del player) il tecnico deve scrivere l'utente e la password del Controllo Remoto di quell'azienda, uguali a quelli impostati qui. "
+      + "Si richiedono al massimo ogni 12 ore per browser; se si cambiano, vanno riscritti. La password non si può rileggere: se si dimentica, se ne imposta una nuova."
+      + (puoModificare ? "" : " Le imposta il SystemAdministrator."),
+  }, box);
+  const corpo = tabella(["Azienda", "Utente", "Impostate", ""], box);
+  for (const a of aziende) {
+    const tr = crea("tr", {}, corpo);
+    crea("td", { testo: a.nome + (a.attivo ? "" : " (disattivata)") }, tr);
+    crea("td", { testo: a.utente || "—", classe: a.utente ? "" : "tenue" }, tr);
+    crea("td", { testo: a.modificata ? `${quando(a.modificata)} da ${a.modificata_da}` : "non ancora: nessun tecnico può collegarsi ai suoi PC" }, tr);
+    const azioni = crea("td", { classe: "azioni" }, tr);
+    if (!puoModificare) continue;
+    crea("button", {
+      testo: a.utente ? "Cambia" : "Imposta",
+      onclick: () => {
+        const finestra = finestraPc(`🔑 ${a.nome}`);
+        const riga = crea("div", { classe: "riga" }, finestra);
+        const utente = H.campo("Utente", crea("input", { value: a.utente || "", autocomplete: "off", size: 20 }), riga);
+        const password = H.campo("Password (almeno 8 caratteri)", crea("input", { type: "password", autocomplete: "new-password", size: 20 }), riga);
+        const esito = crea("p", {}, finestra);
+        crea("button", {
+          classe: "primario", testo: "Salva",
+          onclick: async () => {
+            try {
+              await api("POST", "/api/remoto/credenziali/", { cliente: a.cliente, utente: utente.value, password: password.value });
+            } catch (errore) {
+              esito.className = "messaggio errore";
+              esito.textContent = errore.message;
+              return;
+            }
+            finestra.close();
+            prova(async () => {}, "Credenziali salvate.");
+          },
+        }, crea("div", { classe: "riga" }, finestra));
+        finestra.showModal();
+        utente.focus();
+      },
+    }, azioni);
+  }
+  if (!aziende.length) crea("td", { colSpan: 4, classe: "vuoto", testo: "Nessuna azienda." }, crea("tr", {}, corpo));
+}
+
 export async function schedaRemotoInstallazione() {
   const { crea, sezione, api } = H;
   const dati = await api("GET", "/api/remoto/");
@@ -192,7 +292,7 @@ export async function schedaRemotoInstallazione() {
     "Sul server: MeshCentral (open source, licenza Apache-2.0) si installa da solo con l'aggiornamento di FuturaPro ed è raggiungibile solo sotto https://SERVER/mesh/, con lo stesso certificato del pannello.",
     "Sui PC: il comando di installazione dei monitor e dei totem («Hardware → Anagrafica Dispositivi Video», installazione dei PC) installa anche l'agente, in silenzio, come servizio di Windows. Sui PC già installati basta rilanciare lo stesso comando.",
     "Abbinamento: quando il player del PC manda il suo segnale periodico, il PC si abbina da solo al suo monitor, e quindi all'azienda e al negozio.",
-    "Sicurezza: l'agente riconosce solo questo server; i tecnici entrano dal pannello con la verifica in due passaggi; sullo schermo del negozio compare sempre la barra «Teleassistenza FuturaPro in corso»; ogni sessione resta nel registro. Nessuna shell remota.",
+    "Sicurezza: l'agente riconosce solo questo server; i tecnici entrano solo dal pannello e, per i PC di un'azienda, scrivendo utente e password del Controllo Remoto di quell'azienda; sullo schermo del negozio compare sempre la barra «Teleassistenza FuturaPro in corso»; ogni sessione resta nel registro. Nessuna shell remota.",
     "Da fuori sede: funziona se il server è raggiungibile da internet (nome di dominio con la porta 443 aperta); altrimenti solo dalla rete interna o con una VPN.",
   ]) crea("p", { testo }, box);
   if (dati.console) {

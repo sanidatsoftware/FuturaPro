@@ -54,7 +54,7 @@ from player import views as player
 from plugin.api import FiltroContenutiView, FontiPluginViewSet, PluginView
 from teleassistenza.api import SessioniViewSet
 from teleassistenza import remoto
-from utenti.api import DoppioView, IoView, UtentiClienteViewSet, UtentiPiattaformaViewSet
+from utenti.api import IoView, UtentiClienteViewSet, UtentiPiattaformaViewSet
 
 router = DefaultRouter()
 # Piattaforma: solo SystemAdministrator (e tecnici, in lettura, per l'elenco clienti).
@@ -87,12 +87,13 @@ router.register("teleassistenza/sessioni", SessioniViewSet, basename="teleassist
 
 urlpatterns = [
     path("api/io/", IoView.as_view(), name="io"),
-    path("api/io/doppio/", DoppioView.as_view(), name="io-doppio"),
     # Controllo Remoto (MeshCentral): solo SystemAdministrator e Tecnici.
     path("api/remoto/", remoto.InventarioView.as_view(), name="remoto"),
     path("api/remoto/dispositivi/", remoto.DispositivoView.as_view(), name="remoto-dispositivo"),
     path("api/remoto/sessioni/", remoto.SessioniRemoteView.as_view(), name="remoto-sessioni"),
     path("api/remoto/sessioni/<uuid:pk>/chiudi/", remoto.ChiudiSessioneView.as_view(), name="remoto-chiudi"),
+    path("api/remoto/player/", remoto.PlayerRemotoView.as_view(), name="remoto-player"),
+    path("api/remoto/credenziali/", remoto.CredenzialiView.as_view(), name="remoto-credenziali"),
     path("api/player/agente-remoto/", remoto.agente_remoto, name="agente-remoto"),
     path("api/abilitazioni/", AbilitazioniView.as_view(), name="abilitazioni"),
     path("api/player/abbinamento/", RichiestaAbbinamentoView.as_view(), name="player-abbinamento"),

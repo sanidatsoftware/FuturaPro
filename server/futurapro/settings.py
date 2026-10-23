@@ -106,7 +106,7 @@ REST_FRAMEWORK = {
         "abbinamento": _env("THROTTLE_ABBINAMENTO", "120/hour"), "biglietto": "40/min",
         # Il guardiano di ogni postazione chiede ogni 2 minuti; i PC di un negozio escono con lo stesso IP.
         "postazione": _env("THROTTLE_POSTAZIONE", "1200/hour"),
-        # Aprire lo schermo di un PC (con il codice della verifica in due passaggi): pochi tentativi.
+        # Aprire lo schermo di un PC o comandarne il player (con le credenziali dell'azienda): pochi tentativi.
         "remoto": _env("THROTTLE_REMOTO", "30/hour"),
     },
 }

@@ -11,7 +11,7 @@ import { apriRiquadro, paginaIncorporata } from "./riquadro.js";
 import { preparaSchedeReport, schedaRegistro, schedaStoricoAllarmi } from "./schede-report.js";
 import { preparaSchedeDistribuzione, schedaDistribuzione } from "./schede-distribuzione.js";
 import { preparaSchedePanoramica, schedaPanoramica } from "./schede-panoramica.js";
-import { preparaSchedeRemoto, schedaRemotoDispositivi, schedaRemotoInstallazione, schedaRemotoSessioni } from "./schede-remoto.js";
+import { preparaSchedeRemoto, schedaRemotoCredenziali, schedaRemotoDispositivi, schedaRemotoInstallazione, schedaRemotoSessioni } from "./schede-remoto.js";
 import { preparaSchedeProfilo, schedaProfilo, schedaUtentiPiattaforma } from "./schede-profilo.js";
 import { preparaSchedeCode, schedaAttese, schedaTelefono } from "./schede-code.js";
 import { preparaSchedeContenuti, schedaListini, schedaMessaInOnda } from "./schede-contenuti.js";
@@ -155,6 +155,7 @@ const SCHEDE = {
   filtro_contenuti: schedaFiltroContenuti,
   remoto_dispositivi: schedaRemotoDispositivi,
   remoto_sessioni: schedaRemotoSessioni,
+  remoto_credenziali: schedaRemotoCredenziali,
   remoto_installazione: schedaRemotoInstallazione,
   listini: schedaListini,
   messa_in_onda: schedaMessaInOnda,

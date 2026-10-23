@@ -95,7 +95,7 @@ class DatabaseTest(Base):
         self.assertEqual(
             scoperte, {
                 "dispositivi_credenzialedispositivo", "eliminacode_credenzialepulsante", "utenti_utente",
-                "teleassistenza_sessioneremota",
+                "teleassistenza_sessioneremota", "teleassistenza_credenzialeremota",
             }
         )
 

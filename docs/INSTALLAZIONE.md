@@ -152,8 +152,9 @@ trovi nel pannello in «Controllo Remoto» (solo SystemAdministrator e Tecnici).
 porte nuove: passa dallo stesso indirizzo HTTPS del pannello (`https://SERVER/mesh/`).
 
 - La prima volta il server scarica i programmi degli agenti da GitHub (circa 120 MB).
-- Ogni tecnico, prima di collegarsi, attiva la **verifica in due passaggi** nel suo Profilo
-  (Google Authenticator, Microsoft Authenticator o simili).
+- Il SystemAdministrator imposta, per ogni azienda, **utente e password del Controllo Remoto**
+  («Controllo Remoto → Credenziali aziende»): per collegarsi a un PC di quell'azienda il tecnico
+  li deve scrivere uguali (al massimo ogni 12 ore per browser).
 - Sui PC l'agente lo installa il comando di installazione dei monitor e dei totem (vedi sotto);
   sui PC già installati basta rilanciare lo stesso comando. Per non installarlo: `-SenzaRemoto`.
 - **Da fuori sede** funziona se il server è raggiungibile da internet (nome di dominio, porta
