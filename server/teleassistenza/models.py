@@ -87,3 +87,29 @@ class SessioneRemota(models.Model):
     class Meta:
         ordering = ["-iniziata"]
         verbose_name_plural = "sessioni remote"
+
+
+class CredenzialeRemota(models.Model):
+    """Utente e password del Controllo Remoto di un'azienda: li imposta la piattaforma e il tecnico
+    li deve scrivere uguali per collegarsi a un PC di quell'azienda (la password solo come impronta)."""
+
+    cliente = models.OneToOneField("clienti.Cliente", on_delete=models.CASCADE, related_name="credenziale_remota")
+    utente = models.CharField(max_length=150)
+    password = models.CharField(max_length=200)
+    modificata = models.DateTimeField(auto_now=True)
+    modificata_da = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        verbose_name_plural = "credenziali remote"
+
+    def imposta_password(self, password: str) -> None:
+        from django.contrib.auth.hashers import make_password
+
+        self.password = make_password(password)
+
+    def corrisponde(self, utente: str, password: str) -> bool:
+        from django.contrib.auth.hashers import check_password
+
+        # La password si controlla sempre, anche con l'utente sbagliato: stesso tempo di risposta.
+        giusta = check_password(password or "", self.password)
+        return giusta and (utente or "").strip().lower() == self.utente.lower()

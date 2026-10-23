@@ -92,7 +92,6 @@ class IoView(APIView):
                 "pagina_iniziale": utente.pagina_iniziale,
                 "versione_app": versione_app(),
                 "apertura": utente.apertura,
-                "doppio_attivo": utente.doppio_attivo,
             }
         )
 
@@ -159,52 +158,6 @@ class IoView(APIView):
             update_session_auth_hash(request, utente)  # resta collegato con la password nuova
             _registra_profilo(utente, "password_cambiata", username=utente.username)
         return self.get(request)
-
-
-class DoppioView(APIView):
-    """La verifica in due passaggi del proprio account (utenti.doppio).
-
-    POST {"azione": "prepara"}: un segreto nuovo da inquadrare con l'app (non ancora attivo);
-    POST {"azione": "attiva", "codice"}: la attiva se il codice dell'app è giusto;
-    POST {"azione": "disattiva", "password", "codice"}: la spegne (servono entrambi)."""
-
-    def get(self, request):
-        return Response({"attivo": request.user.doppio_attivo})
-
-    def post(self, request):
-        from core.email import cifra, decifra
-
-        from . import doppio
-
-        utente = request.user
-        azione = request.data.get("azione")
-        if azione == "prepara":
-            if utente.doppio_attivo:
-                raise ValidationError("La verifica in due passaggi è già attiva: per rifarla, prima disattivala.")
-            segreto = doppio.nuovo_segreto()
-            utente.doppio_segreto, utente.doppio_ultimo_passo = cifra(segreto), 0
-            utente.save(update_fields=["doppio_segreto", "doppio_ultimo_passo"])
-            return Response({"segreto": segreto, "indirizzo": doppio.indirizzo_app(segreto, utente.username)})
-        if azione == "attiva":
-            if utente.doppio_attivo or not utente.doppio_segreto:
-                raise ValidationError("Prima prepara la verifica (inquadra il codice con l'app).")
-            passo = doppio.passo_valido(decifra(utente.doppio_segreto), request.data.get("codice"), utente.doppio_ultimo_passo)
-            if passo is None:
-                raise ValidationError({"codice": "Codice non valido: controlla l'ora del telefono e riprova."})
-            utente.doppio_attivo, utente.doppio_ultimo_passo = True, passo
-            utente.save(update_fields=["doppio_attivo", "doppio_ultimo_passo"])
-            _registra_profilo(utente, "doppio_attivato", username=utente.username)
-            return Response({"attivo": True})
-        if azione == "disattiva":
-            if not utente.check_password(str(request.data.get("password") or "")):
-                raise ValidationError({"password": "La password non è corretta."})
-            if not doppio.verifica_utente(utente, request.data.get("codice")):
-                raise ValidationError({"codice": "Codice non valido."})
-            utente.doppio_attivo, utente.doppio_segreto = False, ""
-            utente.save(update_fields=["doppio_attivo", "doppio_segreto"])
-            _registra_profilo(utente, "doppio_disattivato", username=utente.username)
-            return Response({"attivo": False})
-        raise ValidationError({"azione": "prepara, attiva o disattiva."})
 
 
 class UtentiClienteViewSet(ViewSetCliente):

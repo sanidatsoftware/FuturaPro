@@ -111,8 +111,10 @@ viste che controllano prima il cliente (in produzione nginx con `X-Accel-Redirec
 l'utente; le viste la filtrano), `dispositivi_richiestaabbinamento` (un player non ancora
 abbinato non ha cliente), `dispositivi_credenzialedispositivo` (dice a quale cliente appartiene
 un player: va letta per prima). Contengono solo impronte, mai segreti. E
-`teleassistenza_sessioneremota` (il registro del Controllo Remoto, §9): è solo della piattaforma,
-nessuna vista la mostra alle aziende, e un PC può non essere ancora abbinato a nessuna.
+`teleassistenza_sessioneremota` (il registro del Controllo Remoto, §9) e
+`teleassistenza_credenzialeremota` (utente e impronta della password del Controllo Remoto di
+ogni azienda): sono solo della piattaforma, nessuna vista le mostra alle aziende, e un PC può non
+essere ancora abbinato a nessuna.
 
 **Test.** `server/core/tests/test_isolamento.py` prova ogni barriera da sola: togliendo l'una o
 l'altra, falliscono test diversi. Un altro test elenca le tabelle con `cliente_id` prive di
@@ -919,12 +921,21 @@ collega lui** al server: funziona in rete locale e da internet senza aprire port
   `MeshAgent.tag`): l'inizio dell'impronta SHA-256 del codice della postazione. Il player manda
   lo stesso codice con il segnale periodico e il server ne conserva l'impronta sul monitor
   (`Monitor.impronta_postazione`): l'inventario mostra azienda, negozio e monitor di ogni PC.
-- **Collegarsi** (`POST /api/remoto/sessioni/`): motivo obbligatorio e **verifica in due
-  passaggi** (TOTP, `utenti/doppio.py`, attivata dal Profilo; il codice si richiede ogni 12 ore
-  per browser, al massimo 30 tentativi l'ora). Il server crea l'account del tecnico se manca e
-  firma un gettone valido 2 minuti che apre direttamente il desktop del PC in una finestra.
+- **Collegarsi** (`POST /api/remoto/sessioni/`): motivo obbligatorio e, per un PC abbinato a
+  un'azienda, **utente e password del Controllo Remoto di quell'azienda** (`CredenzialeRemota`:
+  li imposta il SystemAdministrator, la password è conservata solo come impronta; si richiedono
+  ogni 12 ore per browser o quando cambiano, al massimo 30 tentativi l'ora). Senza credenziali
+  impostate nessuno si collega ai PC dell'azienda; un PC non ancora abbinato non le chiede.
+  Il server crea l'account del tecnico se manca e
+  firma un gettone valido 2 minuti che apre direttamente il desktop del PC in una finestra
+  (`vista: "schermo"`) oppure i suoi file (`vista: "file"`: scaricare, caricare, rinominare).
   Ogni sessione è in `SessioneRemota` (tecnico, PC, monitor, azienda, motivo, IP, inizio, fine);
   si chiude dal pannello o da sola nel registro dopo la durata massima (60 minuti).
+- **Pausa e riavvio del player** (`POST /api/remoto/player/`, stesse credenziali): comandi
+  PowerShell eseguiti dall'agente (`runcommands`, come servizio) che fermano l'attività «FuturaPro
+  Player», il guardiano e il browser, o li fanno ripartire. In pausa il tecnico lavora sul PC
+  senza che il guardiano riapra il player. Restano nei registri come `player_in_pausa` e
+  `player_riavviato`.
 - **Console completa** di MeshCentral: solo per il SystemAdministrator, dalla pagina
   «Installazione e sicurezza».
 - **Da fuori sede**: serve che il server sia raggiungibile da internet (dominio, porta 443).
@@ -934,7 +945,8 @@ collega lui** al server: funziona in rete locale e da internet senza aprire port
 | `GET /api/remoto/` (inventario), `GET /api/remoto/dispositivi/?nodo=` (hardware) | SystemAdministrator, Tecnico |
 | `GET/POST /api/remoto/sessioni/`, `POST /api/remoto/sessioni/{id}/chiudi/` | SystemAdministrator, Tecnico |
 | `GET /api/player/agente-remoto/?tag=` (rimanda all'installatore dell'agente) | script di installazione |
-| `GET/POST /api/io/doppio/` (verifica in due passaggi del proprio account) | tutti, per sé |
+| `POST /api/remoto/player/` (pausa o riavvio del player) | SystemAdministrator, Tecnico |
+| `GET /api/remoto/credenziali/` · `POST` (imposta utente e password di un'azienda) | SystemAdministrator, Tecnico · solo SystemAdministrator |
 
 Il registro precedente (`SessioneTeleassistenza`, `/api/teleassistenza/sessioni/`) resta, ora
 solo per la piattaforma.

@@ -64,7 +64,6 @@ dialog.finestra .chiudi { position: absolute; top: 12px; right: 12px; margin: 0;
 dialog.finestra .chiudi button { width: 34px; height: 34px; padding: 0; border-radius: 50%; }
 .collegamento-riga { margin: 12px 0; }
 button.senza-a-capo { white-space: nowrap; }
-.qr-doppio { display: block; background: #fff; padding: 8px; border-radius: 8px; margin: 8px 0; image-rendering: pixelated; }
 .collegamento-riga .riga { flex-wrap: nowrap; align-items: center; gap: 4px; }
 .collegamento-riga input.link { flex: 1; min-width: 0; font-size: 13px; }
 @media (max-width: 560px) { .collegamento-riga .riga { flex-wrap: wrap; } }
