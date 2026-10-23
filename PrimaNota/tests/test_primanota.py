@@ -1972,3 +1972,14 @@ class TestChiusuraPosMancante(TestCase):
         self.assertEqual((c["esito"], c["titolo"]), ("attenzione", "Chiusura POS mancante (15,00 € di carte)"))
         # Senza carte non c'è niente da chiudere.
         self.assertEqual(self.controllo_pos({"Contanti": "18.00"})["esito"], "info")
+
+
+class TestMonitorSoloAttivi(Base):
+    def test_i_negozi_non_attivi_non_compaiono(self):
+        def negozi(url):
+            return [r["store_id"] for r in self.client_per("direttore@x").get(url).context["monitor"]["rows"]]
+        self.assertEqual(negozi("/primanota/monitor/"), [10, 11])   # nessuna condivisione: tutti
+        Condivisione.objects.create(negozio_id=10, codice_negozio="5048", percorso="/x", attiva=True)
+        Condivisione.objects.create(negozio_id=11, codice_negozio="5050", percorso="", attiva=False)
+        self.assertEqual(negozi("/primanota/monitor/"), [10])
+        self.assertEqual(negozi("/primanota/versamenti/monitor/"), [10])

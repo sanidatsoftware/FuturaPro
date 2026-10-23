@@ -12,7 +12,7 @@ from django.db.models import Count, Q
 from scansioni.services.monitor_trasmissioni import MONTH_LABELS, WEEKDAY_LABELS, _build_days, _month_shift, _safe_int
 from scansioni.services.baserow_scansioni import LOCAL_TZ
 
-from ..models import DocumentoSysSpy, Emergenza, FileSysSpy, GiornataLavorazione, Nota, RegolaDocumento
+from ..models import Condivisione, DocumentoSysSpy, Emergenza, FileSysSpy, GiornataLavorazione, Nota, RegolaDocumento
 from .giornate import stato as stato_giornata
 from .prima_nota import presenze
 from .regole import SYSSPY_PER_TIPO, obbligatoria, segni_prima_nota
@@ -105,7 +105,12 @@ def build_monitor(year=None, month=None, view_mode="month", week_start=None, ver
     # Stato della giornata scelto dalla sede; il pregresso senza stato è «giornata chiusura».
     sezione = GiornataLavorazione.VERSAMENTI if versamenti else GiornataLavorazione.CHIUSURE
     stati = GiornataLavorazione.mappa(min(days[0], inizio_mese_corrente), max(days[-1], today), sezione=sezione)
+    # Solo i punti vendita attivi in Impostazioni (condivisione con «attiva» spuntata); finché non ne è
+    # configurato nessuno si vedono tutti.
     negozi = negozi_attivi_ordinati()
+    attivi = set(Condivisione.objects.filter(attiva=True).values_list("negozio_id", flat=True))
+    if Condivisione.objects.exists():
+        negozi = [n for n in negozi if _safe_int(n.get("id"), 0) in attivi]
 
     summary = {"pending": 0, "worked": 0, "documents": 0, "missing_current_month": 0,
                "versamenti_aperti": 0, "anomalie": 0}
