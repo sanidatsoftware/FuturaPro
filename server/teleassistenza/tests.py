@@ -66,7 +66,7 @@ class GettoniTest(Base):
         parti = urlsplit(indirizzo)
         self.assertEqual(parti.netloc + parti.path, "server.lan/mesh/")
         domanda = parse_qs(parti.query)
-        self.assertEqual((domanda["gotonode"], domanda["viewmode"]), (["AB$c@d"], ["11"]))
+        self.assertEqual((domanda["node"], domanda["viewmode"]), (["AB$c@d"], ["11"]))
         self.assertEqual(leggi_gettone(domanda["login"][0])["expire"], 2)
 
     @override_settings(FUTURAPRO_MESH_CHIAVE="")
